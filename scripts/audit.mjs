@@ -27,10 +27,11 @@ const mock = require(path.join(ROOT, 'lib', 'mock'));
 const { ICONS } = require(path.join(ROOT, 'lib', 'icons'));
 
 const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const WIDTHS = [375, 390, 430];
+// AUDIT_WIDTHS and AUDIT_MODES narrow a run, like AUDIT_WIDTHS=390 AUDIT_MODES=safari.
+const WIDTHS = (process.env.AUDIT_WIDTHS || '375,390,430').split(',').map(Number);
 const HEIGHTS = { 375: 812, 390: 844, 430: 932 };
 const THEMES = ['light', 'dark'];
-const MODES = ['safari', 'standalone'];
+const MODES = (process.env.AUDIT_MODES || 'safari,standalone').split(',');
 const OUT = process.argv[2] || '';
 
 // A live deka on day 4: some done, one missed, one not confirmed, and a chat with a plan card and a status card.
