@@ -1208,6 +1208,10 @@ function buildRequest(span, text, event) {
     event: event || null,
   };
   if (older.length) body.to_summarize = older;
+  // The card still waiting for Confirm, with every session on it, so a tweak adjusts that card.
+  const which = target === S.next ? 'next' : 'current';
+  const open = span.chat.flatMap(m => m.cards || []).filter(c => c.type === 'proposal' && c.status === 'open' && (c.target || 'current') === which).pop();
+  if (open) body.open_card = { changes: open.changes, sessions: open.occurrences.map(o => ({ goal_id: o.goal_id, day: o.day, detail: o.detail || '' })) };
   if (p === 'review') {
     body.ended = {
       range: range(span.start),

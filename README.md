@@ -32,7 +32,7 @@ The app has three tabs:
 
 Past dekas and Settings sit behind the icon in the header. Each deka has its own chat thread; past threads stay readable in Past dekas.
 
-**Check in.** Settings holds a daily check in time, 8:00 pm by default. The first time the app opens after that time, Deka has already asked "How did today go?". Your answer is logged on the day (tap a result on the card to correct it), and Deka proposes how the rest of the deka fits. A skipped day is asked about the next evening.
+**Check in.** Settings holds a daily check in time, 8:00 pm by default. The first time the app opens after that time, Deka has already asked "How did today go?". Deka logs what you say happened (tap a result on the card to correct it). If something planned that day went unmentioned, it asks about it in one short line and waits for your answer; it never assumes a session was missed. Then it proposes how the rest of the deka fits. A skipped day is asked about the next evening.
 
 **Review.** On Day 10 Deka opens the review in the chat: what held, what slipped, one pattern. It then drafts the next deka's goals and schedule. Confirming it starts the next deka with a fresh thread.
 
@@ -44,7 +44,7 @@ All data lives in localStorage on the device, including the chat threads, the su
 
 ### How Deka works
 
-Each message is one request to `POST /api/chat`, answered as server sent events (`text`, `goals`, `log`, `proposal`, `summary`, `error`, `done`). The server is stateless: the app sends the goals, the schedule with what is done or missed, today's date, the date and weekday of every day, the last 30 messages and a summary of older ones. When older messages drop out of that window, Deka writes the summary itself with `save_summary`.
+Each message is one request to `POST /api/chat`, answered as server sent events (`text`, `goals`, `log`, `proposal`, `summary`, `error`, `done`). The server is stateless: the app sends the goals, the schedule with what is done or missed, today's date, the date and weekday of every day, the last 30 messages and a summary of older ones. While a proposal card waits for Confirm, the app also sends every session on it, so a tweak adjusts that card instead of starting over. When older messages drop out of that window, Deka writes the summary itself with `save_summary`.
 
 Claude replies in text and calls three tools:
 
@@ -54,7 +54,7 @@ Claude replies in text and calls three tools:
 | `log_day` | Marks sessions done or missed on a day | Only days that have started, known goals |
 | `propose_schedule` | A full schedule for what is left, with short change lines for the card | Days 1 to 9, counts match targets, no goal twice on a day, done and missed sessions never move, nothing on a passed day |
 
-A call that fails its checks goes back to Claude once with the errors. If the second try fails too, the turn ends with a plain message and a Try again link, and nothing reaches the app. The app checks a proposal again when you tap Confirm, in case the plan changed by hand since.
+Deka writes its reply first and then calls its tools, so words appear while the plan is built. Once the reply is written and every call passes its checks, the turn ends without another request. A call that fails its checks goes back to Claude once with the errors. If the second try fails too, the turn ends with a plain message and a Try again link, and nothing reaches the app. The app checks a proposal again when you tap Confirm, in case the plan changed by hand since.
 
 ### Data from before the rename
 
@@ -69,7 +69,7 @@ Set these in the Vercel project under Settings, Environment Variables, for Produ
 | `ANTHROPIC_API_KEY` | yes | Server only. Never sent to the browser. |
 | `DEKA_PASSCODE` | yes | The one passcode. Needed to log in and for every `/api` call. Changing it signs every device out. Falls back to `SPAN_PASSCODE` when unset. |
 | `CLAUDE_MODEL` | no | Defaults to `claude-opus-5-5`. |
-| `CLAUDE_EFFORT` | no | `low`, `medium` (default), `high`. Higher plans more carefully but replies start later and cost more. |
+| `CLAUDE_EFFORT` | no | `low` (default), `medium`, `high`. In real runs low planned as well as medium, with the first word sooner and about 17% less cost; see `test/real-runs/README.md`. |
 | `DEKA_MOCK` | no | Local only. `1` plans with a scripted stand in when there is no key. Ignored in production. |
 
 ## Local dev
@@ -89,7 +89,7 @@ npm test
 
 With no key, `DEKA_MOCK=1 DEKA_PASSCODE=test npm run dev` runs the whole app against a scripted stand in, so you can work on the UI without spending credit.
 
-`node --env-file=.env.local scripts/real-runs.js --runs 2 --out test/real-runs` plays seven scenarios against the real API through the real server and tool loop (planning, tweaks, check ins, the Day 10 review), checks each turn, and writes the transcripts with timing and cost. It costs about $0.55 a run.
+`node --env-file=.env.local scripts/real-runs.js --runs 2 --out test/real-runs` plays eight scenarios against the real API through the real server and tool loop (planning, tweaks, check ins, the Day 10 review, a long chat that needs a summary), checks each turn, and writes the transcripts with timing and cost. It costs about $0.45 a run. Set `CLAUDE_MODEL` and `CLAUDE_EFFORT` to try other setups, and `--only 8` to run one scenario.
 
 To try the app on your phone, open your machine's LAN address on the same Wi-Fi. Mic input needs HTTPS or localhost, so over plain LAN use the keyboard's own dictation.
 

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { runChat, buildMessages } = require('../lib/chat');
+const { runChat, buildMessages, contextBlock } = require('../lib/chat');
 
 const days = Array.from({ length: 10 }, (_, i) => ({ day: i + 1, date: `2026-09-${String(23 + i).padStart(2, '0')}`, weekday: 'Wednesday' }));
 const body = extra => ({ phase: 'planning', today: 'Wednesday 2026-09-23', days, goals: [{ id: 'run', name: 'Run', type: 'do', tag: '', target: 2 }], schedule: [], messages: [], message: 'plan it', ...extra });
@@ -86,10 +86,33 @@ test('the conversation alternates roles and ends with the context and the new me
   assert.equal(msgs[2].content, 'good\n\nreally');
 });
 
-test('text from a second round joins the first with one space', async () => {
-  const ev = await collect(scripted([
-    { text: 'Here it is.', tools: [['propose_schedule', { occurrences: [{ goal_id: 'run', day: 2, detail: '' }, { goal_id: 'run', day: 5, detail: '' }], changes: ['Runs on Days 2 and 5'] }]] },
-    { text: 'Confirm when it looks right.' },
-  ]), body());
-  assert.equal(ev.filter(e => e[0] === 'text').map(e => e[1].delta).join(''), 'Here it is. Confirm when it looks right.');
+const twoRuns = days => ['propose_schedule', { occurrences: days.map(day => ({ goal_id: 'run', day, detail: '' })), changes: ['Runs'] }];
+
+test('a written reply with valid calls ends the turn without a follow up request', async () => {
+  const client = scripted([{ text: 'Here it is.', tools: [twoRuns([2, 5])] }, { text: 'Never sent.' }]);
+  const ev = await collect(client, body());
+  assert.equal(client.calls.length, 1);
+  assert.equal(ev.filter(e => e[0] === 'text').map(e => e[1].delta).join(''), 'Here it is.');
+  assert.equal(ev.filter(e => e[0] === 'proposal').length, 1);
+});
+
+test('calls made before any reply get a follow up request for the reply', async () => {
+  const client = scripted([{ tools: [twoRuns([2, 5])] }, { text: 'Runs on days 2 and 5.' }]);
+  const ev = await collect(client, body());
+  assert.equal(client.calls.length, 2);
+  assert.equal(ev.filter(e => e[0] === 'text').map(e => e[1].delta).join(''), 'Runs on days 2 and 5.');
+});
+
+test('text from a retry round joins the first with one space', async () => {
+  const client = scripted([{ text: 'Here it is.', tools: [twoRuns([3, 3])] }, { text: 'Fixed.', tools: [twoRuns([3, 7])] }]);
+  const ev = await collect(client, body());
+  assert.equal(client.calls.length, 2);
+  assert.equal(ev.filter(e => e[0] === 'text').map(e => e[1].delta).join(''), 'Here it is. Fixed.');
+});
+
+test('an open card reaches Claude with every session', () => {
+  const card = { changes: ['Runs on days 2 and 6'], sessions: [{ goal_id: 'run', day: 2, detail: '' }, { goal_id: 'run', day: 6, detail: 'easy' }] };
+  const ctx = JSON.parse(contextBlock(body({ open_card: card })).match(/<deka>\n(.*)\n<\/deka>/)[1]);
+  assert.deepEqual(ctx.open_card, card);
+  assert.equal('open_card' in JSON.parse(contextBlock(body()).match(/<deka>\n(.*)\n<\/deka>/)[1]), false);
 });

@@ -12,6 +12,10 @@ process.env.DEKA_PASSCODE = 'uitest';
 process.env.MOCK_DELAY = '4';
 const { createApp } = require('../server');
 const mock = require('../lib/mock');
+// Every request the app makes to Claude, as the server built it.
+const sent = [];
+const spy = { messages: { stream: params => { sent.push(params); return mock.messages.stream(params); } } };
+const lastContext = () => JSON.parse(sent.at(-1).messages.at(-1).content.match(/<deka>\n(.*)\n<\/deka>/)[1]);
 
 const CHROME = process.env.CHROME_PATH || [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -84,7 +88,7 @@ const lastDeka = () => page.js("[...document.querySelectorAll('.msg.deka .t')].p
 
 test.describe('Deka app', { skip }, () => {
   test.before(async () => {
-    server = createApp({ client: mock }).listen(0);
+    server = createApp({ client: spy }).listen(0);
     await new Promise(r => server.once('listening', r));
     base = `http://127.0.0.1:${server.address().port}/`;
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'deka-ui-'));
@@ -143,6 +147,8 @@ test.describe('Deka app', { skip }, () => {
     assert.equal(await page.js("document.activeElement.id"), 'msg');
     assert.equal(await page.js("document.getElementById('msg').placeholder"), 'What should change?');
     await say('keep day 4 free'); await idle();
+    const open = sent.at(-1) && lastContext().open_card;
+    assert.ok(open && open.sessions.length === 10, 'the tweak carries the open card with every session');
     assert.match(await page.js("document.querySelectorAll('.card')[1].textContent"), /Replaced by a newer plan/);
     await click('[data-a=confirm]');
     const st = await stored();
