@@ -1,8 +1,8 @@
 // Offline shell. The page opens from the cache at once, so a sleeping server
 // never holds it up, and a fresh copy is saved in the background for next time.
 // Fonts and icons come from the cache first. The API is never cached.
-const CACHE = 'deka-v3';
-const SHELL = ['/', '/manifest.webmanifest', '/icon.svg', '/icon-180.png', '/icon-192.png', '/fonts/melomaniac-serif-v0.1.woff'];
+const CACHE = 'deka-v4';
+const SHELL = ['/', '/manifest.webmanifest', '/brand/icon.svg', '/brand/icon-180.png', '/brand/icon-192.png', '/fonts/melomaniac-serif-v0.1.woff2', '/fonts/inter-deka.woff2'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -33,7 +33,7 @@ self.addEventListener('fetch', e => {
 
   e.respondWith(
     caches.match(req).then(hit => hit || fetch(req).then(res => {
-      if (res.ok && (url.origin === location.origin || url.hostname.endsWith('gstatic.com') || url.hostname.endsWith('googleapis.com'))) {
+      if (res.ok && url.origin === location.origin) {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(req, copy));
       }
