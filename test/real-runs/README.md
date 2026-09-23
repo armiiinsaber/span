@@ -1,6 +1,18 @@
 # Real runs
 
-## Latest: guardrails, scenarios 11 to 18 twice and 1 to 10 once, on Opus 5.5 at low effort
+## Latest: the goals card, scenarios 1, 2 and 19 twice, on Opus 5.5 at low effort
+
+In `goals-card/`, run on 2026-09-23 after trims became data (`suggest_trim`) shown on the goals card, and the reply stopped listing goals and counts. Scenario 19 is a five paragraph message with ten goals, two of them daily, and time alone every other evening; after the trim it taps Use suggestion and checks the plan keeps evenings free.
+
+| Scenario | Run 1 | Run 2 |
+|---|---|---|
+| 1 full dump | pass | pass |
+| 2 book and trim | pass | pass |
+| 19 rambling | pass | pass |
+
+Check changes in this pass: scenario 1 now needs a structured trim and a reply that names no goals with counts, in place of the old checks for a count and a trim in the text. The first pair of scenario 19 failed on two checks of mine (Deka added a goal for the time alone, and lunch and climbing were counted as evening plans) and on repeated text from a retry round, which the server now drops.
+
+## Earlier: guardrails, scenarios 11 to 18 twice and 1 to 10 once, on Opus 5.5 at low effort
 
 In `guardrails/` and `guardrails-regression/`, run on 2026-09-23 after Deka gained a scope, a care rule and hard limits on the server. Scenario 18 checks the off topic streak: three off topic messages in a row, and only the third reply says Deka is built only for planning.
 

@@ -81,7 +81,11 @@ class App {
     const lines = m => {
       let t = m.text;
       for (const c of m.cards || []) {
-        if (c.type === 'goals') t += `\n[Goals updated: ${c.lines.join('; ')}]`;
+        if (c.type === 'goals' && c.lines.length) t += `\n[Goals updated: ${c.lines.join('; ')}]`;
+        if (c.type === 'goals' && c.trim) {
+          const name = id => (this.S.current.intentions.find(g => g.id === id) || (this.S.next && this.S.next.intentions.find(g => g.id === id)) || { name: id }).name;
+          t += `\n[Suggested a trim: ${c.trim.trims.map(x => `${name(x.goal_id)} ${x.requested} to ${x.suggested}`).join(', ')}. ${c.trim.choice === 'use' ? 'They used the suggestion' : c.trim.choice === 'keep' ? 'They kept their counts' : 'Waiting for them to choose'}]`;
+        }
         if (c.type === 'log') t += `\n[Logged day ${c.day}]`;
         if (c.type === 'proposal') t += `\n[Proposed a plan: ${c.summary || (c.changes || []).join('; ')}. ${c.status === 'open' ? 'Waiting for them to confirm' : c.status}]`;
         if (c.type === 'status') t += '\n[Showed where we are]';
@@ -184,6 +188,12 @@ class App {
       span.status = 'live';
     }
     return true;
+  }
+
+  // Tap Use suggestion: lower each target the trim names, as the app does before it sends the message.
+  useTrim(trim) {
+    for (const t of trim.trims) { const g = this.S.current.intentions.find(x => x.id === t.goal_id); if (g && g.target === t.requested) g.target = t.suggested; }
+    trim.choice = 'use';
   }
 
   openCard() {
@@ -289,6 +299,11 @@ async function turn(ctx, text, event, ask) {
       if (ev === 'text') { if (firstWord == null && d.delta.trim()) firstWord = Date.now(); msg.text += d.delta; }
       else if (ev === 'error') msg.error = d.message;
       else if (ev === 'status') msg.cards.push({ type: 'status' });
+      else if (ev === 'trim') {
+        let card = [...msg.cards].reverse().find(c => c.type === 'goals');
+        if (!card) { card = { type: 'goals', lines: [], changes: [] }; msg.cards.push(card); }
+        card.trim = { trims: d.trims, reason: d.reason, choice: null };
+      }
       else if (ev === 'off_topic') msg.offTopic = true;
       else if (ev === 'summary') { span.summary = d.summary; span.summarizedUpTo = Math.max(0, summarizeTo); msg.cards.push({ type: 'summary', summary: d.summary }); }
       else if (ev === 'goals') msg.cards.push({ type: 'goals', lines: app.applyGoals(target === 'next' ? app.S.next : span, d.changes), changes: d.changes });
@@ -338,6 +353,7 @@ async function turn(ctx, text, event, ask) {
     invalid: sink.invalid,
     improved: sink.improved.length,
     offTopic: Boolean(msg.offTopic),
+    trim: (msg.cards.find(c => c.trim) || {}).trim || null,
     score: msg.cards.filter(c => c.type === 'proposal').map(c => c.score),
     rawDashes: DASH.test(raw),
     toolDashes: toolStrings.some(s => DASH.test(s)),
@@ -424,6 +440,8 @@ const cardOcc = (span, card) => [...span.occurrences.filter(o => o.done || o.mis
 /* The scenarios */
 
 const START = '2026-09-23';
+// A reply that lists goals with their counts, which the goals card now carries.
+const LISTS = /\b(gym|runs?|rentletter|music|mom|sober|date|friends|piano|project|climb\w*|parents)\b[^.?]{0,12}\b\d+\b|\b\d+\s+(runs|gym|nights|sessions|times|visits|workouts)\b/i;
 
 async function run(n) {
   const app = new App(START);
@@ -463,11 +481,13 @@ async function run(n) {
         if (g.type !== type) f.push(`${g.name} has type ${g.type}, not ${type}`);
         if (n && g.target !== n && !trimmedNow) f.push(`${g.name} target ${g.target}, asked for ${n}`);
       }
+      // The card carries the goals and counts, so the reply names only the reason.
+      if (!t.trim) f.push('no structured trim for the card');
+      else if (!t.trim.trims.every(x => x.suggested < x.requested)) f.push('a trim that does not lower');
+      if (LISTS.test(t.reply)) f.push('the reply lists goals or counts');
       if (!/(book|pages?|chapters?|left)[^.?]*\?/i.test(t.reply)) f.push('does not ask how much of the book is left');
       else if (!/\?\s*$/.test(t.reply)) f.push('the book question is not last');
-      if (!/too much|a lot|won.t fit|doesn.t fit|not fit|more than|heavy|stretch|overload|packed|crowd/i.test(t.reply)) f.push('does not say plainly it is too much');
-      if (!/\b(\d+|fourteen|thirty\w*)\b/i.test(t.reply)) f.push('gives no count');
-      if (!/(cut|drop|trim|down to|fewer|lower|reduce|I.d do|I would do|I.d go with|I.d suggest)[^.]*\d/i.test(t.reply)) f.push('no specific trim suggestion');
+      if (!/too much|too full|a lot|won.t fit|doesn.t fit|not fit|more than|heavy|stretch|overload|packed|crowd|lighter/i.test(t.reply)) f.push('does not say plainly it is too much');
       if (t.cards.some(c => c.type === 'proposal')) f.push('proposed a schedule before the book size was known');
     });
 
@@ -878,6 +898,43 @@ async function run(n) {
       }
       notes.push(`streak after three: ${ctx.app.S.current.offStreak}`);
     });
+
+    await scenario('19 rambling', async (f, notes) => {
+      const a = new App(START); ctx.app = a;
+      const text = [
+        'Okay so this next stretch is a lot. Work has been intense and I keep telling myself I will get back into shape, so I want to hit the gym five times and go for four runs. My friend Jess also got me into climbing, so two climbing sessions would be great.',
+        'Socially I have been a ghost. I want to have dinner with friends four times, see my parents twice for Sunday lunch, and I owe my partner two proper date nights.',
+        'I also started learning piano again and want five practice sessions, and my side project needs real hours, maybe six evenings.',
+        'Two small things every single day: ten minutes of meditation in the morning and reading before bed.',
+        'But honestly the most important thing: I need time alone every other evening, no plans at all, just me. I burn out otherwise.',
+      ].join('\n\n');
+      const t = await say(text);
+      f.push(...turnChecks(t));
+      const goals = a.S.current.intentions;
+      notes.push(`goals: ${goals.map(g => `${g.name} ${g.target}`).join(', ')}`);
+      // Ten goals, or eleven when Deka makes the time alone a goal of its own.
+      const alone = goals.find(g => /alone|quiet|free|me time|solo/i.test(`${g.id} ${g.name}`));
+      if (goals.length !== 10 + (alone ? 1 : 0)) f.push(`${goals.length} goals, not 10`);
+      if (goals.filter(g => g.target === 9).length !== 2) f.push('the two daily goals are not at 9');
+      if (LISTS.test(t.reply)) f.push('the reply lists goals or counts');
+      if (!t.trim) { f.push('no structured trim'); return; }
+      notes.push(`trim: ${t.trim.trims.map(x => `${x.goal_id} ${x.requested} to ${x.suggested}`).join(', ')} (${t.trim.reason})`);
+      const social = goals.filter(g => /friend|parent|date|dinner|lunch/i.test(`${g.id} ${g.name}`)).map(g => g.id);
+      if (!t.trim.trims.some(x => social.includes(x.goal_id))) f.push('the trim leaves every social plan as asked');
+      // Tap Use suggestion, then Deka plans.
+      a.useTrim(t.trim);
+      const t2 = await say('Use the suggestion');
+      f.push(...turnChecks(t2).map(x => `plan: ${x}`));
+      const card = lastProposal(t2);
+      if (!card) { f.push('plan: no proposal after Use suggestion'); return; }
+      for (const x of t.trim.trims) if (card.occurrences.filter(o => o.goal_id === x.goal_id).length !== x.suggested) f.push(`plan: ${x.goal_id} is not at the suggested ${x.suggested}`);
+      // Time alone every other evening: evenings with no dinner or date. Lunch and climbing are by day.
+      const evening = goals.filter(g => /friend|date|dinner/i.test(`${g.id} ${g.name}`)).map(g => g.id);
+      const free = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(d => !card.occurrences.some(o => o.day === d && evening.includes(o.goal_id)));
+      notes.push(`evenings with no dinner or date: ${free.join(', ')}${alone ? `; alone evenings on ${card.occurrences.filter(o => o.goal_id === alone.id).map(o => o.day).join(', ')}` : ''}`);
+      if (free.length < 4) f.push(`plan: only ${free.length} evenings free of dinners and dates, for time alone every other evening`);
+      if (alone) for (const o of card.occurrences.filter(o => o.goal_id === alone.id)) if (card.occurrences.some(x => x.day === o.day && evening.includes(x.goal_id))) f.push(`plan: a dinner or date on alone evening ${o.day}`);
+    });
   } finally {
     server.close();
   }
@@ -967,7 +1024,7 @@ function transcript(r, s) {
 }
 
 (async () => {
-  console.log(`Deka real runs: ${RUNS} x 18 scenarios on ${MODEL}`);
+  console.log(`Deka real runs: ${RUNS} x 19 scenarios on ${MODEL}`);
   const runs = await Promise.all(Array.from({ length: RUNS }, (_, i) => run(i + 1)));
   const rows = [];
   for (const r of runs) for (const s of r.results) for (const t of s.turns) rows.push({ run: r.n, scenario: s.name, said: t.said.slice(0, 40), ttfw: t.ttfw, total: t.total, ...t.usage, cost: +t.cost.toFixed(4), rounds: t.rounds, plan_check: t.score.filter(Boolean) });
