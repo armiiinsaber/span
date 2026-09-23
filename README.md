@@ -20,8 +20,8 @@ public/sw.js        Offline shell for the installed PWA
 public/brand/       Every icon and iOS splash screen, built from brand/ (see Logo)
 public/fonts/       Melomaniac Serif and Inter, self hosted as subset WOFF2
 brand/              The Deka mark: the source PNG and the traced SVGs
-scripts/            trace_mark.py (PNG to SVG) and brand.js (SVG to icons and splash screens)
-test/               node:test suites; ui.test.js drives headless Chrome
+scripts/            trace_mark.py (PNG to SVG), brand.js (SVG to icons and splash screens), real-runs.js (Deka against the real API)
+test/               node:test suites; ui.test.js drives headless Chrome; real-runs/ holds the latest real API transcripts
 ```
 
 The app has three tabs:
@@ -88,6 +88,8 @@ npm test
 `vercel dev` runs the app the way Vercel does: files in `public/` are served as static files and `server.js` runs as the function. Without the CLI, `npm run dev` serves the same thing with plain Node.
 
 With no key, `DEKA_MOCK=1 DEKA_PASSCODE=test npm run dev` runs the whole app against a scripted stand in, so you can work on the UI without spending credit.
+
+`node --env-file=.env.local scripts/real-runs.js --runs 2 --out test/real-runs` plays seven scenarios against the real API through the real server and tool loop (planning, tweaks, check ins, the Day 10 review), checks each turn, and writes the transcripts with timing and cost. It costs about $0.55 a run.
 
 To try the app on your phone, open your machine's LAN address on the same Wi-Fi. Mic input needs HTTPS or localhost, so over plain LAN use the keyboard's own dictation.
 
