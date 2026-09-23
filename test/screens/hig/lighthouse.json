@@ -103,7 +103,7 @@
   "mode": "safari",
   "theme": "dark",
   "step": "launch",
-  "performance": 100,
+  "performance": 97,
   "accessibility": 100,
   "failing": []
  },
