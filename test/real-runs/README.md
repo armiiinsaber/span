@@ -12,6 +12,8 @@ In `goals-card/`, run on 2026-09-23 after trims became data (`suggest_trim`) sho
 
 Check changes in this pass: scenario 1 now needs a structured trim and a reply that names no goals with counts, in place of the old checks for a count and a trim in the text. The first pair of scenario 19 failed on two checks of mine (Deka added a goal for the time alone, and lunch and climbing were counted as evening plans) and on repeated text from a retry round, which the server now drops.
 
+In `trim-by-text/`: scenarios 1 and 2 once more after answering a trim in words went through `resolve_trim`. Both pass; in scenario 2, "Your trim sounds good" was applied with `resolve_trim` and planned in the same turn.
+
 ## Earlier: guardrails, scenarios 11 to 18 twice and 1 to 10 once, on Opus 5.5 at low effort
 
 In `guardrails/` and `guardrails-regression/`, run on 2026-09-23 after Deka gained a scope, a care rule and hard limits on the server. Scenario 18 checks the off topic streak: three off topic messages in a row, and only the third reply says Deka is built only for planning.

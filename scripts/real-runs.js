@@ -84,7 +84,7 @@ class App {
         if (c.type === 'goals' && c.lines.length) t += `\n[Goals updated: ${c.lines.join('; ')}]`;
         if (c.type === 'goals' && c.trim) {
           const name = id => (this.S.current.intentions.find(g => g.id === id) || (this.S.next && this.S.next.intentions.find(g => g.id === id)) || { name: id }).name;
-          t += `\n[Suggested a trim: ${c.trim.trims.map(x => `${name(x.goal_id)} ${x.requested} to ${x.suggested}`).join(', ')}. ${c.trim.choice === 'use' ? 'They used the suggestion' : c.trim.choice === 'keep' ? 'They kept their counts' : 'Waiting for them to choose'}]`;
+          t += `\n[Suggested a trim: ${c.trim.trims.map(x => `${name(x.goal_id)} ${x.requested} to ${x.suggested}`).join(', ')}. ${c.trim.choice === 'use' ? 'They used the suggestion' : c.trim.choice === 'keep' ? 'They kept their counts' : c === this.latestTrim(span) ? 'Waiting for them to choose' : 'Never chosen, now replaced'}]`;
         }
         if (c.type === 'log') t += `\n[Logged day ${c.day}]`;
         if (c.type === 'proposal') t += `\n[Proposed a plan: ${c.summary || (c.changes || []).join('; ')}. ${c.status === 'open' ? 'Waiting for them to confirm' : c.status}]`;
@@ -109,6 +109,8 @@ class App {
       event: event || null,
       off_topic_streak: span.offStreak || 0,
     };
+    const trimCard = this.latestTrim(span);
+    if (trimCard && !trimCard.trim.choice) body.open_trim = { trims: trimCard.trim.trims };
     if (older.length) body.to_summarize = older;
     const which = target === this.S.next ? 'next' : 'current';
     const open = span.chat.flatMap(m => m.cards || []).filter(c => c.type === 'proposal' && c.status === 'open' && (c.target || 'current') === which).pop();
@@ -188,6 +190,11 @@ class App {
       span.status = 'live';
     }
     return true;
+  }
+
+  latestTrim(span) {
+    for (const m of [...span.chat].reverse()) for (const c of [...(m.cards || [])].reverse()) if (c.type === 'goals' && c.trim) return c;
+    return null;
   }
 
   // Tap Use suggestion: lower each target the trim names, as the app does before it sends the message.
@@ -299,6 +306,11 @@ async function turn(ctx, text, event, ask) {
       if (ev === 'text') { if (firstWord == null && d.delta.trim()) firstWord = Date.now(); msg.text += d.delta; }
       else if (ev === 'error') msg.error = d.message;
       else if (ev === 'status') msg.cards.push({ type: 'status' });
+      else if (ev === 'trim_resolved') {
+        const card = app.latestTrim(span);
+        if (card && !card.trim.choice) { if (d.choice === 'use') app.useTrim(card.trim); else card.trim.choice = 'keep'; }
+        msg.resolved = d.choice;
+      }
       else if (ev === 'trim') {
         let card = [...msg.cards].reverse().find(c => c.type === 'goals');
         if (!card) { card = { type: 'goals', lines: [], changes: [] }; msg.cards.push(card); }
@@ -354,6 +366,7 @@ async function turn(ctx, text, event, ask) {
     improved: sink.improved.length,
     offTopic: Boolean(msg.offTopic),
     trim: (msg.cards.find(c => c.trim) || {}).trim || null,
+    resolved: msg.resolved || null,
     score: msg.cards.filter(c => c.type === 'proposal').map(c => c.score),
     rawDashes: DASH.test(raw),
     toolDashes: toolStrings.some(s => DASH.test(s)),
@@ -495,6 +508,7 @@ async function run(n) {
     await scenario('2 book and trim', async f => {
       const t = await say('About 120 pages left. Your trim sounds good.');
       f.push(...turnChecks(t));
+      if (t.resolved !== 'use') f.push('accepted in words, but the trim was not applied through resolve_trim');
       const card = lastProposal(t);
       if (!card) { f.push('no proposal'); return; }
       const s = span();
