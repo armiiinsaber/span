@@ -311,7 +311,7 @@ test.describe('Deka app', { skip }, () => {
     assert.match(await page.js("document.querySelector('.toast').textContent"), /Goal updated\.\s*Undo/);
   });
 
-  test('a tall sheet opens at medium, drags up to large, and swipes down to close', async () => {
+  test('the goal sheet opens at large, steps down to medium, and swipes down to close', async () => {
     await seed(liveState(4));
     await click('[data-tab=goals]');
     await click('.row-btn[data-iid=run]');
@@ -322,9 +322,10 @@ test.describe('Deka app', { skip }, () => {
       h.dispatchEvent(ev('pointerdown', y)); document.dispatchEvent(ev('pointermove', y + ${dy})); document.dispatchEvent(ev('pointerup', y + ${dy}));
     })()`);
     const cls = () => page.js("document.getElementById('sheet')?.className || 'closed'");
-    assert.match(await cls(), /medium/, 'opens at medium');
-    await drag(-120); assert.doesNotMatch(await cls(), /medium/, 'up to large');
+    assert.match(await cls(), /large/, 'the goal sheet opens at large, every field in view');
     await drag(120); assert.match(await cls(), /medium/, 'down to medium');
+    await drag(-120); assert.match(await cls(), /large/, 'up to large');
+    await drag(120); assert.match(await cls(), /medium/);
     await drag(120); assert.equal(await cls(), 'closed', 'down again closes it');
     // A short sheet fits its content and one swipe closes it.
     await click('[data-a=more]');
