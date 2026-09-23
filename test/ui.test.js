@@ -128,7 +128,11 @@ test.describe('Deka app', { skip }, () => {
     await page.waitFor("document.querySelector('.say .mk-inline.live')", 2000);
     await idle();
     assert.match(await lastDeka(), /Got it: run 6, gym 4, sober night 3/);
-    assert.match(await text('.card'), /Added Run, 6 times/);
+    // The card: one row per goal, no "Added", counts as dots in one column.
+    assert.equal(await page.js("document.querySelectorAll('.goals-card .gr').length"), 3);
+    assert.doesNotMatch(await text('.goals-card'), /Added/);
+    assert.equal(await page.js("document.querySelectorAll('.goals-card .gr.c-body .dots i').length"), 10, 'run 6 and gym 4 as dots');
+    assert.equal(await page.js("document.querySelectorAll('.goals-card [data-a=trim-use]').length"), 0, 'no trim, no buttons');
     assert.deepEqual((await stored()).current.intentions.map(g => [g.id, g.target]), [['run', 6], ['gym', 4], ['sober', 3]]);
     assert.match(await page.js("document.querySelector('.toast').textContent"), /Goals updated\.\s*Undo/);
     await click('[data-tab=goals]');
@@ -136,6 +140,72 @@ test.describe('Deka app', { skip }, () => {
     await click('.toast [data-a=toast-undo]');
     assert.equal((await stored()).current.intentions.length, 0);
     assert.equal(await page.js("document.querySelectorAll('.rows li').length"), 0);
+  });
+
+  test('a trim shows as faded dots and a meter, Use suggestion lowers the counts and plans, Undo puts them back', async () => {
+    await fresh(); await click('[data-a=intro-start]');
+    await say('eight runs, gym eight times, rentletter eight nights, make music eight nights, see mom five times');
+    await idle();
+    assert.match(await lastDeka(), /Too full/);
+    assert.doesNotMatch(await lastDeka(), /\d/, 'the reply names no counts');
+    const card = await page.js(`(() => { const c = document.querySelector('.goals-card'); return {
+      cut: c.querySelectorAll('.dots i.cut').length, arrows: [...c.querySelectorAll('.num')].filter(n => /→/.test(n.textContent)).length,
+      meter: c.querySelector('.meter .ml').textContent, buttons: c.querySelectorAll('[data-a=trim-use], [data-a=trim-keep]').length,
+      aligned: new Set([...c.querySelectorAll('.num')].map(n => Math.round(n.getBoundingClientRect().right))).size }; })()`);
+    assert.ok(card.cut > 0, 'faded dots for the cut');
+    assert.equal(card.arrows, 5, 'each trimmed goal shows old and new');
+    assert.match(card.meter, /Very full.*→.*/);
+    assert.equal(card.buttons, 2);
+    assert.equal(card.aligned, 1, 'the counts line up in one column');
+    const green = await page.js(`[...document.querySelectorAll('.goals-card, .goals-card *')].some(e => /184, 240, 110/.test(getComputedStyle(e).backgroundColor + getComputedStyle(e).color + getComputedStyle(e).borderColor))`);
+    assert.equal(green, false, 'no chartreuse on the card');
+    await click('[data-a=trim-use]');
+    await page.waitFor("document.querySelector('.card [data-a=confirm]')", 10000);
+    await idle();
+    let cur = (await stored()).current;
+    assert.equal(cur.intentions.find(g => g.id === 'run').target, 6, 'eight runs became six');
+    assert.match(await text('.goals-card .state'), /Suggestion used/);
+    assert.equal(cur.chat.filter(m => m.role === 'user').at(-1).text, 'Use the suggestion');
+    await click('.toast [data-a=toast-undo]');
+    cur = (await stored()).current;
+    assert.equal(cur.intentions.find(g => g.id === 'run').target, 8, 'Undo restores the counts');
+  });
+
+  test('the goals card lines up at every width in both themes, with no orphan words', async () => {
+    const G = (id, name, icon, category, target, type = 'do') => ({ id, name, icon, category, type, target, was: null, op: 'add' });
+    const rows = [G('friends', 'Dinner with old friends', 'friends', 'people', 4, 'see'), G('parents', 'Sunday lunch with parents', 'family', 'people', 2, 'see'),
+      G('date', 'Date night', 'date', 'fun', 2, 'see'), G('gym', 'Gym', 'gym', 'body', 5), G('run', 'Run', 'run', 'body', 4), G('climb', 'Climbing', 'hike', 'body', 2),
+      G('piano', 'Piano practice', 'music', 'fun', 5), G('project', 'Side project', 'laptop', 'work', 6), G('meditate', 'Meditate', 'meditate', 'rest', 9), G('read', 'Read before bed', 'book', 'mind', 9)];
+    const st = liveState(4);
+    st.current.intentions = rows.map(r => ({ id: r.id, name: r.name, type: r.type, tag: '', target: r.target, icon: r.icon, category: r.category }));
+    st.current.occurrences = [];
+    st.current.status = 'planning';
+    st.current.chat = [{ id: 'u1', role: 'user', text: 'a long message', ts: 1, cards: [] }, { id: 'd1', role: 'deka', text: 'Too full for real time alone. Here is a lighter version.', ts: 2, cards: [
+      { type: 'goals', id: 'g1', lines: [], rows, target: 'current', load: { req: 48 / 9, sug: 40 / 9 },
+        trim: { trims: [{ goal_id: 'friends', requested: 4, suggested: 2 }, { goal_id: 'project', requested: 6, suggested: 4 }, { goal_id: 'piano', requested: 5, suggested: 3 }], reason: 'time alone', choice: null } }] }];
+    const check = `(() => {
+      const c = document.querySelector('.goals-card'), right = sel => new Set([...c.querySelectorAll(sel)].map(n => Math.round(n.getBoundingClientRect().right)));
+      const orphans = [...c.querySelectorAll('.gname, .meter .ml, .meter .mv')].filter(el => {
+        const r = document.createRange(), tops = [];
+        const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        for (let n = walk.nextNode(); n; n = walk.nextNode()) for (const m of n.textContent.matchAll(/\\S+/g)) { r.setStart(n, m.index); r.setEnd(n, m.index + m[0].length); const b = r.getClientRects()[0]; if (b) tops.push(Math.round(b.top)); }
+        const lines = [...new Set(tops)];
+        return lines.length > 1 && tops.filter(t => t === lines.at(-1)).length === 1;
+      }).map(el => el.textContent);
+      return { nums: right('.num').size, dots: right('.dots').size, daily: c.querySelectorAll('.daily').length, cut: c.querySelectorAll('.cut').length,
+        overflow: c.scrollWidth > c.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth + 1, orphans };
+    })()`;
+    for (const theme of ['light', 'dark']) {
+      await page.S('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] });
+      for (const w of [375, 390, 430]) {
+        await page.size(w);
+        await seed(st);
+        const r = await page.js(check);
+        assert.deepEqual(r, { nums: 1, dots: 1, daily: 2, cut: 6, overflow: false, orphans: [] }, `${w}px ${theme}`);
+      }
+    }
+    await page.S('Emulation.setEmulatedMedia', { features: [] });
+    await page.size(390);
   });
 
   test('a proposal waits for Confirm; Tweak opens the composer; Confirm applies it and highlights the days', async () => {

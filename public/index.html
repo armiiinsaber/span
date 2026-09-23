@@ -441,6 +441,35 @@ button.goal:active { background: var(--press); }
 .saved { font-size: var(--t-caption1); color: var(--ink-soft); text-align: right; min-height: 1.2em; margin-top: 6px; opacity: 0; transition: opacity .6s var(--ease); }
 .saved.on { opacity: 1; }
 
+/* The goals card: one aligned row per goal, grouped by category, a load meter on top. */
+.goals-card .gt { list-style: none; margin: 4px 0 0; padding: 0; }
+.gr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 40px; padding: 2px 0; }
+.gr.gap { margin-top: 10px; }
+.gr .s { --z: 1.76rem; }
+.gr .gname { font-size: var(--t-subhead); line-height: 1.3; }
+.gr.removed .gname { color: var(--ink-soft); text-decoration: line-through; text-decoration-color: var(--ink-faint); }
+.gc { display: grid; grid-template-columns: auto 3.6em; align-items: center; gap: 8px; }
+.dots { display: flex; flex-wrap: wrap; gap: 3px; justify-content: flex-end; max-width: 6.2rem; }
+.dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.dots i.cut { background: transparent; box-shadow: inset 0 0 0 1.25px var(--c); opacity: .5; }
+.dots .daily { font-size: var(--t-footnote); font-weight: 600; color: var(--c); }
+.num { text-align: right; font-size: var(--t-subhead); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.num .was { color: var(--ink-soft); }
+.meter { margin: 2px 0 12px; }
+.meter .mt { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: var(--t-footnote); }
+.meter .ml { font-weight: 600; }
+.meter .mv { color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar { position: relative; height: 6px; margin: 8px 0 18px; border-radius: 3px; background: var(--hairline); }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--rest); }
+.bar.trimmed .req { background: transparent; box-shadow: inset 0 0 0 1.25px var(--rest); opacity: .6; }
+.bar b { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); }
+.bar em { position: absolute; top: 12px; transform: translateX(-50%); font-style: normal; font-size: var(--t-caption2); color: var(--ink-soft); white-space: nowrap; }
+.goals-card .row { margin-top: 14px; }
+.goals-card.fresh .gr { animation: row-in .28s var(--ease) both; animation-delay: calc(var(--i) * 45ms); }
+.goals-card.fresh .dots i.cut { animation: cut-out .6s var(--ease) both; animation-delay: calc(var(--i) * 45ms + .35s); }
+@keyframes row-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes cut-out { from { opacity: 1; background: var(--c); } to { opacity: .5; background: transparent; } }
+
 /* Past and profile */
 .theme-seg { margin: 0 0 24px; }
 /* The theme screen */
@@ -974,6 +1003,59 @@ function goalRows(span, { live = false, editable = false, target = 'current' } =
   return h + '</ul>';
 }
 
+/* The goals card. Every goal Deka saved this turn as one aligned row: icon, name, and its count as
+   dots. A suggested trim shows the dots it would cut as faded outlines, and a meter shows how full the
+   days are before and after. Use suggestion and Keep mine answer it. */
+const CATEGORY_ORDER = ['people', 'fun', 'body', 'mind', 'work', 'rest'];
+const COMFY = 3;
+const loadWord = n => n <= 2.5 ? 'Room to breathe' : n <= 3.5 ? 'Full' : 'Very full';
+const perDay = n => (Math.round(n * 10) / 10).toString();
+// Sessions a day across the days left, as asked and with a trim. Daily habits sit in every day
+// either way, so they do not count toward how full the days are.
+function loadOf(span, trims = []) {
+  const days = isLive(span) ? Math.max(1, 10 - openFrom(span)) : 9;
+  const counted = span.intentions.filter(g => g.target < 9);
+  const left = counted.reduce((n, g) => n + Math.max(0, g.target - doneOf(span, g.id)), 0);
+  const cut = trims.filter(t => counted.some(g => g.id === t.goal_id)).reduce((n, t) => n + t.requested - t.suggested, 0);
+  return { req: left / days, sug: trims.length ? (left - cut) / days : null };
+}
+function goalsCard(msg, card, i, readonly) {
+  const trims = new Map(((card.trim && card.trim.trims) || []).map(t => [t.goal_id, t]));
+  const kept = card.trim && card.trim.choice === 'keep';
+  const rows = card.rows.slice().sort((a, b) => CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category));
+  const lis = rows.map((r, k) => {
+    const t = !kept && trims.get(r.id);
+    const gap = k > 0 && rows[k - 1].category !== r.category ? ' gap' : '';
+    if (r.op === 'remove') return `<li class="gr removed${gap}" style="--i:${k}">${sIcon(r)}<span class="gname">${nb(r.name)}</span><span class="gc"><span></span><span class="num">Removed</span></span></li>`;
+    const count = t ? t.requested : r.target;
+    const keep = t ? t.suggested : count;
+    const dots = count >= 9 && !t ? '<span class="daily">Daily</span>'
+      : Array.from({ length: count }, (_, d) => `<i${d >= keep ? ' class="cut"' : ''}></i>`).join('');
+    const was = t ? t.requested : r.was;
+    const num = count >= 9 && !t ? '' : was != null && was !== keep ? `<span class="was">${was}</span>&thinsp;→&thinsp;${keep}` : `${keep}`;
+    const said = count >= 9 && !t ? 'daily' : was != null && was !== keep ? `${was}, suggested ${keep}` : `${keep}`;
+    return `<li class="gr c-${r.category}${gap}" style="--i:${k}">${sIcon(r)}<span class="gname">${nb(r.name)}</span>
+      <span class="gc"><span class="dots" aria-hidden="true">${dots}</span><span class="num" aria-hidden="true">${num}</span><span class="sr">, ${said}</span></span></li>`;
+  }).join('');
+  let meter = '';
+  if (card.load) {
+    const { req } = card.load;
+    const sug = kept ? null : card.load.sug;
+    const pct = n => Math.min(100, (n / 6) * 100).toFixed(1);
+    const label = sug != null && loadWord(sug) !== loadWord(req) ? `${loadWord(req)} <span aria-hidden="true">→</span><span class="sr"> to</span> ${loadWord(sug)}` : loadWord(sug != null ? sug : req);
+    meter = `<div class="meter"><div class="mt"><span class="ml">${label}</span><span class="mv">${perDay(req)}${sug != null ? `&thinsp;→&thinsp;${perDay(sug)}` : ''} a&nbsp;day</span></div>
+      <div class="bar${sug != null ? ' trimmed' : ''}" aria-hidden="true"><i class="req" style="width:${pct(req)}%"></i>${sug != null ? `<i class="sug" style="width:${pct(sug)}%"></i>` : ''}<b style="left:${pct(COMFY)}%"></b><em style="left:${pct(COMFY)}%">Comfortable</em></div></div>`;
+  }
+  let actions = '';
+  if (card.trim && !readonly) {
+    actions = card.trim.choice
+      ? `<div class="state">${card.trim.choice === 'use' ? `${I.tick}Suggestion used` : 'Kept yours'}</div>`
+      : `<div class="row"><button class="btn primary" data-a="trim-use" data-m="${msg.id}" data-c="${i}">Use suggestion</button><button class="btn" data-a="trim-keep" data-m="${msg.id}" data-c="${i}">Keep mine</button></div>`;
+  }
+  return `<div class="card goals-card${card.fresh ? ' fresh' : ''}">${meter}<ul class="gt" aria-label="Goals">${lis}</ul>${actions}</div>`;
+}
+const rowOf = (g, extra = {}) => ({ id: g.id, name: g.name, type: g.type, icon: iconOf(g), category: catOf(g), target: g.target, was: null, op: 'add', ...extra });
+
 // A snapshot of where the deka stands, shown under a reply.
 function statusCard(span) {
   return { type: 'status', span: span.id, day: Math.min(10, Math.max(1, dayNum(span))),
@@ -1066,7 +1148,8 @@ const paragraphs = t => esc(t);
 
 function cardView(msg, card, i, readonly) {
   if (card.type === 'goals') {
-    return `<div class="card"><span class="eyebrow">Goals</span><ul class="lines">${card.lines.map(l => `<li>${nb(l)}</li>`).join('')}</ul></div>`;
+    if (!card.rows) return `<div class="card"><span class="eyebrow">Goals</span><ul class="lines">${card.lines.map(l => `<li>${nb(l)}</li>`).join('')}</ul></div>`;
+    return goalsCard(msg, card, i, readonly);
   }
   if (card.type === 'log') {
     const span = spanById(card.span);
@@ -1565,7 +1648,11 @@ function buildRequest(span, text, event) {
   const lines = m => {
     let t = m.text;
     for (const c of m.cards || []) {
-      if (c.type === 'goals') t += `\n[Goals updated: ${c.lines.join('; ')}]`;
+      if (c.type === 'goals' && c.lines.length) t += `\n[Goals updated: ${c.lines.join('; ')}]`;
+      if (c.type === 'goals' && c.trim) {
+        const name = id => (c.rows.find(r => r.id === id) || { name: id }).name;
+        t += `\n[Suggested a trim: ${c.trim.trims.map(x => `${name(x.goal_id)} ${x.requested} to ${x.suggested}`).join(', ')}. ${c.trim.choice === 'use' ? 'They used the suggestion' : c.trim.choice === 'keep' ? 'They kept their counts' : 'Waiting for them to choose'}]`;
+      }
       if (c.type === 'log') t += `\n[Logged day ${c.day}]`;
       if (c.type === 'proposal') t += `\n[Proposed a plan: ${c.summary || (c.changes || []).join('; ')}. ${c.status === 'open' ? 'Waiting for them to confirm' : c.status}]`;
       if (c.type === 'status') t += '\n[Showed where we are]';
@@ -1709,8 +1796,14 @@ function onEvent(turn, ev, data) {
   const target = spanFor(turn.target) || turn.span;
   if (ev === 'goals') {
     const before = clone({ i: target.intentions, o: target.occurrences });
+    const had = new Map(target.intentions.map(g => [g.id, g.target]));
     const lines = applyGoals(target, data.changes);
-    msg.cards.push({ type: 'goals', lines });
+    const rows = data.changes.map(c => {
+      const g = target.intentions.find(x => x.id === c.id);
+      if (!g) return rowOf({ ...c, target: 0 }, { op: 'remove' });
+      return rowOf(g, { op: c.op, was: c.op === 'edit' && had.get(c.id) !== g.target ? had.get(c.id) : null });
+    });
+    msg.cards.push({ type: 'goals', id: uid(), lines, rows, target: turn.target, fresh: true, load: loadOf(target) });
     toast('Goals updated.', () => { target.intentions = before.i; target.occurrences = before.o; render(); });
   } else if (ev === 'log') {
     applyLog(turn.span, data);
@@ -1723,6 +1816,16 @@ function onEvent(turn, ev, data) {
     const card = { type: 'proposal', id: uid(), target: turn.target, occurrences: data.occurrences, summary: data.summary || '', changes: data.changes || [], changed_days: data.changed_days, status: 'open', moved: before.length ? movedFrom(before, data.occurrences) : null };
     msg.cards.push(card);
     ui.enter.add(card.id);
+  } else if (ev === 'trim') {
+    // A trim goes on this turn's goals card, or a card of its own.
+    let card = [...msg.cards].reverse().find(c => c.type === 'goals' && c.rows);
+    if (!card) { card = { type: 'goals', id: uid(), lines: [], rows: [], target: turn.target, fresh: true }; msg.cards.push(card); }
+    for (const t of data.trims) {
+      const g = target.intentions.find(x => x.id === t.goal_id);
+      if (g && !card.rows.some(r => r.id === g.id)) card.rows.push(rowOf(g, { op: 'edit' }));
+    }
+    card.trim = { trims: data.trims, reason: data.reason || '', choice: null };
+    card.load = loadOf(target, data.trims);
   } else if (ev === 'status') {
     if (!msg.cards.some(c => c.type === 'status')) msg.cards.push(statusCard(turn.span));
   }
@@ -1738,6 +1841,7 @@ function finishTurn() {
   ui.turn = null;
   $('chat')?.removeAttribute('aria-busy');
   const { msg, span, event, ask } = t;
+  for (const c of msg.cards || []) delete c.fresh;
   // Any answered message moves the streak: one more redirect, or back to zero.
   if (!msg.error && t.text) span.offStreak = t.offTopic ? (span.offStreak || 0) + 1 : 0;
   msg.text = msg.text.trim();
@@ -2149,6 +2253,30 @@ document.addEventListener('click', e => {
       break;
     }
     case 'tweak': { ui.tweak = true; renderDock(); $('msg')?.focus(); break; }
+    case 'trim-use': case 'trim-keep': {
+      const span = chatSpan();
+      const msg = span.chat.find(m => m.id === el.dataset.m);
+      const card = msg && msg.cards[Number(el.dataset.c)];
+      if (!card || !card.trim || card.trim.choice || ui.turn) break;
+      if (a === 'trim-keep') { card.trim.choice = 'keep'; sendMessage('Keep mine'); break; }
+      // Lower each target, and drop planned sessions past it, latest first. Undo puts it all back.
+      const goals = spanFor(card.target) || span;
+      const before = clone({ i: goals.intentions, o: goals.occurrences });
+      for (const t of card.trim.trims) {
+        const g = goals.intentions.find(x => x.id === t.goal_id);
+        if (!g || g.target !== t.requested) continue;
+        g.target = t.suggested;
+        const need = g.target - doneOf(goals, g.id);
+        while (plannedOf(goals, g.id) > need) {
+          const last = occOf(goals, g.id).filter(o => !o.done && !o.missed).sort((x, y) => y.day - x.day)[0];
+          goals.occurrences = goals.occurrences.filter(o => o !== last);
+        }
+      }
+      card.trim.choice = 'use';
+      sendMessage('Use the suggestion');
+      toast('Suggestion used.', () => { goals.intentions = before.i; goals.occurrences = before.o; card.trim.choice = null; render(); });
+      break;
+    }
     case 'log-flip': {
       const span = chatSpan();
       const msg = span.chat.find(m => m.id === el.dataset.m);
