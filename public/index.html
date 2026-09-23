@@ -571,9 +571,10 @@ body.no-tabs .toast { bottom: calc(var(--safe-b) + 16px); }
 .sheet h2:focus { outline: none; }
 .sheet h2 .sheet-sub { display: block; font-size: var(--t-footnote); font-weight: 400; color: var(--ink-soft); margin-top: 2px; letter-spacing: 0; }
 .sheet .form { display: grid; gap: 18px; padding-bottom: 8px; }
-.seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); border: 1px solid var(--ink); border-radius: 2px; }
-.seg button { min-height: var(--tap); font-size: var(--t-subhead); font-weight: 600; white-space: nowrap; }
-.seg button + button { border-left: 1px solid var(--ink); }
+.seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); gap: 6px; }
+/* Segments look like the buttons: rounded and soft, the chosen one solid ink like the main button. */
+.seg button { min-height: var(--tap); padding: 0 12px; border-radius: 14px; background: var(--press); color: var(--ink); font-size: var(--t-subhead); font-weight: 600; white-space: nowrap; transition: background .2s var(--ease), color .2s var(--ease), transform .25s var(--spring); }
+.seg button:active { transform: scale(.97); }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
 .stepper { display: flex; align-items: center; justify-content: space-between; }
 .stepper .ctl { display: flex; align-items: center; gap: 10px; }
@@ -1017,6 +1018,11 @@ function introView() {
     <div class="actions"><button class="btn primary block" data-a="intro-start">Plan my first&nbsp;deka</button></div></div>`;
 }
 
+// While the session check is out on a device with no theme yet: the page color, then the still mark.
+function pendingView() {
+  return `<div class="center" aria-busy="true">${ui.slow ? mark('large') : ''}<span class="sr">Opening Deka</span></div>`;
+}
+
 // Asked once per device, right after the passcode: two previews of the chat, one tap to choose.
 function themeView() {
   const goals = [{ icon: 'run', category: 'body' }, { icon: 'gym', category: 'body' }, { icon: 'date', category: 'fun' }, { icon: 'laptop', category: 'work' }];
@@ -1241,6 +1247,7 @@ function profileView() {
 
 function renderBar() {
   const brand = `<span class="brand" role="img" aria-label="Deka">${mark('header')}<span class="mark" aria-hidden="true">Deka</span></span>`;
+  if (ui.checking) { $bar.innerHTML = ''; return; }
   if (ui.locked || !S.seen || !S.settings.theme) { $bar.innerHTML = brand; return; }
   const left = ui.sub
     ? `<button class="back" data-a="back" aria-label="Back">${I.back}</button>`
@@ -1251,7 +1258,7 @@ function renderBar() {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
 function renderDock() {
-  const show = !ui.locked && S.seen && S.settings.theme && !ui.sub && ui.tab === 'chat';
+  const show = !ui.checking && !ui.locked && S.seen && S.settings.theme && !ui.sub && ui.tab === 'chat';
   if (!show) { $dock.hidden = true; setDockHeight(); return; }
   if (!$('msg')) {
     const mic = SR ? `<button class="icon-btn" type="button" data-a="mic" aria-label="Speak">${I.mic}</button>` : '';
@@ -1394,10 +1401,11 @@ function render() {
   const flip = ui.tab === 'days' && !ui.sub && !ui.locked ? capture() : null;
   const ask = !ui.locked && !S.settings.theme;
   const intro = !ui.locked && !S.seen;
-  document.body.classList.toggle('no-tabs', ui.locked || intro || ask);
+  document.body.classList.toggle('no-tabs', ui.checking || ui.locked || intro || ask);
   renderBar();
   let kept = false;
-  if (ui.locked) $main.innerHTML = loginView();
+  if (ui.checking) $main.innerHTML = pendingView();
+  else if (ui.locked) $main.innerHTML = loginView();
   else if (ask) $main.innerHTML = themeView();
   else if (ui.status) $main.innerHTML = waitingView(ui.status);
   else if (intro) $main.innerHTML = introView();
@@ -2424,9 +2432,14 @@ function boot() {
   // Ask the browser to keep saved data even when space runs low or the site sits unused.
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
   maybeCheckin();
+  // A device that has not chosen a theme waits for the session check, so a signed out device goes
+  // straight to the passcode and the theme question comes only after a sign in. Offline, it asks anyway.
+  ui.checking = !S.settings.theme;
+  const slow = ui.checking && setTimeout(() => { if (ui.checking) { ui.slow = true; render(); } }, 400);
+  const settle = () => { if (!ui.checking) return; clearTimeout(slow); ui.checking = false; ui.slow = false; render(); };
   render();
   if (ui.tab === 'chat') toBottom();
-  wake().then(() => { flushQueue(); maybeReview(); }).catch(() => {});
+  wake().then(() => { settle(); flushQueue(); maybeReview(); }).catch(settle);
 }
 
 document.addEventListener('visibilitychange', () => {

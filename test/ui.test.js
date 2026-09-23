@@ -353,7 +353,23 @@ test.describe('Deka app', { skip }, () => {
     delete st.settings.theme;
     await seed(st);
     await page.js("fetch('/api/logout', { method: 'POST' })");
-    await page.go();
+    // Signed out and never asked: the passcode comes first, and the theme screen never flashes before it.
+    const { result: watch } = await page.S('Page.addScriptToEvaluateOnNewDocument', { source: `window.__seen = []; new MutationObserver(() => { const m = document.getElementById('main'); const k = m && (m.querySelector('.choose') ? 'theme' : m.querySelector('.login') ? 'login' : m.querySelector('.chat, .intro') ? 'app' : ''); if (k && window.__seen.at(-1) !== k) window.__seen.push(k); }).observe(document, { childList: true, subtree: true });` });
+    await page.S('Page.navigate', { url: base });
+    await page.waitFor("document.getElementById('pass')");
+    await page.S('Page.removeScriptToEvaluateOnNewDocument', { identifier: watch.identifier });
+    assert.deepEqual(await page.js('window.__seen'), ['login'], 'nothing before the passcode screen');
+    // A slow session check shows the page color, then the still mark after 400 ms, and nothing else.
+    await page.S('Network.emulateNetworkConditions', { offline: false, latency: 1500, downloadThroughput: -1, uploadThroughput: -1 });
+    try {
+      await page.S('Page.navigate', { url: base });
+      await page.waitFor("document.readyState !== 'loading' && document.getElementById('main')", 8000);
+      await page.waitFor("document.querySelector('#main .center .mk')", 3000);
+      assert.deepEqual(await page.js("({ live: document.querySelector('#main .mk').classList.contains('live'), bar: document.getElementById('barIn').innerHTML, tabs: getComputedStyle(document.getElementById('tabs')).display })"), { live: false, bar: '', tabs: 'none' });
+      await page.waitFor("document.getElementById('pass')", 8000);
+    } finally {
+      await page.S('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    }
     await page.js("(() => { document.getElementById('pass').value = 'uitest'; document.querySelector('[data-form=login]').requestSubmit(); })()");
     await page.waitFor("document.querySelector('.choose')");
     assert.match(await page.js("document.querySelector('h1').textContent"), /Light or/);
