@@ -27,6 +27,7 @@ test('fun nights on back to back days are flagged; a day apart is fine', () => {
 test('a weekend plan on a weekday is flagged while a Friday or Saturday is open', () => {
   assert.ok(keys([date], [['date', 6]]).includes('weekend-date-6'));
   assert.deepEqual(keys([date], [['date', 4]]).filter(k => k.startsWith('weekend')), []);
+  assert.deepEqual(keys([date], [['date', 5]]).filter(k => k.startsWith('weekend')), [], 'Sunday is weekend too');
   // Friday day 3 holds the date night, and Saturday is next to it, so the boys night may go midweek.
   assert.deepEqual(keys([date, boys], [['date', 3], ['boys', 7]]).filter(k => k.startsWith('weekend')), []);
 });
