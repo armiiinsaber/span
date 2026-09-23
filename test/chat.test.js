@@ -85,3 +85,11 @@ test('the conversation alternates roles and ends with the context and the new me
   assert.match(msgs.at(-1).content, /<deka>[\s\S]*"today":"Wednesday 2026-09-23"[\s\S]*check in for day 4 and day 5[\s\S]*Person: ran, missed gym/);
   assert.equal(msgs[2].content, 'good\n\nreally');
 });
+
+test('text from a second round joins the first with one space', async () => {
+  const ev = await collect(scripted([
+    { text: 'Here it is.', tools: [['propose_schedule', { occurrences: [{ goal_id: 'run', day: 2, detail: '' }, { goal_id: 'run', day: 5, detail: '' }], changes: ['Runs on Days 2 and 5'] }]] },
+    { text: 'Confirm when it looks right.' },
+  ]), body());
+  assert.equal(ev.filter(e => e[0] === 'text').map(e => e[1].delta).join(''), 'Here it is. Confirm when it looks right.');
+});

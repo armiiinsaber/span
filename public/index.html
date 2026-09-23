@@ -64,6 +64,16 @@
   --kb: 0px;
   --dock-h: 0px;
   --tap: 44px;
+  /* Glass: translucent ivory for floating layers only. Solid ivory where blur is missing. */
+  --glass: var(--paper);
+  --glass-edge: rgba(255,255,255,.6);
+  --glass-shine: inset 0 1px 0 rgba(255,255,255,.75);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :root { --glass: rgba(245,243,236,.8); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root { --glass: var(--paper); }
 }
 /* Follow the iOS text size setting. Everything below is sized in rem. */
 @supports (font: -apple-system-body) { html { font: -apple-system-body; } }
@@ -81,42 +91,67 @@ h1, h2, h3 { text-wrap: balance; font-weight: 400; margin: 0; }
 p, li, .pretty { text-wrap: pretty; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; touch-action: manipulation; background: none; border: 0; padding: 0; }
-/* Chrome of the app is not selectable; notes and Claude's words are. */
+/* Chrome of the app is not selectable; notes and messages are. */
 button, header, nav, .eyebrow, .label, .tile, .toast, .sheet-handle { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 [hidden] { display: none !important; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shine), 0 0 0 .5px var(--hairline);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* The mark. Ten dots, day 1 to day 10, along the spiral. */
+.mk { display: inline-block; flex: none; fill: currentColor; color: var(--ink); overflow: visible; vertical-align: middle; }
+.mk circle { transform-box: fill-box; transform-origin: center; }
+.mk-inline { width: 18px; height: 18px; margin-left: 4px; position: relative; top: -1px; }
+.mk-header { width: 24px; height: 24px; }
+.mk-medium { width: 48px; height: 48px; }
+.mk-large { width: 88px; height: 88px; }
+/* Living: a wave runs from dot 1 to dot 10, each dot swelling and easing along the spiral. */
+.mk.live circle { animation: wave 1.6s cubic-bezier(.45,.05,.35,1) infinite; animation-delay: calc(var(--i) * .16s); }
+@keyframes wave {
+  0% { transform: none; }
+  14% { transform: translate(var(--tx), var(--ty)) scale(1.24); }
+  34%, 100% { transform: none; }
+}
+.mk.out { opacity: 0; transition: opacity .5s var(--ease); }
+.waiting { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 36px 0 8px; text-align: center; }
+.waiting p { margin: 0; color: var(--ink-soft); font-size: .9375rem; }
+
 /* Header */
 .bar {
   position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: calc(var(--safe-t) + 4px) var(--pad-r) 4px var(--pad-l);
-  background: rgba(245,243,236,.94);
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  background: var(--paper);
   border-bottom: 1px solid transparent; transition: border-color .4s var(--ease);
 }
 .bar.scrolled { border-bottom-color: var(--hairline); }
-.bar-in { width: 100%; max-width: 560px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; min-height: var(--tap); }
-.mark { font-family: var(--serif); font-size: 1.45rem; line-height: 1; letter-spacing: -.01em; }
-.icon-btn {
-  min-width: var(--tap); min-height: var(--tap); display: inline-grid; place-items: center;
-  border-radius: 50%; color: var(--ink);
-}
+.bar-in { width: 100%; max-width: 620px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; min-height: var(--tap); }
+.brand { display: inline-flex; align-items: center; gap: 8px; }
+.mark { font-family: var(--serif); font-size: 1.45rem; line-height: 1; letter-spacing: -.01em; position: relative; top: 1px; }
+.icon-btn { min-width: var(--tap); min-height: var(--tap); display: inline-grid; place-items: center; border-radius: 50%; color: var(--ink); }
 .icon-btn svg { width: 22px; height: 22px; }
 .back { display: inline-flex; align-items: center; gap: 2px; min-height: var(--tap); padding-right: 12px; margin-left: -8px; font-size: 1rem; }
 .back svg { width: 24px; height: 24px; }
 
 /* Main */
 main {
-  max-width: 560px; margin: 0 auto;
+  max-width: 620px; margin: 0 auto;
   padding: 8px var(--pad-r) calc(var(--tabs-h) + var(--safe-b) + var(--dock-h) + 40px) var(--pad-l);
 }
 main:focus { outline: none; }
 body.no-tabs main { padding-bottom: calc(var(--safe-b) + 40px); }
 
 .eyebrow { font-size: .6875rem; font-weight: 500; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-soft); }
-.head { text-align: center; margin: 16px 0 32px; }
+.head { text-align: center; margin: 16px 0 28px; }
 .head .eyebrow { margin-bottom: 12px; }
 .display {
   /* Grows with the iOS text size but never wider than the screen allows. */
@@ -126,9 +161,9 @@ body.no-tabs main { padding-bottom: calc(var(--safe-b) + 40px); }
 .display.small { font-size: min(max(1.9rem, 8.5vw), 11vw, 2.75rem); line-height: 1.05; }
 .display small { font-size: .5em; }
 .sub { margin: 12px 0 0; font-size: .875rem; color: var(--ink-soft); }
-.lede { margin: 16px auto 0; max-width: 30ch; font-size: 1.0625rem; color: var(--ink-soft); }
+.lede { margin: 14px auto 0; max-width: 30ch; font-size: 1.0625rem; color: var(--ink-soft); }
 .label { display: block; font-size: .6875rem; font-weight: 500; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-soft); margin: 0 0 10px; }
-.section { margin-top: 36px; }
+.section { margin-top: 32px; }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -150,28 +185,49 @@ body.no-tabs main { padding-bottom: calc(var(--safe-b) + 40px); }
 }
 .link:active { color: var(--green-ink); }
 .link.danger { color: var(--ink); }
-.actions { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 28px; }
+.actions { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 24px; }
 
-.note { font-family: var(--serif); font-size: 1.25rem; line-height: 1.4; text-align: center; margin: 0 auto; max-width: 30ch; }
-.question { font-size: .9375rem; text-align: center; margin: 14px auto 0; max-width: 34ch; }
-.question::before { content: ''; display: block; width: 24px; height: 1px; background: var(--ink); margin: 0 auto 12px; }
-.read { font-family: var(--serif); font-size: 1.3rem; line-height: 1.42; margin: 0; }
-.moved { text-align: center; font-size: .9375rem; margin: 12px auto 0; max-width: 34ch; }
+/* Chat */
+.chat { display: flex; flex-direction: column; gap: 18px; padding-top: 8px; }
+.msg { max-width: 100%; }
+.msg.user { align-self: flex-end; max-width: 82%; }
+.bubble {
+  background: var(--paper-deep); border-radius: 20px 20px 6px 20px; padding: 10px 15px;
+  font-size: 1.0625rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere;
+  -webkit-user-select: text; user-select: text;
+}
+.msg-state { margin-top: 4px; font-size: .75rem; color: var(--ink-soft); text-align: right; }
+.msg.deka { align-self: stretch; }
+.say { font-size: 1.0625rem; line-height: 1.55; white-space: pre-line; overflow-wrap: anywhere; margin: 0; -webkit-user-select: text; user-select: text; }
+.say .waking { color: var(--ink-soft); font-size: .875rem; margin-left: 6px; }
+.msg-error { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .9375rem; }
+.chat-empty { text-align: center; padding: 40px 0 16px; }
+.chat-empty .mk { margin-bottom: 18px; }
+.day-sep { text-align: center; font-size: .6875rem; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-soft); padding: 4px 0; }
 
-/* Status while Claude works */
-.loading { text-align: center; padding: 32px 0 8px; }
-.loading .dots { display: flex; justify-content: center; gap: 10px; margin-bottom: 16px; }
-.loading .dots i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--ink); animation: fill 3s var(--ease) infinite; }
-.loading .dots i:nth-child(2) { animation-delay: .15s; } .loading .dots i:nth-child(3) { animation-delay: .3s; }
-.loading .dots i:nth-child(4) { animation-delay: .45s; } .loading .dots i:nth-child(5) { animation-delay: .6s; }
-.loading .dots i:nth-child(6) { animation-delay: .75s; } .loading .dots i:nth-child(7) { animation-delay: .9s; }
-.loading .dots i:nth-child(8) { animation-delay: 1.05s; } .loading .dots i:nth-child(9) { animation-delay: 1.2s; }
-.loading .dots i:nth-child(10) { animation-delay: 1.35s; border-style: dotted; }
-@keyframes fill { 0%, 100% { background: transparent; } 30%, 60% { background: var(--ink); } }
-.loading p { margin: 0; color: var(--ink-soft); font-size: .9375rem; transition: opacity .4s var(--ease); }
-
-.error { text-align: center; margin: 24px 0 0; }
-.error p { margin: 0 0 8px; font-size: .9375rem; }
+/* Cards in the chat */
+.card { margin-top: 12px; border-radius: 16px; padding: 14px 16px 12px; }
+.card .eyebrow { display: block; margin-bottom: 8px; }
+.card ul { list-style: none; margin: 0; padding: 0; }
+.card li { position: relative; padding: 3px 0 3px 16px; font-size: .9375rem; }
+.card li::before { content: ''; position: absolute; left: 1px; top: .78em; width: 6px; height: 6px; border-radius: 50%; border: 1.25px solid var(--ink); }
+.card .row { display: flex; gap: 8px; margin-top: 12px; }
+.card .row .btn { flex: 1; }
+.card .state { margin-top: 10px; font-size: .8125rem; color: var(--ink-soft); display: flex; align-items: center; gap: 6px; }
+.card .state svg { width: 14px; height: 14px; }
+.card.quiet { opacity: .72; }
+.daystrip { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px; margin-top: 10px; }
+.daystrip span { text-align: center; font-size: .6875rem; color: var(--ink-soft); padding: 3px 0; border-radius: 2px; }
+.daystrip span.on { background: var(--green); color: var(--ink); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  min-height: var(--tap); padding: 0 14px; border-radius: 22px; border: 1px solid var(--hairline);
+  display: inline-flex; align-items: center; gap: 8px; font-size: .9375rem;
+}
+.chip i { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--ink); }
+.chip.done i { background: var(--green); }
+.chip.missed { color: var(--ink-soft); }
+.chip.missed i { border-color: var(--ink-faint); }
 
 /* Day tiles */
 .tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
@@ -179,7 +235,7 @@ body.no-tabs main { padding-bottom: calc(var(--safe-b) + 40px); }
 .tile {
   position: relative; width: 100%; height: 100%; min-height: 76px;
   display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 2px;
-  padding: 8px 2px 8px; border: 1px solid var(--hairline); border-radius: 2px; background: transparent;
+  padding: 8px 2px; border: 1px solid var(--hairline); border-radius: 2px; background: transparent;
   transition: background .3s var(--ease), transform .2s var(--ease);
 }
 button.tile:active { background: var(--paper-deep); transform: scale(.97); }
@@ -195,9 +251,11 @@ button.tile:active { background: var(--paper-deep); transform: scale(.97); }
 .tile.review { background: var(--paper-deep); border-color: transparent; }
 .tile.review .rv { font-size: .6875rem; color: var(--ink-soft); margin-top: 4px; }
 .tile.past .tn { color: var(--ink-soft); }
+.tile.flash { animation: flash 1.8s var(--ease) 2; }
+@keyframes flash { 0%, 100% { background: transparent; } 35% { background: var(--green); } }
 
-/* Intention rows */
-.rows { list-style: none; margin: 20px 0 0; padding: 0; border-top: 1px solid var(--hairline); }
+/* Goals */
+.rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--hairline); }
 .row-btn { display: block; width: 100%; text-align: left; padding: 14px 0 12px; border-bottom: 1px solid var(--hairline); }
 button.row-btn:active { background: rgba(20,19,16,.03); }
 .row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
@@ -205,6 +263,7 @@ button.row-btn:active { background: rgba(20,19,16,.03); }
 .row-top .name em { font-style: normal; font-weight: 400; color: var(--ink-soft); font-size: .8125rem; }
 .row-top .count { font-size: .8125rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 .row-top .count svg { width: 14px; height: 14px; }
+.row-top .count b { font-weight: 500; color: var(--ink); }
 .strip { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); height: 22px; }
 .strip .c { display: grid; place-items: center; }
 .strip .c.rv { background: var(--paper-deep); border-radius: 2px; }
@@ -214,6 +273,7 @@ button.row-btn:active { background: rgba(20,19,16,.03); }
 .dot.sq { border-radius: 2.5px; }
 .strip .c.drop { background: var(--paper-deep); }
 .dot.dragging { transform: scale(1.35); }
+.unplaced { font-size: .8125rem; color: var(--ink-soft); margin: -2px 0 0; }
 .legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 18px; margin-top: 14px; font-size: .75rem; color: var(--ink-soft); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 10px; border: 1.5px solid var(--ink); border-radius: 50%; display: inline-block; }
@@ -228,6 +288,7 @@ button.row-btn:active { background: rgba(20,19,16,.03); }
 .check svg { width: 15px; height: 15px; opacity: 0; transition: opacity .2s var(--ease); }
 .item.done .check { background: var(--green); }
 .item.done .check svg { opacity: 1; }
+.item.missed .nm { color: var(--ink-soft); text-decoration: line-through; text-decoration-color: var(--ink-faint); }
 .item.pop .check { animation: pop .45s var(--ease); }
 @keyframes pop { 0% { transform: scale(1); } 35% { transform: scale(1.22); } 100% { transform: scale(1); } }
 .item .txt { flex: 1; min-width: 0; }
@@ -236,10 +297,10 @@ button.row-btn:active { background: rgba(20,19,16,.03); }
 .item .dt { display: block; font-size: .8125rem; color: var(--ink-soft); margin-top: 2px; }
 .empty { text-align: center; padding: 8px 0; }
 .empty .lede { margin-top: 12px; }
-.quiet { text-align: center; color: var(--ink-soft); font-size: .9375rem; padding: 24px 0; margin: 0; }
+.quiet { text-align: center; color: var(--ink-soft); font-size: .9375rem; padding: 20px 0; margin: 0; }
 
 .field {
-  display: block; width: 100%; resize: none; min-height: 7.5rem;
+  display: block; width: 100%; resize: none; min-height: 6.5rem;
   border: 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); border-radius: 0;
   background: transparent; padding: 14px 0; font-size: max(16px, 1.0625rem); line-height: 1.55;
   -webkit-user-select: text; user-select: text;
@@ -248,15 +309,6 @@ button.row-btn:active { background: rgba(20,19,16,.03); }
 .field::placeholder, .input::placeholder, .dock textarea::placeholder { color: var(--ink-soft); opacity: 1; }
 .saved { font-size: .75rem; color: var(--ink-soft); text-align: right; min-height: 1.2em; margin-top: 6px; opacity: 0; transition: opacity .6s var(--ease); }
 .saved.on { opacity: 1; }
-
-/* Review */
-.tally { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--hairline); }
-.tally li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--hairline); }
-.tally .n { font-family: var(--serif); font-size: 1.65rem; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.tally .n small { font-size: 1rem; color: var(--ink-soft); }
-.notes-list { list-style: none; margin: 0; padding: 0; }
-.notes-list li { padding: 12px 0; border-bottom: 1px solid var(--hairline); font-size: .9375rem; }
-.notes-list b { display: block; margin-bottom: 4px; font-weight: 500; font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); }
 
 /* Past and settings */
 .list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--hairline); }
@@ -267,13 +319,15 @@ button.row-btn:active { background: rgba(20,19,16,.03); }
 .list .ttl { display: block; font-size: 1.0625rem; }
 .list .more { padding: 0 0 24px; }
 .list .more p { margin: 0 0 16px; }
+.read { font-family: var(--serif); font-size: 1.2rem; line-height: 1.42; }
 .setting { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 16px; min-height: 60px; padding: 8px 0; }
 .setting > * { white-space: nowrap; }
-.setting input[type="date"] { min-height: var(--tap); border: 0; background: none; font-size: max(16px, 1rem); text-align: right; color: var(--ink); }
+.setting input[type="date"], .setting input[type="time"] { min-height: var(--tap); border: 0; background: none; font-size: max(16px, 1rem); text-align: right; color: var(--ink); }
 
 /* Login and intro */
-.center { min-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 120px); display: flex; flex-direction: column; justify-content: center; text-align: center; }
-.login .display { font-size: min(max(3.5rem, 18vw), 20vw, 4.5rem); margin-bottom: 36px; }
+.center { min-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 120px); display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.login .mk { margin-bottom: 22px; }
+.login .display { font-size: min(max(3.5rem, 18vw), 20vw, 4.5rem); margin-bottom: 32px; }
 .login form { display: grid; gap: 16px; max-width: 300px; margin: 0 auto; width: 100%; }
 .input {
   width: 100%; min-height: var(--tap); border: 0; border-bottom: 1px solid var(--ink); border-radius: 0; background: transparent;
@@ -281,42 +335,42 @@ button.row-btn:active { background: rgba(20,19,16,.03); }
 }
 .input:focus { outline: none; border-bottom-width: 2px; padding-bottom: 9px; }
 .login .input { text-align: center; letter-spacing: .2em; }
-.intro .display { margin-bottom: 18px; }
+.intro .mk { margin-bottom: 26px; }
+.intro .display { margin: 14px 0 18px; }
 .intro .lede { margin-bottom: 36px; }
+.intro .actions { width: 100%; }
 
-/* Plan input, docked above the tabs and above the keyboard */
+/* Composer: floats above the tabs, and above the keyboard while typing */
 .dock {
-  position: fixed; left: 0; right: 0; z-index: 25;
-  bottom: calc(var(--tabs-h) + var(--safe-b));
-  background: var(--paper); border-top: 1px solid var(--hairline);
-  padding: 8px var(--pad-r) 8px var(--pad-l);
+  position: fixed; z-index: 25; left: var(--pad-l); right: var(--pad-r);
+  bottom: calc(var(--tabs-h) + var(--safe-b) + 8px);
+  max-width: 620px; margin: 0 auto;
+  border-radius: 24px; padding: 4px 4px 4px 16px;
 }
-body.kb .dock { bottom: var(--kb); }
-.dock-in { max-width: 560px; margin: 0 auto; display: flex; align-items: flex-end; gap: 6px; }
+body.kb .dock { bottom: calc(var(--kb) + 8px); }
+.dock-in { display: flex; align-items: flex-end; gap: 4px; }
 .dock textarea {
   flex: 1; min-width: 0; resize: none; max-height: 9.5rem; overflow-y: auto;
   border: 0; background: transparent; padding: 10px 0; min-height: var(--tap);
-  font-family: var(--serif); font-size: clamp(17px, 1.2rem, 24px); line-height: 1.3;
+  font-family: var(--sans); font-size: clamp(16px, 1.0625rem, 22px); line-height: 1.4;
   -webkit-user-select: text; user-select: text;
 }
 .dock textarea:focus { outline: none; }
-.dock .icon-btn { border: 1px solid var(--hairline); }
-.dock .send { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-.dock .send[disabled] { background: transparent; color: var(--ink-faint); border-color: var(--hairline); }
-.dock .icon-btn svg { width: 19px; height: 19px; }
-.dock .listening { border-color: var(--ink); animation: breathe 1.6s var(--ease) infinite alternate; }
-.dock .offline { max-width: 560px; margin: 0 auto 4px; font-size: .8125rem; color: var(--ink-soft); }
+.dock .send { background: var(--ink); color: var(--paper); }
+.dock .send[disabled] { background: transparent; color: var(--ink-soft); }
+.dock .icon-btn svg { width: 20px; height: 20px; }
+.dock .listening { background: var(--paper-deep); animation: breathe 1.6s var(--ease) infinite alternate; }
+.dock .offline { margin: 6px 0 0; font-size: .8125rem; color: var(--ink-soft); }
 @keyframes breathe { from { box-shadow: 0 0 0 0 rgba(20,19,16,.14); } to { box-shadow: 0 0 0 8px rgba(20,19,16,0); } }
 
 /* Tabs */
 nav.tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-  background: rgba(245,243,236,.96); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  border-top: 1px solid var(--hairline);
   padding: 0 var(--safe-r) var(--safe-b) var(--safe-l);
+  border-left: 0; border-right: 0; border-bottom: 0;
 }
-body.kb nav.tabs, body.no-tabs nav.tabs { display: none; }
-nav.tabs .in { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); }
+body.kb nav.tabs, body.no-tabs nav.tabs, body.no-tabs .dock { display: none; }
+nav.tabs .in { max-width: 620px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); }
 nav.tabs button {
   position: relative; height: var(--tabs-h);
   font-size: .6875rem; font-weight: 500; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-soft);
@@ -327,26 +381,26 @@ nav.tabs button[aria-current="page"]::before { content: ''; position: absolute; 
 /* Toast */
 .toast {
   position: fixed; z-index: 40; left: var(--pad-l); right: var(--pad-r);
-  bottom: calc(var(--tabs-h) + var(--safe-b) + var(--dock-h) + 12px);
-  max-width: 528px; margin: 0 auto;
+  bottom: calc(var(--tabs-h) + var(--safe-b) + var(--dock-h) + 16px);
+  max-width: 588px; margin: 0 auto;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  min-height: 52px; padding: 4px 6px 4px 16px; border-radius: 2px;
-  background: var(--ink); color: var(--paper); font-size: .9375rem;
+  min-height: 52px; padding: 4px 6px 4px 18px; border-radius: 18px;
+  color: var(--ink); font-size: .9375rem;
   animation: rise .35s var(--ease) both;
 }
 body.no-tabs .toast { bottom: calc(var(--safe-b) + 16px); }
-.toast button { min-height: var(--tap); padding: 0 12px; color: var(--green); font-weight: 500; font-size: .8125rem; letter-spacing: .14em; text-transform: uppercase; }
+.toast button { min-height: var(--tap); padding: 0 14px; color: var(--green-ink); font-weight: 600; font-size: .8125rem; letter-spacing: .14em; text-transform: uppercase; }
 
 /* Bottom sheet */
-.scrim { position: fixed; inset: 0; z-index: 50; background: rgba(20,19,16,.32); animation: fade .3s var(--ease) both; }
+.scrim { position: fixed; inset: 0; z-index: 50; background: rgba(20,19,16,.28); animation: fade .3s var(--ease) both; }
 .sheet {
   position: fixed; left: 0; right: 0; z-index: 51; bottom: var(--kb);
   max-height: calc(100dvh - var(--safe-t) - 16px - var(--kb)); overflow-y: auto; overscroll-behavior: contain;
-  background: var(--paper); border-top-left-radius: 8px; border-top-right-radius: 8px;
+  border-radius: 22px 22px 0 0; border-bottom: 0;
   padding: 0 var(--pad-r) calc(var(--safe-b) + 16px) var(--pad-l);
   animation: up .38s var(--ease) both;
 }
-.sheet-in { max-width: 560px; margin: 0 auto; }
+.sheet-in { max-width: 620px; margin: 0 auto; }
 .sheet-handle { display: flex; justify-content: center; align-items: center; height: 28px; cursor: grab; touch-action: none; }
 .sheet-handle::before { content: ''; width: 36px; height: 4px; border-radius: 2px; background: var(--hairline); }
 .sheet-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
@@ -385,24 +439,24 @@ body.no-tabs .toast { bottom: calc(var(--safe-b) + 16px); }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes up { from { transform: translateY(100%); } to { transform: none; } }
 
-@media (min-width: 700px) {
-  .tile { min-height: 84px; }
-}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
-  .loading .dots i:nth-child(-n+4) { background: var(--ink); }
+  /* The mark stays still and breathes instead of moving. */
+  .mk.live { animation: breathe-mark 2s ease-in-out infinite alternate !important; }
+  .mk.live circle { animation: none !important; }
 }
+@keyframes breathe-mark { from { opacity: 1; } to { opacity: .45; } }
 </style>
 </head>
 <body>
 <header class="bar" id="bar"><div class="bar-in" id="barIn"></div></header>
 <main id="main" tabindex="-1"></main>
-<section class="dock" id="dock" aria-label="Talk to Claude" hidden></section>
-<nav class="tabs" id="tabs" aria-label="Tabs" hidden>
+<section class="dock glass" id="dock" aria-label="Message Deka" hidden></section>
+<nav class="tabs glass" id="tabs" aria-label="Tabs" hidden>
   <div class="in">
-    <button data-tab="today">Today</button>
-    <button data-tab="span">Deka</button>
-    <button data-tab="plan">Plan</button>
+    <button data-tab="chat">Deka</button>
+    <button data-tab="days">Days</button>
+    <button data-tab="goals">Goals</button>
   </div>
 </nav>
 <div id="toastRoot" aria-live="polite" role="status"></div>
@@ -420,7 +474,7 @@ body.no-tabs .toast { bottom: calc(var(--safe-b) + 16px); }
 const KEY = 'deka.v1';
 const OLD_KEY = 'span.v1';
 const blank = () => ({ v: 1, current: null, next: null, spans: [] });
-let S = load();
+let S = migrate(load());
 
 function load() {
   try {
@@ -443,10 +497,26 @@ function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 0); 
 function isState(d) {
   return d && typeof d === 'object' && d.v === 1 && Array.isArray(d.spans);
 }
-// People who already have data never see the intro.
-if (!S.seen && (S.spans.length || (S.current && S.current.intentions.length))) S.seen = true;
+// Brings any saved data or older export up to date. Nothing is removed: the old
+// planning log is kept and also turned into the start of the chat thread.
+function migrate(d) {
+  d.settings = { checkin: '20:00', ...(d.settings || {}) };
+  for (const sp of [d.current, d.next, ...d.spans]) {
+    if (!sp) continue;
+    if (!Array.isArray(sp.chat)) sp.chat = (sp.log || []).filter(l => l && l.text).map(l => ({ id: uid(), role: l.role === 'user' ? 'user' : 'deka', text: l.text, ts: 0 }));
+    sp.summary = sp.summary || '';
+    sp.summarizedUpTo = sp.summarizedUpTo || 0;
+    sp.checked = Array.isArray(sp.checked) ? sp.checked : [];
+    sp.checkin = sp.checkin || {};
+    sp.notes = sp.notes || {};
+    sp.intentions = sp.intentions || [];
+    sp.occurrences = sp.occurrences || [];
+  }
+  if (!d.seen && (d.spans.length || (d.current && d.current.intentions.length))) d.seen = true;
+  return d;
+}
 
-/* Dates. The UI never names weekdays; Claude gets them. */
+/* Dates. The UI never names weekdays; Deka gets them. */
 
 const pad = n => String(n).padStart(2, '0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -473,29 +543,20 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 // Glue the last two words so a line never ends on a lone word.
 const nb = s => esc(s).replace(/ (\S+)$/, '&nbsp;$1');
 const nbRaw = s => String(s).replace(/ (\S+)$/, ' $1');
-const uid = () => Math.random().toString(36).slice(2, 9);
+function uid() { return Math.random().toString(36).slice(2, 9); }
 const slug = s => (s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'item').slice(0, 24);
 const clone = o => JSON.parse(JSON.stringify(o));
 
 function newSpan(start) {
-  return { id: uid(), start, status: 'planning', intentions: [], occurrences: [], notes: {}, log: [], note: '', question: '', reflection: '', review: '' };
+  return { id: uid(), start, status: 'planning', intentions: [], occurrences: [], notes: {}, log: [], chat: [], summary: '', summarizedUpTo: 0, checked: [], checkin: {}, note: '', question: '', reflection: '', review: '' };
 }
 const occOf = (span, iid) => span.occurrences.filter(o => o.intention_id === iid);
 const findOcc = (span, iid, day) => span.occurrences.find(o => o.intention_id === iid && o.day === day);
 const nameOf = (span, iid) => (span.intentions.find(i => i.id === iid) || { name: iid }).name;
-function syncTargets(span) {
-  for (const it of span.intentions) it.target = occOf(span, it.id).length;
-}
-// Even spread of n occurrences over the open days.
-function spread(n, from = 1) {
-  const days = [];
-  for (let d = Math.max(1, from); d <= 9; d++) days.push(d);
-  if (n >= days.length) return days;
-  const out = [];
-  for (let i = 0; i < n; i++) out.push(days[Math.floor((i + .5) * days.length / n)]);
-  return out;
-}
-// The free day with the lightest load, as far as possible from the intention's other days.
+const statusOf = o => o.done ? 'done' : o.missed ? 'missed' : 'planned';
+const doneOf = (span, iid) => occOf(span, iid).filter(o => o.done).length;
+const plannedOf = (span, iid) => occOf(span, iid).filter(o => !o.done && !o.missed).length;
+// The free day with the lightest load, as far as possible from the goal's other days.
 function bestFreeDay(span, taken, from) {
   let best = null, bestScore = -Infinity;
   for (let d = Math.max(1, from); d <= 9; d++) {
@@ -507,40 +568,70 @@ function bestFreeDay(span, taken, from) {
   }
   return best;
 }
-const openFrom = span => span.status === 'live' ? Math.min(9, Math.max(1, dayNum(span))) : 1;
+function spread(n, from = 1) {
+  const days = [];
+  for (let d = Math.max(1, from); d <= 9; d++) days.push(d);
+  if (n >= days.length) return days;
+  return Array.from({ length: n }, (_, i) => days[Math.floor((i + .5) * days.length / n)]);
+}
+const isLive = span => span && span.status === 'live';
+const openFrom = span => isLive(span) ? Math.min(9, Math.max(1, dayNum(span))) : 1;
 function summary(span) {
-  const parts = span.intentions.map(it => {
-    const occ = occOf(span, it.id);
-    return `${it.name} ${occ.filter(o => o.done).length}/${occ.length}`;
-  });
+  const parts = span.intentions.map(it => `${it.name} ${doneOf(span, it.id)}/${it.target}`);
   const bits = [`Deka ${range(span.start)}: ${parts.join(', ') || 'nothing planned'}.`];
   if (span.reflection) bits.push(`Their reflection: ${span.reflection}`);
   if (span.review) bits.push(`Your read: ${span.review}`);
   return bits.join(' ');
 }
 function completion(span) {
-  const all = span.occurrences.length;
-  return all ? Math.round(100 * span.occurrences.filter(o => o.done).length / all) : 0;
-}
-function planState(span) {
-  return {
-    intentions: span.intentions.map(({ id, name, type, tag, target }) => ({ id, name, type, tag: tag || '', target })),
-    occurrences: span.occurrences.map(({ intention_id, day, done, detail }) => ({ intention_id, day, done: Boolean(done), detail: detail || '' })),
-    notes: span.notes,
-  };
-}
-function applyPlan(span, p) {
-  const prev = new Map(span.occurrences.map(o => [`${o.intention_id}@${o.day}`, o]));
-  span.intentions = p.intentions.map(it => ({ ...it }));
-  span.occurrences = p.occurrences.map(o => ({
-    intention_id: o.intention_id, day: o.day, detail: o.detail,
-    done: Boolean(prev.get(`${o.intention_id}@${o.day}`)?.done),
-  }));
-  span.note = p.note;
-  span.question = p.question;
+  const want = span.intentions.reduce((n, it) => n + (it.target || 0), 0);
+  const done = span.occurrences.filter(o => o.done).length;
+  return want ? Math.min(100, Math.round(100 * done / want)) : 0;
 }
 const spanFor = t => t === 'next' ? S.next : S.current;
 const nextStart = () => { const s = addDays(S.current.start, 10); return s < todayIso() ? todayIso() : s; };
+// Where a conversation with Deka stands.
+function phase() {
+  const cur = S.current;
+  if (!isLive(cur)) return 'planning';
+  return dayNum(cur) >= 10 ? 'review' : 'live';
+}
+// The deka the goals and schedule talk is about: the next one during the review.
+const goalTarget = () => phase() === 'review' ? 'next' : 'current';
+
+/* The mark */
+
+const DOTS = [[360.86,451.08,31.13],[289.21,407.04,37.67],[250.25,312.85,45.67],[279.38,192.66,55.3],[393.4,95.44,67.07],[574.37,81.44,81.28],[762,196.59,98.57],[864,443.32,119.41],[788.26,757.94,144.73],[489.61,1012.44,175.41]];
+// Each dot eases a little along the spiral: toward the next dot, by a share of its size.
+const MARK_BODY = DOTS.map(([x, y, r], i) => {
+  const a = DOTS[Math.max(0, i - 1)], b = DOTS[Math.min(9, i + 1)];
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  const tx = ((b[0] - a[0]) / len * r * .3).toFixed(1), ty = ((b[1] - a[1]) / len * r * .3).toFixed(1);
+  return `<circle data-day="${i + 1}" cx="${x}" cy="${y}" r="${r}" style="--i:${i};--tx:${tx}px;--ty:${ty}px"/>`;
+}).join('');
+function mark(size, live = false) {
+  return `<svg class="mk mk-${size}${live ? ' live' : ''}" viewBox="0 0 1188 1188" aria-hidden="true" focusable="false">${MARK_BODY}</svg>`;
+}
+// Stops a living mark: each dot finishes its wave quickly and settles, then the mark fades.
+function settleMark(el, { fade = true } = {}) {
+  if (!el || !el.classList.contains('live')) return;
+  const anims = el.getAnimations ? el.getAnimations({ subtree: true }) : [];
+  let wait = 0;
+  for (const a of anims) {
+    const t = a.effect && a.effect.getComputedTiming();
+    if (!t || t.currentIteration == null) continue;
+    a.effect.updateTiming({ iterations: t.currentIteration + 1 });
+    a.playbackRate = 3;
+    wait = Math.max(wait, (1 - (t.progress || 0)) * 1600 / 3);
+  }
+  setTimeout(() => {
+    el.classList.remove('live');
+    if (fade) { el.classList.add('out'); setTimeout(() => el.remove(), 520); }
+  }, anims.length ? wait + 40 : 0);
+}
+function waitingView(text) {
+  return `<div class="waiting fade" role="status">${mark('medium', true)}<p>${esc(text)}</p></div>`;
+}
 
 /* Icons */
 
@@ -548,6 +639,7 @@ const I = {
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>',
   up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="#141310" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  tick: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 8h16M4 16h10"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
   chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>',
@@ -570,37 +662,22 @@ async function api(path, body) {
   return data;
 }
 
-function askClaude(mode, span, message, extra = {}) {
-  const today = todayIso();
-  return api('/api/plan', {
-    mode,
-    message,
-    today: `${WEEKDAYS[new Date().getDay()]} ${today}`,
-    currentDay: span.status === 'live' ? dayNum(span) : null,
-    days: dayMap(extra.start || span.start),
-    plan: planState(span),
-    history: (extra.log || span.log).slice(-10),
-    past: S.spans.slice(0, 3).map(summary),
-    reflection: extra.reflection || '',
-  }).then(r => r.plan);
-}
-
 /* UI state, not saved */
 
 const ui = {
-  tab: 'today',
-  sub: null,        // 'day' | 'past' | 'settings'
+  tab: 'chat',
+  sub: null,        // 'day' | 'past' | 'settings' | 'thread'
   day: null,
+  thread: null,
   scroll: {},
-  busy: null,       // { kind, t0, waking }
-  error: null,      // { text, label, fn }
-  moved: '',
-  undo: null,
   locked: false,
   awake: false,
   sheet: null,
   openPast: null,
   pop: null,
+  turn: null,       // the reply streaming right now
+  flash: null,      // { days, until } after a confirm
+  status: null,     // a centred waiting state, like importing
 };
 
 const $ = id => document.getElementById(id);
@@ -608,35 +685,26 @@ const $bar = $('barIn'), $main = $('main'), $dock = $('dock'), $tabs = $('tabs')
 
 /* Pieces */
 
-function loadingView() {
-  return `<div class="loading fade"><div class="dots" aria-hidden="true">${'<i></i>'.repeat(10)}</div><p id="stage">${esc(stageText())}</p></div>`;
-}
-
-function errorView() {
-  if (!ui.error) return '';
-  return `<div class="error" role="alert"><p>${nb(ui.error.text)}</p>
-    <button class="btn" data-a="error-act">${esc(ui.error.label)}</button></div>`;
-}
-
 function dotsFor(span, day, live, today) {
   const order = new Map(span.intentions.map((it, i) => [it.id, i]));
   return span.occurrences.filter(o => o.day === day)
-    .sort((a, b) => order.get(a.intention_id) - order.get(b.intention_id))
+    .sort((a, b) => (order.get(a.intention_id) ?? 99) - (order.get(b.intention_id) ?? 99))
     .map(o => {
       const it = span.intentions.find(x => x.id === o.intention_id) || {};
-      const missed = live && !o.done && day < today;
+      const missed = o.missed || (live && !o.done && day < today);
       return `<i class="${o.done ? 'done' : ''}${it.type === 'abstain' ? ' sq' : ''}${missed ? ' missed' : ''}"></i>`;
     }).join('');
 }
 
 function tiles(span, { live = false } = {}) {
   const today = live ? dayNum(span) : 0;
+  const flash = ui.flash && ui.flash.until > Date.now() && ui.flash.span === span.id ? ui.flash.days : [];
   let h = '<ol class="tiles" aria-label="Days">';
   for (let d = 1; d <= 10; d++) {
     const occ = span.occurrences.filter(o => o.day === d);
     const done = occ.filter(o => o.done).length;
     const date = fmt(dayDate(span, d));
-    const cls = ['tile', d === today ? 'today' : '', d === 10 ? 'review' : '', live && d < today ? 'past' : ''].join(' ');
+    const cls = ['tile', d === today ? 'today' : '', d === 10 ? 'review' : '', live && d < today ? 'past' : '', flash.includes(d) ? 'flash' : ''].join(' ');
     const label = d === 10 ? `Day 10, ${date}, review` : `Day ${d}, ${date}, ${live ? `${done} of ${occ.length} done` : `${occ.length} planned`}${d === today ? ', today' : ''}`;
     const inner = `<span class="tn" aria-hidden="true">${d}</span><span class="td" aria-hidden="true">${parse(dayDate(span, d)).getDate()}</span>` +
       (d === 10 ? '<span class="rv" aria-hidden="true">Review</span>' : `<span class="tdots" aria-hidden="true">${dotsFor(span, d, live, today)}</span>`);
@@ -653,17 +721,19 @@ function rows(span, { live = false, editable = false, target = 'current' } = {})
   for (const it of span.intentions) {
     const occ = occOf(span, it.id);
     const done = occ.filter(o => o.done).length;
+    const placed = occ.filter(o => !o.missed).length;
     let strip = '';
     for (let d = 1; d <= 10; d++) {
       const o = findOcc(span, it.id, d);
-      const dot = o ? `<span class="dot${o.done ? ' done' : ''}${it.type === 'abstain' ? ' sq' : ''}${live && !o.done && d < today ? ' missed' : ''}" data-iid="${esc(it.id)}" data-day="${d}"></span>` : '';
+      const dot = o ? `<span class="dot${o.done ? ' done' : ''}${it.type === 'abstain' ? ' sq' : ''}${o.missed || (live && !o.done && d < today) ? ' missed' : ''}" data-iid="${esc(it.id)}" data-day="${d}"></span>` : '';
       strip += `<span class="c${d === 10 ? ' rv' : ''}" data-day="${d}">${dot}</span>`;
     }
-    const count = live ? `${done} of ${occ.length}` : `${occ.length}×`;
+    const count = live ? `<b>${done}</b>&nbsp;of ${it.target}` : `${it.target}×`;
     const days = occ.map(o => o.day).sort((a, b) => a - b).join(', ');
+    const short = placed < it.target ? `<p class="unplaced">${placed ? `${placed} of ${it.target} placed` : 'Not placed yet'}</p>` : '';
     const inner = `<span class="row-top"><span class="name">${nb(it.name)}${it.tag ? `&nbsp;&nbsp;<em>${esc(it.tag)}</em>` : ''}</span>
-      <span class="count">${count}${editable ? I.edit : ''}</span></span><span class="strip" aria-hidden="true" data-iid="${esc(it.id)}">${strip}</span>`;
-    const label = `${it.name}, ${live ? `${done} of ${occ.length} done` : `${occ.length} times`}, days ${days}`;
+      <span class="count">${count}${editable ? I.edit : ''}</span></span><span class="strip" aria-hidden="true" data-iid="${esc(it.id)}">${strip}</span>${short}`;
+    const label = `${it.name}, ${live ? `${done} of ${it.target} done` : `${it.target} times`}${days ? `, days ${days}` : ', not placed yet'}`;
     h += editable
       ? `<li><button class="row-btn" data-a="edit-int" data-t="${target}" data-iid="${esc(it.id)}" aria-label="${esc(`Edit ${label}`)}">${inner}</button></li>`
       : `<li><div class="row-btn" role="img" aria-label="${esc(label)}">${inner}</div></li>`;
@@ -673,21 +743,16 @@ function rows(span, { live = false, editable = false, target = 'current' } = {})
   return h;
 }
 
-function planBlock(span, target, { live = false } = {}) {
-  return tiles(span, { live }) + rows(span, { live, editable: true, target }) +
-    `<div class="actions" style="margin-top:14px"><button class="link" data-a="add-int" data-t="${target}">Add an intention</button></div>`;
-}
-
 function itemsView(span, day) {
   const occ = span.occurrences.filter(o => o.day === day);
   if (!occ.length) return `<p class="quiet">${day === 10 ? 'Review day.' : 'Nothing planned. A free&nbsp;day.'}</p>`;
   const order = new Map(span.intentions.map((it, i) => [it.id, i]));
-  occ.sort((a, b) => order.get(a.intention_id) - order.get(b.intention_id));
+  occ.sort((a, b) => (order.get(a.intention_id) ?? 99) - (order.get(b.intention_id) ?? 99));
   return '<ul class="items">' + occ.map(o => {
     const it = span.intentions.find(x => x.id === o.intention_id) || { name: o.intention_id };
-    const sub = [o.detail, it.tag].filter(Boolean).join(', ');
+    const sub = [o.missed ? 'Missed' : '', o.detail, it.tag].filter(Boolean).join(', ');
     const key = `${o.intention_id}@${day}`;
-    return `<li><button class="item${o.done ? ' done' : ''}${ui.pop === key ? ' pop' : ''}" data-a="toggle" data-iid="${esc(o.intention_id)}" data-day="${day}" role="checkbox" aria-checked="${Boolean(o.done)}">
+    return `<li><button class="item${o.done ? ' done' : ''}${o.missed ? ' missed' : ''}${ui.pop === key ? ' pop' : ''}" data-a="toggle" data-iid="${esc(o.intention_id)}" data-day="${day}" role="checkbox" aria-checked="${Boolean(o.done)}">
       <span class="check${it.type === 'abstain' ? ' sq' : ''}">${I.check}</span>
       <span class="txt"><span class="nm">${esc(it.name)}</span>${sub ? `<span class="dt">${esc(sub)}</span>` : ''}</span></button></li>`;
   }).join('') + '</ul>';
@@ -708,46 +773,137 @@ function empty(title, lede, button, action, extra = '') {
 
 function introView() {
   return `<div class="intro center fade">
+    ${mark('large')}
     <div class="eyebrow">Deka</div>
-    <h1 class="display" style="margin-top:14px">Ten days at a&nbsp;time.</h1>
+    <h1 class="display">Ten days at a&nbsp;time.</h1>
     <p class="lede">A deka is 10 days. Nine to live the plan, one to look&nbsp;back.</p>
     <div class="actions"><button class="btn primary block" data-a="intro-start">Plan my first&nbsp;deka</button></div></div>`;
 }
 
 function loginView() {
-  return `<div class="login center fade"><h1 class="display">Deka</h1>
+  return `<div class="login center fade">${mark('large')}<h1 class="display">Deka</h1>
     <form data-form="login" autocomplete="on"><label class="sr" for="pass">Passcode</label>
       <input class="input" id="pass" type="password" autocomplete="current-password" placeholder="Passcode" required>
-      ${ui.loginError ? `<p class="error" role="alert" style="margin:0">${esc(ui.loginError)}</p>` : ''}
+      ${ui.loginError ? `<p role="alert" style="margin:0">${esc(ui.loginError)}</p>` : ''}
       <button class="btn primary block" type="submit">Enter</button></form></div>`;
 }
 
-function todayTab() {
-  const cur = S.current;
-  if (!cur || cur.status !== 'live') {
-    if (cur && cur.intentions.length) return empty('Your plan is&nbsp;ready', 'Look it over, then&nbsp;accept.', 'Open plan', 'go-plan');
-    return empty('No deka&nbsp;yet', 'Tell Claude what the next 10 days&nbsp;hold.', 'Plan', 'go-plan');
+/* Chat */
+
+function chatSpan() { if (!S.current) S.current = newSpan(todayIso()); return S.current; }
+
+function chatEmpty(span) {
+  const p = phase();
+  if (p === 'planning') {
+    return `<div class="chat-empty fade">${mark('medium')}<h1 class="display small">What do the next 10&nbsp;days&nbsp;hold?</h1>
+      <p class="lede">Tell Deka your goals. As many as you&nbsp;like.</p></div>`;
   }
-  const n = dayNum(cur);
-  if (n < 1) {
-    return `<div class="head fade"><div class="eyebrow">Starts ${fmt(cur.start)}</div><h1 class="display small">Your next deka is&nbsp;set.</h1></div>` + tiles(cur) + rows(cur);
-  }
-  if (n >= 10) return reviewView(cur);
-  const mine = cur.occurrences.filter(o => o.day === n);
-  let h = `<div class="head fade"><div class="eyebrow">Today · ${fmt(todayIso())}</div><h1 class="display">Day ${n}</h1>
-    ${mine.length ? `<p class="sub">${mine.filter(o => o.done).length} of ${mine.length} done</p>` : ''}</div>`;
-  h += itemsView(cur, n);
-  h += notesField(cur, n, 'Thoughts', 'Anything on your mind.');
-  h += rebalanceBlock();
-  return h;
+  return `<div class="chat-empty fade">${mark('medium')}<h1 class="display small">Day ${Math.min(dayNum(span), 10)}</h1>
+    <p class="lede">Ask Deka to move, add or drop&nbsp;anything.</p></div>`;
 }
 
-function rebalanceBlock() {
-  let h = '<div class="actions">';
-  h += ui.busy && ui.busy.kind === 'rebalance' ? loadingView() : '<button class="btn" data-a="rebalance">Rebalance</button>';
-  h += '</div>';
-  if (ui.moved) h += `<p class="moved fade">${nb(ui.moved)}</p>${ui.undo ? '<div class="actions" style="margin-top:0"><button class="link" data-a="undo-rebalance">Undo</button></div>' : ''}`;
-  if (ui.error && ui.error.where === 'rebalance') h += errorView();
+const paragraphs = t => esc(t);
+
+function cardView(msg, card, i, readonly) {
+  if (card.type === 'goals') {
+    return `<div class="card glass"><span class="eyebrow">Goals</span><ul>${card.lines.map(l => `<li>${nb(l)}</li>`).join('')}</ul></div>`;
+  }
+  if (card.type === 'log') {
+    const span = spanById(card.span);
+    const chips = card.entries.map((e, k) => {
+      const o = span && findOcc(span, e.goal_id, card.day);
+      const st = o ? statusOf(o) : e.status;
+      const name = span ? nameOf(span, e.goal_id) : e.goal_id;
+      const word = st === 'done' ? 'done' : st === 'missed' ? 'missed' : 'open';
+      return readonly || !o
+        ? `<span class="chip ${word}"><i></i>${esc(name)} ${word}</span>`
+        : `<button class="chip ${word}" data-a="log-flip" data-m="${msg.id}" data-c="${i}" data-k="${k}" aria-label="${esc(`${name}, ${word}. Tap to change`)}"><i></i>${esc(name)} ${word}</button>`;
+    }).join('');
+    return `<div class="card glass"><span class="eyebrow">Day ${card.day}</span><div class="chips">${chips}</div></div>`;
+  }
+  if (card.type === 'proposal') {
+    const strip = Array.from({ length: 10 }, (_, k) => `<span class="${card.changed_days.includes(k + 1) ? 'on' : ''}">${k + 1}</span>`).join('');
+    const state = card.status === 'confirmed' ? `<div class="state">${I.tick}Confirmed</div>`
+      : card.status === 'replaced' ? '<div class="state">Replaced by a newer plan</div>'
+      : card.status === 'stale' ? '<div class="state">Out of date. Ask Deka&nbsp;again.</div>'
+      : readonly ? '' : `<div class="row"><button class="btn primary" data-a="confirm" data-m="${msg.id}" data-c="${i}">Confirm</button><button class="btn" data-a="tweak">Tweak</button></div>`;
+    return `<div class="card glass${card.status === 'replaced' || card.status === 'stale' ? ' quiet' : ''}"><span class="eyebrow">${card.target === 'next' ? 'Next deka' : 'Proposed plan'}</span>
+      <ul>${card.changes.map(l => `<li>${nb(l)}</li>`).join('')}</ul>
+      <div class="daystrip" aria-label="${esc(`Changes on ${card.changed_days.length ? `days ${card.changed_days.join(', ')}` : 'no days'}`)}" role="img">${strip}</div>${state}</div>`;
+  }
+  return '';
+}
+
+function msgView(msg, { readonly = false } = {}) {
+  if (msg.role === 'user') {
+    return `<div class="msg user" id="m-${msg.id}"><div class="bubble">${esc(msg.text)}</div>${msg.status === 'waiting' ? '<div class="msg-state">Waiting for connection</div>' : ''}</div>`;
+  }
+  const live = ui.turn && ui.turn.msg === msg;
+  const text = live ? ui.turn.shown : msg.text;
+  const cards = (msg.cards || []).map((c, i) => cardView(msg, c, i, readonly)).join('');
+  const err = msg.error && !readonly ? `<div class="msg-error" role="alert"><span>${esc(msg.error)}</span><button class="link" data-a="retry" data-m="${msg.id}">Try again</button></div>` : '';
+  return `<div class="msg deka" id="m-${msg.id}"${live ? ' aria-busy="true"' : ''}><p class="say"><span class="t">${paragraphs(text)}</span>${live ? `${mark('inline', true)}<span class="waking" hidden>Waking up</span><span class="sr">Deka is thinking</span>` : ''}</p><div class="cards">${cards}</div>${err}</div>`;
+}
+
+function chatView() {
+  const span = chatSpan();
+  const msgs = span.chat;
+  if (!msgs.length && !ui.turn) return `<div class="chat" id="chat" role="log" data-span="${span.id}">${chatEmpty(span)}</div>`;
+  return `<div class="chat" id="chat" role="log" data-span="${span.id}">${msgs.map(m => msgView(m)).join('')}</div>`;
+}
+
+// Keeps the chat in place while things change, so a streaming reply is never redrawn.
+function refreshChat() {
+  const box = $('chat');
+  const span = chatSpan();
+  if (!box || box.dataset.span !== span.id || ui.tab !== 'chat' || ui.sub) return false;
+  if (!span.chat.length) return false;
+  if (box.querySelector('.chat-empty')) box.innerHTML = '';
+  const seen = new Set([...box.children].map(c => c.id));
+  for (const m of span.chat) {
+    const el = $(`m-${m.id}`);
+    if (!el) { box.insertAdjacentHTML('beforeend', msgView(m)); continue; }
+    seen.delete(el.id);
+    if (ui.turn && ui.turn.msg === m) {
+      el.querySelector('.cards').innerHTML = (m.cards || []).map((c, i) => cardView(m, c, i)).join('');
+      continue;
+    }
+    const html = msgView(m);
+    if (el.outerHTML !== html) el.outerHTML = html;
+  }
+  for (const id of seen) $(id)?.remove();
+  return true;
+}
+
+function nearBottom() { return window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 140; }
+function toBottom(smooth) { window.scrollTo({ top: document.documentElement.scrollHeight, behavior: smooth ? 'smooth' : 'auto' }); }
+
+/* Days */
+
+function daysTab() {
+  const cur = S.current;
+  if (ui.sub === 'day' && isLive(cur)) return dayView(cur, ui.day);
+  if (!cur || !cur.occurrences.length) {
+    return empty('No days&nbsp;planned', 'Tell Deka your goals and ask for a&nbsp;plan.', 'Open chat', 'go-chat');
+  }
+  if (!isLive(cur)) {
+    return `<div class="head fade"><div class="eyebrow">Draft · ${range(cur.start)}</div><h1 class="display small">Not started&nbsp;yet</h1>
+      <p class="sub">Confirm a plan in the chat to&nbsp;begin.</p></div>` + tiles(cur);
+  }
+  const n = dayNum(cur);
+  if (n < 1) return `<div class="head fade"><div class="eyebrow">Starts ${fmt(cur.start)}</div><h1 class="display small">Your next deka is&nbsp;set.</h1></div>` + tiles(cur, { live: true });
+  let h = '';
+  if (n >= 10) {
+    h += `<div class="head fade"><div class="eyebrow">Day 10 · ${fmt(todayIso())}</div><h1 class="display">Review</h1>
+      <p class="sub">${completion(cur)}% landed</p></div><div class="actions" style="margin:-8px 0 28px"><button class="btn primary" data-a="go-chat">Open the review</button></div>`;
+  } else {
+    const mine = cur.occurrences.filter(o => o.day === n);
+    h += `<div class="head fade"><div class="eyebrow">Today · ${fmt(todayIso())}</div><h1 class="display">Day ${n}</h1>
+      ${mine.length ? `<p class="sub">${mine.filter(o => o.done).length} of ${mine.length} done</p>` : ''}</div>`;
+    h += itemsView(cur, n);
+    h += notesField(cur, n, 'Thoughts', 'Anything on your mind.');
+  }
+  h += `<div class="section"><h2 class="label">This deka · ${range(cur.start)}</h2>${tiles(cur, { live: true })}</div>`;
   return h;
 }
 
@@ -760,100 +916,22 @@ function dayView(span, d) {
   return h;
 }
 
-function spanTab() {
-  const cur = S.current;
-  if (ui.sub === 'day' && cur && cur.status === 'live') return dayView(cur, ui.day);
-  if (!cur || !cur.intentions.length) {
-    return empty('Nothing&nbsp;planned', 'Plan with Claude or add things by&nbsp;hand.', 'Plan', 'go-plan', '<button class="link" data-a="add-int" data-t="current">Add by hand</button>');
-  }
-  if (cur.status !== 'live') {
-    return `<div class="head fade"><div class="eyebrow">Draft · ${range(cur.start)}</div><h1 class="display small">Not started&nbsp;yet</h1></div>` +
-      planBlock(cur, 'current') + '<div class="actions"><button class="btn primary block" data-a="go-plan">Open plan</button></div>';
-  }
-  const n = dayNum(cur);
-  let h = `<div class="head fade"><div class="eyebrow">This deka · ${range(cur.start)}</div>
-    <h1 class="display">${completion(cur)}<small>%</small></h1><p class="sub">${n >= 1 ? `Landed so far · Day ${Math.min(n, 10)}` : `Starts ${fmt(cur.start)}`}</p></div>`;
-  h += planBlock(cur, 'current', { live: true });
-  if (n >= 10) h += '<div class="actions"><button class="btn primary block" data-a="go-today">Review this deka</button></div>';
-  return h;
-}
+/* Goals */
 
-function planTab() {
-  const cur = S.current;
-  if (!cur || cur.status !== 'live') return draftView(cur, 'current');
-  const n = dayNum(cur);
-  if (n >= 10) return S.next ? draftView(S.next, 'next') : reviewFirst();
-  return liveTalk(cur, n);
-}
-
-function draftView(span, target) {
-  const next = target === 'next';
-  let h = `<div class="head${span.intentions.length ? '' : ' fade'}"><div class="eyebrow">${range(span.start)}</div>`;
+function goalsTab() {
+  const span = spanFor(goalTarget()) || chatSpan();
+  const t = span === S.next ? 'next' : 'current';
   if (!span.intentions.length) {
-    h += `<h1 class="display">What do the next 10&nbsp;days&nbsp;hold?</h1></div>`;
-    if (ui.busy) return h + loadingView();
-    if (ui.error) return h + errorView();
-    h += `<div class="actions"><button class="link" data-a="add-int" data-t="${target}">Plan by hand</button></div>`;
-    return h;
+    return empty('No goals&nbsp;yet', 'Tell Deka what you want from the next 10&nbsp;days.', 'Open chat', 'go-chat',
+      `<button class="link" data-a="add-int" data-t="${t}">Add one by hand</button>`);
   }
-  h += `<h1 class="display small">${next ? 'Next deka' : 'Your plan'}</h1></div>`;
-  if (ui.busy) return h + loadingView();
-  if (span.note) h += `<p class="note fade">${nb(span.note)}</p>`;
-  if (span.question) h += `<p class="question fade">${nb(span.question)}</p>`;
-  h += errorView();
-  h += '<div class="section">' + planBlock(span, target) + '</div>';
-  h += `<div class="actions"><button class="btn primary block" data-a="${next ? 'accept-next' : 'accept'}">${next ? 'Start next deka' : 'Accept plan'}</button>
-    <button class="link" data-a="start-over" data-t="${target}">Start over</button></div>`;
-  return h;
-}
-
-function liveTalk(span, n) {
-  let h = `<div class="head fade"><div class="eyebrow">Day ${n} of 10</div><h1 class="display small">Change the&nbsp;plan</h1>`;
-  h += span.liveNote ? '' : '<p class="lede">Tell Claude what changed. Done things stay&nbsp;put.</p>';
-  h += '</div>';
-  if (ui.busy && ui.busy.kind === 'refine') return h + loadingView();
-  if (span.liveNote) h += `<p class="note fade">${nb(span.liveNote)}</p>`;
-  if (ui.error && ui.error.where !== 'rebalance') h += errorView();
-  h += rebalanceBlock();
-  return h;
-}
-
-function reviewFirst() {
-  let h = `<div class="head fade"><div class="eyebrow">Day 10</div><h1 class="display small">Review&nbsp;first</h1>
-    <p class="lede">Claude reads this deka, then drafts the next&nbsp;one.</p></div>`;
-  if (ui.busy) return h + loadingView();
-  if (ui.error) return h + errorView();
-  h += `<div class="actions"><button class="btn primary block" data-a="read-span">Read my deka</button>
-    <button class="link" data-a="next-by-hand">Plan the next one by&nbsp;hand</button></div>`;
-  return h;
-}
-
-function reviewView(span) {
-  let h = `<div class="head fade"><div class="eyebrow">Deka review</div><h1 class="display">How it&nbsp;landed</h1><p class="sub">${range(span.start)}</p></div>`;
-  if (!span.intentions.length) h += '<p class="quiet">Nothing was planned this&nbsp;time.</p>';
-  h += '<ul class="tally">' + span.intentions.map(it => {
-    const occ = occOf(span, it.id);
-    return `<li><span>${esc(it.name)}</span><span class="n">${occ.filter(o => o.done).length}<small> of ${occ.length}</small></span></li>`;
-  }).join('') + '</ul>';
-  const notes = Object.entries(span.notes).filter(([, t]) => t && t.trim()).sort((a, b) => a[0] - b[0]);
-  if (notes.length) {
-    h += '<div class="section"><h2 class="label">Notes</h2><ul class="notes-list">' +
-      notes.map(([d, t]) => `<li><b>Day ${d}</b>${esc(t)}</li>`).join('') + '</ul></div>';
-  }
-  h += `<div class="section"><label class="label" for="reflection">Reflection</label>
-    <textarea class="field" id="reflection" data-reflection placeholder="What stood out?">${esc(span.reflection || '')}</textarea>
-    <div class="saved" id="saved-reflection" aria-hidden="true">Saved</div></div>`;
-  if (span.review) h += `<div class="section fade"><h2 class="label">The read</h2><p class="read">${nb(span.review)}</p></div>`;
-  if (S.next) {
-    h += '<div class="actions"><button class="btn primary block" data-a="go-plan">See the next&nbsp;deka</button></div>';
-  } else if (ui.busy && ui.busy.kind === 'review') {
-    h += loadingView();
-  } else if (ui.error) {
-    h += errorView();
-  } else {
-    h += `<div class="actions"><button class="btn primary block" data-a="read-span">Read my deka</button>
-      <button class="link" data-a="next-by-hand">Plan the next one by&nbsp;hand</button></div>`;
-  }
+  const live = isLive(span);
+  const want = span.intentions.reduce((n, g) => n + g.target, 0);
+  let h = `<div class="head fade"><div class="eyebrow">${t === 'next' ? 'Next deka · ' : live ? 'This deka · ' : ''}${range(span.start)}</div>
+    <h1 class="display">${live ? `${completion(span)}<small>%</small>` : 'Goals'}</h1>
+    <p class="sub">${live ? `${span.occurrences.filter(o => o.done).length} of ${want} done` : `${span.intentions.length} goals, ${want} sessions`}</p></div>`;
+  h += rows(span, { live, editable: true, target: t });
+  h += `<div class="actions" style="margin-top:14px"><button class="link" data-a="add-int" data-t="${t}">Add a goal</button></div>`;
   return h;
 }
 
@@ -865,13 +943,22 @@ function pastView() {
     return `<li><button class="sum" data-a="open-past" data-id="${esc(sp.id)}" aria-expanded="${open}">
       <span><span class="ttl">Deka ${S.spans.length - i}</span><span class="when">${range(sp.start)}</span></span>
       <span class="pct">${completion(sp)}<small style="font-size:.5em">%</small></span></button>
-      ${open ? `<div class="more fade">${sp.reflection ? `<p>${nb(sp.reflection)}</p>` : ''}${sp.review ? `<p class="read" style="font-size:1.125rem">${nb(sp.review)}</p>` : ''}${tiles(sp)}${rows(sp)}</div>` : ''}</li>`;
+      ${open ? `<div class="more fade">${sp.reflection ? `<p>${nb(sp.reflection)}</p>` : ''}${sp.review ? `<p class="read">${nb(sp.review)}</p>` : ''}${tiles(sp)}${rows(sp)}
+        <div class="actions">${sp.chat && sp.chat.length ? `<button class="btn" data-a="open-thread" data-id="${esc(sp.id)}">Read the chat</button>` : '<p class="quiet" style="padding:0">No chat for this&nbsp;deka.</p>'}</div></div>` : ''}</li>`;
   }).join('') + '</ul>';
   return h;
 }
 
+function threadView() {
+  const sp = S.spans.find(s => s.id === ui.thread);
+  if (!sp) return '<p class="quiet">Not found.</p>';
+  return `<div class="head fade"><div class="eyebrow">${range(sp.start)}</div><h1 class="display small">The chat</h1></div>
+    <div class="chat" role="log">${sp.chat.map(m => msgView(m, { readonly: true })).join('')}</div>`;
+}
+
 function settingsView() {
   let h = `<div class="head fade"><div class="eyebrow">Stored on this&nbsp;device</div><h1 class="display">Settings</h1></div><ul class="list">`;
+  h += `<li class="setting"><label for="checkinTime">Daily check in</label><input type="time" id="checkinTime" value="${esc(S.settings.checkin)}"></li>`;
   if (S.current) h += `<li class="setting"><label for="startDate">Deka started</label><input type="date" id="startDate" value="${S.current.start}"></li>`;
   h += `<li class="setting"><span>Export all data</span><button class="link" data-a="export">Download</button></li>
     <li class="setting"><span>Import from a file</span><button class="link" data-a="import">Choose file</button></li>`;
@@ -883,50 +970,39 @@ function settingsView() {
 /* Header, dock, sheet, toast */
 
 function renderBar() {
-  if (ui.locked || !S.seen) { $bar.innerHTML = '<span class="mark">Deka</span>'; return; }
+  const brand = `<span class="brand" role="img" aria-label="Deka">${mark('header')}<span class="mark" aria-hidden="true">Deka</span></span>`;
+  if (ui.locked || !S.seen) { $bar.innerHTML = brand; return; }
   const left = ui.sub
-    ? `<button class="back" data-a="back">${I.back}<span>${ui.sub === 'day' ? 'Deka' : 'Back'}</span></button>`
-    : '<span class="mark">Deka</span>';
+    ? `<button class="back" data-a="back">${I.back}<span>${ui.sub === 'day' ? 'Days' : 'Back'}</span></button>`
+    : brand;
   $bar.innerHTML = `${left}<button class="icon-btn" data-a="more" aria-label="Past dekas and settings" aria-haspopup="dialog">${I.more}</button>`;
-}
-
-function dockSpec() {
-  if (ui.locked || !S.seen || ui.sub || ui.tab !== 'plan') return null;
-  const cur = S.current;
-  if (!cur || cur.status !== 'live') return { target: 'current', placeholder: cur && cur.intentions.length ? (cur.question ? 'Answer, or change anything' : 'Change anything') : 'Say it like you would to a friend.' };
-  const n = dayNum(cur);
-  if (n >= 10) return S.next ? { target: 'next', placeholder: S.next.question ? 'Answer, or change anything' : 'Change anything' } : null;
-  return { target: 'current', placeholder: 'Move, add or drop anything' };
 }
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
 function renderDock() {
-  const spec = dockSpec();
-  if (!spec) { $dock.hidden = true; $dock.dataset.key = ''; setDockHeight(); return; }
-  const key = `${spec.target}|${spec.placeholder}`;
-  const offline = navigator.onLine === false;
-  if ($dock.dataset.key !== key) {
-    const kept = $dock.dataset.key && $dock.dataset.key.split('|')[0] === spec.target ? ($('msg')?.value || '') : '';
+  const show = !ui.locked && S.seen && !ui.sub && ui.tab === 'chat';
+  if (!show) { $dock.hidden = true; setDockHeight(); return; }
+  if (!$('msg')) {
     const mic = SR ? `<button class="icon-btn" type="button" data-a="mic" aria-label="Speak">${I.mic}</button>` : '';
-    $dock.innerHTML = `<p class="offline" id="offline" hidden>Offline. Claude needs a&nbsp;connection.</p>
-      <form class="dock-in" data-form="msg" data-t="${spec.target}" autocomplete="off">
-      <label class="sr" for="msg">Message to Claude</label>
-      <textarea id="msg" rows="1" placeholder="${esc(nbRaw(spec.placeholder))}" enterkeyhint="send"></textarea>
-      ${mic}<button class="icon-btn send" type="submit" aria-label="Send" disabled>${I.up}</button></form>`;
-    $dock.dataset.key = key;
-    $('msg').value = kept;
+    $dock.innerHTML = `<form class="dock-in" data-form="msg" autocomplete="off">
+      <label class="sr" for="msg">Message Deka</label>
+      <textarea id="msg" rows="1" enterkeyhint="send"></textarea>
+      ${mic}<button class="icon-btn send" type="submit" aria-label="Send" disabled>${I.up}</button></form>
+      <p class="offline" id="offline" hidden>Offline. Messages send when you are back.</p>`;
   }
-  $dock.hidden = false;
-  $('offline').hidden = !offline;
   const t = $('msg');
-  $dock.querySelector('.send').disabled = !t.value.trim() || Boolean(ui.busy) || offline;
+  const ph = ui.tweak ? 'What should change?' : phase() === 'planning' && !chatSpan().intentions.length ? 'Tell Deka your goals' : 'Message Deka';
+  if (t.placeholder !== ph) t.placeholder = ph;
+  $dock.hidden = false;
+  $('offline').hidden = navigator.onLine !== false;
+  $dock.querySelector('.send').disabled = !t.value.trim() || Boolean(ui.turn);
   autosize(t);
   setDockHeight();
 }
 
 function setDockHeight() {
-  const h = $dock.hidden ? 0 : $dock.offsetHeight;
+  const h = $dock.hidden ? 0 : $dock.offsetHeight + 8;
   document.documentElement.style.setProperty('--dock-h', `${h}px`);
 }
 
@@ -939,7 +1015,7 @@ let toastTimer = null;
 function toast(text, undo) {
   clearTimeout(toastTimer);
   ui.toastUndo = undo || null;
-  $toast.innerHTML = `<div class="toast"><span>${esc(text)}</span>${undo ? '<button data-a="toast-undo">Undo</button>' : ''}</div>`;
+  $toast.innerHTML = `<div class="toast glass"><span>${esc(text)}</span>${undo ? '<button data-a="toast-undo">Undo</button>' : ''}</div>`;
   toastTimer = setTimeout(hideToast, 4000);
 }
 function hideToast() { clearTimeout(toastTimer); $toast.innerHTML = ''; ui.toastUndo = null; }
@@ -957,7 +1033,7 @@ function renderSheet() {
   } else {
     body = intentionSheet(sh);
   }
-  const title = sh.kind === 'more' ? 'More' : sh.kind === 'new' ? 'New&nbsp;intention' : 'Edit';
+  const title = sh.kind === 'more' ? 'More' : sh.kind === 'new' ? 'New&nbsp;goal' : 'Edit';
   const shellKey = `${sh.kind}|${sh.iid || ''}`;
   const body0 = $('sheetBody');
   if (body0 && $sheet.dataset.key === shellKey) {
@@ -970,7 +1046,7 @@ function renderSheet() {
   }
   $sheet.dataset.key = shellKey;
   $sheet.innerHTML = `<div class="scrim" data-a="sheet-close"></div>
-    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" id="sheet"><div class="sheet-in">
+    <div class="sheet glass" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" id="sheet"><div class="sheet-in">
     <div class="sheet-handle" id="sheetHandle" aria-hidden="true"></div>
     <div class="sheet-top"><h2 id="sheetTitle">${title}</h2><button class="icon-btn" data-a="sheet-close" aria-label="Close">${I.close}</button></div>
     <div id="sheetBody">${body}</div></div></div>`;
@@ -996,28 +1072,30 @@ function intentionSheet(sh) {
     const on = days.includes(d);
     const o = isNew ? null : findOcc(span, sh.iid, d);
     const sel = sh.sel === d;
-    const state = sel ? 'selected, tap a free day to move it' : on ? (o && o.done ? 'planned, done' : 'planned') : 'free';
+    const state = sel ? 'selected, tap a free day to move it' : on ? (o && o.done ? 'planned, done' : o && o.missed ? 'missed' : 'planned') : 'free';
     pick += `<li><button class="${sel ? 'sel' : ''}" data-a="pick" data-day="${d}" aria-label="Day ${d}, ${date}, ${state}" aria-pressed="${on}">
       <span class="pn" aria-hidden="true">${d}</span><span class="pd" aria-hidden="true">${parse(dayDate(span, d)).getDate()}</span>
-      <span class="dot${on ? '' : ' empty'}${o && o.done ? ' done' : ''}${it.type === 'abstain' ? ' sq' : ''}" aria-hidden="true"></span></button></li>`;
+      <span class="dot${on ? '' : ' empty'}${o && o.done ? ' done' : ''}${o && o.missed ? ' missed' : ''}${it.type === 'abstain' ? ' sq' : ''}" aria-hidden="true"></span></button></li>`;
   }
   pick += '</ol>';
-  const hint = sh.sel ? 'Tap a free day to move it.' : 'Tap a day to add it. Tap a dot to move&nbsp;it.';
-  const n = days.length;
+  const target = isNew ? sh.draft.days.length : it.target;
+  const placed = isNew ? target : occOf(span, sh.iid).filter(o => !o.missed).length;
+  const hint = sh.sel ? 'Tap a free day to move it.' : placed < target ? `${placed} of ${target} placed. Tap a day to add&nbsp;one.` : 'Tap a day to add it. Tap a dot to move&nbsp;it.';
+  const floor = isNew ? 1 : Math.max(1, doneOf(span, sh.iid));
   return `<form class="form" data-form="sheet" autocomplete="off">
     <label class="sr" for="intName">Name</label>
     <input class="input" id="intName" value="${esc(it.name)}" placeholder="Name it" maxlength="40" enterkeyhint="done">
     <div class="seg" role="group" aria-label="Type">${types.map(([v, l]) => `<button type="button" data-a="sheet-type" data-v="${v}" aria-pressed="${it.type === v}">${l}</button>`).join('')}</div>
     <div class="stepper"><span class="label" style="margin:0" id="timesLabel">Times</span><div class="ctl">
-      <button type="button" class="icon-btn" data-a="sheet-count" data-v="-1" aria-label="Fewer" ${n <= 1 ? 'disabled' : ''}>&minus;</button>
-      <span class="val" aria-live="polite" aria-labelledby="timesLabel">${n}</span>
-      <button type="button" class="icon-btn" data-a="sheet-count" data-v="1" aria-label="More" ${n >= 9 ? 'disabled' : ''}>+</button></div></div>
+      <button type="button" class="icon-btn" data-a="sheet-count" data-v="-1" aria-label="Fewer" ${target <= floor ? 'disabled' : ''}>&minus;</button>
+      <span class="val" aria-live="polite" aria-labelledby="timesLabel">${target}</span>
+      <button type="button" class="icon-btn" data-a="sheet-count" data-v="1" aria-label="More" ${target >= 9 ? 'disabled' : ''}>+</button></div></div>
     <div>${pick}<p class="pick-hint" aria-live="polite">${hint}</p>
-      ${sh.sel ? `<div class="actions" style="margin-top:4px"><button type="button" class="link" data-a="pick-remove" ${n <= 1 ? 'disabled' : ''}>Remove day ${sh.sel}</button></div>` : ''}</div>
+      ${sh.sel ? `<div class="actions" style="margin-top:4px"><button type="button" class="link" data-a="pick-remove">Remove day ${sh.sel}</button></div>` : ''}</div>
     ${isNew
       ? `<button class="btn primary block" type="submit" ${it.name.trim() ? '' : 'disabled'} id="sheetAdd">Add</button>`
       : `<button class="btn block" type="button" data-a="sheet-close">Done</button>
-         <div class="actions" style="margin-top:0"><button type="button" class="link danger" data-a="delete-int">${sh.confirmDelete ? 'Tap again to delete' : 'Delete intention'}</button></div>`}
+         <div class="actions" style="margin-top:0"><button type="button" class="link danger" data-a="delete-int">${sh.confirmDelete ? 'Tap again to delete' : 'Delete goal'}</button></div>`}
   </form>`;
 }
 
@@ -1027,16 +1105,19 @@ function render() {
   const intro = !ui.locked && !S.seen;
   document.body.classList.toggle('no-tabs', ui.locked || intro);
   renderBar();
+  let kept = false;
   if (ui.locked) $main.innerHTML = loginView();
+  else if (ui.status) $main.innerHTML = waitingView(ui.status);
   else if (intro) $main.innerHTML = introView();
   else if (ui.sub === 'past') $main.innerHTML = pastView();
   else if (ui.sub === 'settings') $main.innerHTML = settingsView();
-  else if (ui.tab === 'span') $main.innerHTML = spanTab();
-  else if (ui.tab === 'plan') $main.innerHTML = planTab();
-  else $main.innerHTML = todayTab();
+  else if (ui.sub === 'thread') $main.innerHTML = threadView();
+  else if (ui.tab === 'days') $main.innerHTML = daysTab();
+  else if (ui.tab === 'goals') $main.innerHTML = goalsTab();
+  else { kept = refreshChat(); if (!kept) $main.innerHTML = chatView(); }
   ui.pop = null;
   $tabs.hidden = false;
-  const active = ui.sub === 'day' ? 'span' : ui.sub ? '' : ui.tab;
+  const active = ui.sub === 'day' ? 'days' : ui.sub ? '' : ui.tab;
   for (const b of $tabs.querySelectorAll('button')) {
     if (b.dataset.tab === active) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
@@ -1046,145 +1127,306 @@ function render() {
   saveSoon();
 }
 
-// Tabs keep their own scroll position.
+// Tabs keep their own scroll position. The chat opens at its newest message.
 function go(tab, { sub = null, day = null } = {}) {
   const key = ui.sub ? `${ui.tab}:${ui.sub}` : ui.tab;
   ui.scroll[key] = window.scrollY;
-  ui.tab = tab; ui.sub = sub; ui.day = day; ui.error = null; ui.sheet = null;
+  ui.tab = tab; ui.sub = sub; ui.day = day; ui.sheet = null;
   render();
   const next = sub ? `${tab}:${sub}` : tab;
-  window.scrollTo(0, sub === 'day' ? 0 : (ui.scroll[next] || 0));
+  if (tab === 'chat' && ui.scroll[next] == null) toBottom();
+  else window.scrollTo(0, sub === 'day' ? 0 : (ui.scroll[next] || 0));
 }
-function openSub(sub, day = null) {
+function openSub(sub, extra = {}) {
   if (!ui.sub) history.pushState({ sub }, '');
-  const tab = sub === 'day' ? 'span' : ui.tab;
+  const tab = sub === 'day' ? 'days' : ui.tab;
   ui.scroll[ui.tab] = window.scrollY;
-  ui.tab = tab; ui.sub = sub; ui.day = day; ui.sheet = null;
+  ui.tab = tab; ui.sub = sub; ui.day = extra.day ?? null; ui.thread = extra.thread ?? null; ui.sheet = null;
   render();
   window.scrollTo(0, 0);
   $main.focus({ preventScroll: true });
 }
 function closeSub() {
-  ui.sub = null; ui.day = null;
+  ui.sub = null; ui.day = null; ui.thread = null;
   render();
   window.scrollTo(0, ui.scroll[ui.tab] || 0);
 }
 window.addEventListener('popstate', () => { if (ui.sub) closeSub(); });
 
-/* Claude */
+/* Talking to Deka */
 
-const STAGES = {
-  plan: ['Reading what you wrote', 'Spreading it over nine days', 'Checking the load', 'Almost there'],
-  refine: ['Reading your change', 'Adjusting the plan', 'Almost there'],
-  rebalance: ['Looking at what was missed', 'Moving things forward', 'Almost there'],
-  review: ['Reading your deka', 'Drafting the next one', 'Almost there'],
-};
-const STAGE_AT = [0, 4000, 10000, 20000];
-function stageText() {
-  const b = ui.busy;
-  if (!b) return '';
-  if (b.waking) return 'Waking up';
-  const list = STAGES[b.kind] || STAGES.plan;
-  const t = Date.now() - b.t1;
-  let i = 0;
-  while (i + 1 < list.length && t >= STAGE_AT[i + 1]) i++;
-  return list[i];
-}
-let stageTimer = null;
-function tickStage() {
-  const el = $('stage');
-  if (el && el.textContent !== stageText()) el.textContent = stageText();
-}
-
-// One shared session check. The first Claude call waits on it. "Waking up"
-// appears only if that check is still pending after a moment, and once shown
-// it stays long enough to read, so a fast reply never makes it flash.
+// One shared session check. The first reply waits on it. "Waking up" appears only
+// if that check is still pending after a moment, so a fast reply never flashes it.
 let waking = null;
 function wake() {
   if (!waking) waking = api('/api/session').then(r => { ui.awake = true; return r; }, err => { waking = null; throw err; });
   return waking;
 }
 const WAKE_DELAY = 800;
-const WAKE_MIN = 700;
 
-async function run(kind, fn, where = '') {
-  ui.busy = { kind, t0: Date.now(), t1: Date.now(), waking: false }; ui.error = null;
-  render();
-  stageTimer = setInterval(tickStage, 500);
-  let timer = null;
-  const retry = () => run(kind, fn, where);
-  try {
-    if (!ui.awake) {
-      let shownAt = 0;
-      timer = setTimeout(() => {
-        if (ui.awake || !ui.busy) return;
-        ui.busy.waking = true; shownAt = Date.now(); tickStage();
-      }, WAKE_DELAY);
-      await wake();
-      clearTimeout(timer);
-      if (shownAt) await new Promise(r => { timer = setTimeout(r, Math.max(0, WAKE_MIN - (Date.now() - shownAt))); });
-      if (ui.busy) { ui.busy.waking = false; ui.busy.t1 = Date.now(); tickStage(); }
+function spanById(id) { return [S.current, S.next, ...S.spans].find(s => s && s.id === id); }
+const occStatus = o => o.done ? 'done' : o.missed ? 'missed' : 'planned';
+
+// What Deka sees this turn: the goals and schedule it is working on, the date and
+// weekday of each day, recent messages and the summary of older ones.
+function buildRequest(span, text, event) {
+  const p = phase();
+  if (p === 'planning' && span.start < todayIso() && !span.occurrences.some(o => o.done)) span.start = todayIso();
+  let target = span;
+  if (p === 'review') { if (!S.next) S.next = newSpan(nextStart()); target = S.next; }
+  // Everything said so far, minus the reply being written and the message being sent now.
+  const history = span.chat.filter(m => !(ui.turn && m === ui.turn.msg) && m.text);
+  if (text) { const i = history.map(m => m.role === 'user' && m.text === text).lastIndexOf(true); if (i >= 0) history.splice(i, 1); }
+  const lines = m => {
+    let t = m.text;
+    for (const c of m.cards || []) {
+      if (c.type === 'goals') t += `\n[Goals updated: ${c.lines.join('; ')}]`;
+      if (c.type === 'log') t += `\n[Logged day ${c.day}]`;
+      if (c.type === 'proposal') t += `\n[Proposed a plan: ${c.changes.join('; ')}. ${c.status === 'open' ? 'Waiting for them to confirm' : c.status}]`;
     }
-    await fn();
+    return { role: m.role === 'user' ? 'user' : 'assistant', text: t };
+  };
+  const all = history.map(lines);
+  const older = all.slice(span.summarizedUpTo, Math.max(span.summarizedUpTo, all.length - 30));
+  const body = {
+    phase: p,
+    today: `${WEEKDAYS[new Date().getDay()]} ${todayIso()}`,
+    current_day: p === 'live' ? dayNum(span) : null,
+    days: dayMap(target.start),
+    goals: target.intentions.map(({ id, name, type, tag, target: n }) => ({ id, name, type, tag: tag || '', target: n })),
+    schedule: target.occurrences.map(o => ({ goal_id: o.intention_id, day: o.day, status: occStatus(o), detail: o.detail || '' })),
+    notes: target === span ? span.notes : {},
+    summary: span.summary || '',
+    past: S.spans.slice(0, 3).map(summary),
+    messages: all.slice(-30),
+    message: text || null,
+    event: event || null,
+  };
+  if (older.length) body.to_summarize = older;
+  if (p === 'review') {
+    body.ended = {
+      range: range(span.start),
+      goals: span.intentions.map(g => ({ id: g.id, name: g.name, type: g.type, tag: g.tag || '', target: g.target, done: doneOf(span, g.id) })),
+      schedule: span.occurrences.map(o => ({ goal_id: o.intention_id, day: o.day, status: occStatus(o) })),
+      notes: span.notes,
+      reflection: span.reflection || '',
+    };
+  }
+  return { body, target: target === S.next ? 'next' : 'current', summarizeTo: all.length - 30 };
+}
+
+// Sends a message, or queues it while offline.
+function sendMessage(text) {
+  const span = chatSpan();
+  const offline = navigator.onLine === false;
+  const msg = { id: uid(), role: 'user', text, ts: Date.now(), status: offline ? 'waiting' : 'sent' };
+  const ask = [...span.chat].reverse().find(m => m.role === 'deka');
+  const event = ask && ask.checkin && !ask.checkin.answered ? { kind: 'checkin', days: ask.checkin.days } : null;
+  span.chat.push(msg);
+  render(); toBottom(true);
+  if (offline || ui.turn) return;
+  startTurn(span, text, event, ask);
+}
+
+function flushQueue() {
+  if (ui.turn || navigator.onLine === false || ui.locked) return;
+  const span = S.current;
+  if (!span) return;
+  const waiting = span.chat.filter(m => m.status === 'waiting');
+  if (!waiting.length) return;
+  waiting.forEach(m => { m.status = 'sent'; });
+  const last = waiting[waiting.length - 1];
+  const ask = [...span.chat].reverse().find(m => m.role === 'deka');
+  const event = ask && ask.checkin && !ask.checkin.answered ? { kind: 'checkin', days: ask.checkin.days } : null;
+  startTurn(span, last.text, event, ask);
+}
+
+// Reveals streamed text a word at a time, at a calm, steady pace.
+function revealTick() {
+  const t = ui.turn;
+  if (!t) return;
+  if (t.pending) {
+    const m = t.pending.match(/^\s*\S+\s*/);
+    const word = m ? m[0] : t.pending;
+    t.pending = t.pending.slice(word.length);
+    t.shown += word;
+    const el = document.querySelector(`#m-${t.msg.id} .t`);
+    if (el) {
+      const stick = nearBottom();
+      el.textContent = t.shown;
+      if (stick) toBottom();
+    }
+  }
+  if (!t.pending && t.finished) finishTurn();
+}
+
+async function startTurn(span, text, event, ask) {
+  const msg = { id: uid(), role: 'deka', text: '', ts: Date.now(), cards: [] };
+  span.chat.push(msg);
+  const turn = ui.turn = { msg, span, shown: '', pending: '', finished: false, event, ask, text };
+  render(); toBottom(true);
+  $('chat')?.setAttribute('aria-busy', 'true');
+  turn.timer = setInterval(revealTick, 32);
+  const wakeTimer = setTimeout(() => { const w = document.querySelector(`#m-${msg.id} .waking`); if (w && !ui.awake) w.hidden = false; }, WAKE_DELAY);
+  try {
+    if (!ui.awake) await wake();
+    clearTimeout(wakeTimer);
+    const hide = document.querySelector(`#m-${msg.id} .waking`); if (hide) hide.hidden = true;
+    const req = buildRequest(span, text, event);
+    turn.target = req.target; turn.summarizeTo = req.summarizeTo;
+    const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body), credentials: 'same-origin' });
+    if (res.status === 401) { ui.locked = true; throw Object.assign(new Error('locked'), { status: 401 }); }
+    if (!res.ok || !res.body) throw Object.assign(new Error('failed'), { status: res.status });
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let cut;
+      while ((cut = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, cut); buf = buf.slice(cut + 2);
+        const ev = (block.match(/^event: (.*)$/m) || [])[1];
+        const data = (block.match(/^data: (.*)$/m) || [])[1];
+        if (ev && data) onEvent(turn, ev, JSON.parse(data));
+      }
+    }
   } catch (err) {
-    if (err.status === 401) return;
-    const byHand = () => openNew(where === 'next' ? 'next' : 'current');
-    const planning = kind === 'plan' || kind === 'refine';
-    ui.error = err.status === 503
-      ? { text: 'Claude is not set up yet.', label: 'Plan by hand', fn: byHand, where }
-      : err.status === 429 ? { text: 'Too many tries. Wait a few minutes.', label: 'Try again', fn: retry, where }
-      : navigator.onLine === false
-        ? (planning ? { text: 'You are offline.', label: 'Plan by hand', fn: byHand, where } : { text: 'You are offline.', label: 'Try again', fn: retry, where })
-      : { text: 'Claude did not answer.', label: 'Try again', fn: retry, where };
-  } finally {
-    clearTimeout(timer);
-    clearInterval(stageTimer);
-    ui.busy = null;
-    render();
+    clearTimeout(wakeTimer);
+    if (err.status === 401) { msg.error = null; span.chat = span.chat.filter(m => m !== msg); ui.turn = null; clearInterval(turn.timer); render(); return; }
+    msg.error = err.status === 503 ? 'Deka is not set up yet.' : err.status === 429 ? 'Too many messages. Wait a few minutes.' : navigator.onLine === false ? 'You are offline.' : 'Deka did not answer.';
+    msg.retry = { text, event };
+  }
+  turn.finished = true;
+  if (!turn.pending) finishTurn();
+}
+
+function onEvent(turn, ev, data) {
+  const { msg } = turn;
+  if (ev === 'text') { msg.text += data.delta; turn.pending += data.delta; saveSoon(); return; }
+  if (ev === 'error') { msg.error = data.message; msg.retry = { text: turn.text, event: turn.event }; return; }
+  if (ev === 'done') return;
+  if (ev === 'summary') { turn.span.summary = data.summary; turn.span.summarizedUpTo = Math.max(0, turn.summarizeTo); return; }
+  const target = spanFor(turn.target) || turn.span;
+  if (ev === 'goals') {
+    const before = clone({ i: target.intentions, o: target.occurrences });
+    const lines = applyGoals(target, data.changes);
+    msg.cards.push({ type: 'goals', lines });
+    toast('Goals updated.', () => { target.intentions = before.i; target.occurrences = before.o; render(); });
+  } else if (ev === 'log') {
+    applyLog(turn.span, data);
+    msg.cards.push({ type: 'log', span: turn.span.id, day: data.day, entries: data.entries.map(e => ({ goal_id: e.goal_id, status: e.status })) });
+  } else if (ev === 'proposal') {
+    for (const m of turn.span.chat) for (const c of m.cards || []) if (c.type === 'proposal' && c.status === 'open') c.status = 'replaced';
+    msg.cards.push({ type: 'proposal', id: uid(), target: turn.target, occurrences: data.occurrences, changes: data.changes, changed_days: data.changed_days, status: 'open' });
+  }
+  if (!refreshChat()) render(); else renderDock();
+  if (nearBottom()) toBottom(true);
+  saveSoon();
+}
+
+function finishTurn() {
+  const t = ui.turn;
+  if (!t) return;
+  clearInterval(t.timer);
+  ui.turn = null;
+  $('chat')?.removeAttribute('aria-busy');
+  const { msg, span, event, ask } = t;
+  msg.text = msg.text.trim();
+  if (!msg.error && event && event.kind === 'checkin' && ask) {
+    ask.checkin.answered = true;
+    span.checked = [...new Set([...span.checked, ...event.days])];
+  }
+  if (!msg.error && event && event.kind === 'review') span.review = msg.text;
+  const el = $(`m-${msg.id}`);
+  const mk = el && el.querySelector('.mk');
+  if (el) {
+    el.removeAttribute('aria-busy');
+    el.querySelector('.t').textContent = msg.text;
+    el.querySelector('.sr')?.remove();
+    el.querySelector('.waking')?.remove();
+  }
+  if (!msg.text && !msg.cards.length && !msg.error) span.chat = span.chat.filter(m => m !== msg);
+  settleMark(mk);
+  setTimeout(() => { render(); renderDock(); }, mk ? 1100 : 0);
+  save();
+  renderDock();
+  setTimeout(flushQueue, 50);
+}
+
+/* Applying what Deka did */
+
+function applyGoals(span, changes) {
+  const lines = [];
+  for (const c of changes) {
+    if (c.op === 'add') {
+      if (!span.intentions.some(g => g.id === c.id)) span.intentions.push({ id: c.id, name: c.name, type: c.type, tag: c.tag || '', target: c.target });
+      lines.push(`Added ${c.name}, ${c.target} ${c.target === 1 ? 'time' : 'times'}`);
+    } else if (c.op === 'edit') {
+      const g = span.intentions.find(x => x.id === c.id);
+      if (!g) continue;
+      const was = g.target;
+      Object.assign(g, { name: c.name, type: c.type, tag: c.tag || '', target: c.target });
+      lines.push(was !== c.target ? `${c.name} now ${c.target} ${c.target === 1 ? 'time' : 'times'}` : `Updated ${c.name}`);
+    } else if (c.op === 'remove') {
+      span.intentions = span.intentions.filter(g => g.id !== c.id);
+      span.occurrences = span.occurrences.filter(o => o.intention_id !== c.id);
+      lines.push(`Removed ${c.name}`);
+    }
+  }
+  return lines;
+}
+
+function applyLog(span, data) {
+  for (const e of data.entries) {
+    let o = findOcc(span, e.goal_id, data.day);
+    if (!o && e.moved_from) { o = findOcc(span, e.goal_id, e.moved_from); if (o) o.day = data.day; }
+    if (!o && e.extra) {
+      o = { intention_id: e.goal_id, day: data.day, done: false, detail: '' };
+      span.occurrences.push(o);
+      const g = span.intentions.find(x => x.id === e.goal_id);
+      if (g && doneOf(span, g.id) + 1 > g.target) g.target = Math.min(9, g.target + 1);
+    }
+    if (!o) continue;
+    o.done = e.status === 'done'; o.missed = e.status === 'missed';
   }
 }
 
-function send(target, text) {
-  const span = spanFor(target);
-  const live = span.status === 'live';
-  const mode = span.intentions.length ? 'refine' : 'plan';
-  const before = clone({ i: span.intentions, o: span.occurrences, n: span.note, q: span.question });
-  span.log.push({ role: 'user', text });
-  run(mode, async () => {
-    const p = await askClaude(mode, span, text);
-    applyPlan(span, p);
-    span.log.push({ role: 'claude', text: [p.note, p.question].filter(Boolean).join(' ') });
-    if (live) {
-      span.liveNote = p.note;
-      toast('Plan updated.', () => { Object.assign(span, { intentions: before.i, occurrences: before.o, note: before.n, question: before.q, liveNote: '' }); render(); });
-    }
-  }, target);
+// A proposal still fits if every goal needs exactly the listed sessions and nothing lands on finished work or a passed day.
+function proposalFits(span, card) {
+  const from = openFrom(span);
+  for (const g of span.intentions) {
+    const need = Math.max(0, g.target - doneOf(span, g.id));
+    if (card.occurrences.filter(o => o.goal_id === g.id).length !== need) return false;
+  }
+  return card.occurrences.every(o => span.intentions.some(g => g.id === o.goal_id) && o.day >= from && o.day <= 9 &&
+    !span.occurrences.some(x => x.intention_id === o.goal_id && x.day === o.day && (x.done || x.missed)));
 }
 
-function rebalance() {
-  const span = S.current;
-  const before = clone({ i: span.intentions, o: span.occurrences });
-  ui.moved = ''; ui.undo = null;
-  run('rebalance', async () => {
-    const p = await askClaude('rebalance', span, 'Rebalance what is left.');
-    applyPlan(span, p);
-    span.question = '';
-    ui.moved = p.note || 'Rebalanced.';
-    ui.undo = before;
-  }, 'rebalance');
-}
-
-function readSpan() {
-  const span = S.current;
-  const start = nextStart();
-  run('review', async () => {
-    const p = await askClaude('review', span, 'Review this deka and draft the next one.', { start, reflection: span.reflection, log: [] });
-    span.review = p.review;
-    const next = newSpan(start);
-    applyPlan(next, p);
-    next.log.push({ role: 'claude', text: [p.note, p.question].filter(Boolean).join(' ') });
-    S.next = next;
-  }, 'review');
+function confirmProposal(msg, card) {
+  const span = spanFor(card.target);
+  if (!span || !proposalFits(span, card)) { card.status = 'stale'; render(); toast('This plan is out of date. Ask Deka again.'); return; }
+  const before = clone({ o: span.occurrences, status: span.status, start: span.start, card: card.status, cur: S.current && S.current.id, next: S.next && S.next.id });
+  const keep = span.occurrences.filter(o => o.done || o.missed);
+  span.occurrences = [...keep, ...card.occurrences.map(o => ({ intention_id: o.goal_id, day: o.day, done: false, detail: o.detail || '' }))];
+  card.status = 'confirmed';
+  ui.flash = { span: span.id, days: card.changed_days, until: Date.now() + 8000 };
+  if (card.target === 'next') {
+    closeCurrent();
+    S.current = span; S.next = null;
+    Object.assign(span, { status: 'live' });
+    render(); toast('Next deka started.');
+    return;
+  }
+  if (span.status !== 'live') {
+    if (span.start < todayIso()) span.start = todayIso();
+    span.status = 'live';
+    render(); toast('Deka started.', () => { Object.assign(span, { occurrences: before.o, status: before.status, start: before.start }); card.status = 'open'; render(); });
+    return;
+  }
+  render();
+  toast('Schedule updated.', () => { span.occurrences = before.o; card.status = 'open'; render(); });
 }
 
 function closeCurrent() {
@@ -1194,11 +1436,49 @@ function closeCurrent() {
   S.spans.unshift(cur);
 }
 
-/* Intention editing */
+/* Check ins and the review */
+
+function checkinDue() {
+  const [h, m] = S.settings.checkin.split(':').map(Number);
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes() >= h * 60 + m;
+}
+function dayList(days, today) {
+  const names = days.map(d => d === today ? 'today' : d === today - 1 ? 'yesterday' : `Day ${d}`);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+}
+// Once a day, after the check in time, Deka asks how it went. Skipped days are asked about too.
+function maybeCheckin() {
+  const cur = S.current;
+  if (!isLive(cur) || ui.locked || !S.seen) return;
+  const n = dayNum(cur);
+  if (n < 1 || n > 9 || !checkinDue() || cur.checkin.asked === todayIso()) return;
+  const days = [];
+  for (let d = 1; d <= n; d++) {
+    if (cur.checked.includes(d)) continue;
+    const planned = cur.occurrences.some(o => o.day === d);
+    const open = cur.occurrences.some(o => o.day === d && !o.done && !o.missed);
+    if (open || (d === n && (planned || n > 1))) days.push(d);
+  }
+  cur.checkin.asked = todayIso();
+  if (!days.length) return;
+  cur.chat.push({ id: uid(), role: 'deka', text: `How did ${dayList(days, n)} go?`, ts: Date.now(), cards: [], checkin: { days, answered: false } });
+  save();
+}
+// On Day 10 the review opens in the chat by itself.
+function maybeReview() {
+  const cur = S.current;
+  if (!isLive(cur) || dayNum(cur) < 10 || cur.reviewOpened || ui.turn || ui.locked || navigator.onLine === false) return;
+  cur.reviewOpened = todayIso();
+  if (!S.next) S.next = newSpan(nextStart());
+  startTurn(cur, null, { kind: 'review' }, null);
+}
+
+/* Goal editing by hand */
 
 function openEdit(target, iid) { ui.sheet = { kind: 'edit', target, iid, sel: null, confirmDelete: false }; renderSheet(); focusSheet(); }
 function openNew(target) {
-  const span = spanFor(target) || (S.current = newSpan(todayIso()));
+  const span = spanFor(target) || chatSpan();
   const from = openFrom(span);
   ui.sheet = { kind: 'new', target, sel: null, draft: { name: '', type: 'do', days: spread(3, from) } };
   renderSheet(); focusSheet(true);
@@ -1216,27 +1496,42 @@ function closeSheet() {
     const span = spanFor(sh.target);
     const it = span && span.intentions.find(x => x.id === sh.iid);
     if (it && !it.name.trim()) it.name = 'Untitled';
+    if (sh.before) toast('Goal updated.', () => { span.intentions = sh.before.i; span.occurrences = sh.before.o; render(); });
   }
   render();
+}
+// Remembers the goal as it was when editing started, for the Undo toast.
+function markEdited(sh) {
+  if (sh.kind !== 'edit' || sh.before) return;
+  const span = spanFor(sh.target);
+  sh.before = clone({ i: span.intentions, o: span.occurrences });
 }
 
 function sheetCount(delta) {
   const sh = ui.sheet;
   const span = spanFor(sh.target);
   const from = openFrom(span);
-  const days = sheetDays(sh);
-  if (delta > 0 && days.length < 9) {
-    const d = bestFreeDay(span, days, from) || bestFreeDay(span, days, 1);
-    if (!d) return;
-    if (sh.kind === 'new') sh.draft.days.push(d);
-    else { span.occurrences.push({ intention_id: sh.iid, day: d, done: false, detail: '' }); syncTargets(span); }
-  } else if (delta < 0 && days.length > 1) {
-    if (sh.kind === 'new') { sh.draft.days.sort((a, b) => a - b).pop(); }
-    else {
-      const occ = occOf(span, sh.iid).filter(o => !o.done).sort((a, b) => b.day - a.day);
-      if (!occ.length) return;
-      span.occurrences = span.occurrences.filter(o => o !== occ[0]);
-      syncTargets(span);
+  if (sh.kind === 'new') {
+    const days = sh.draft.days;
+    if (delta > 0 && days.length < 9) { const d = bestFreeDay(span, days, from) || bestFreeDay(span, days, 1); if (d) days.push(d); }
+    if (delta < 0 && days.length > 1) days.sort((a, b) => a - b).pop();
+    sh.sel = null; render(); return;
+  }
+  markEdited(sh);
+  const g = span.intentions.find(x => x.id === sh.iid);
+  const full = plannedOf(span, g.id) >= g.target - doneOf(span, g.id);
+  if (delta > 0 && g.target < 9) {
+    g.target++;
+    if (full && span.occurrences.length) {
+      const d = bestFreeDay(span, occOf(span, g.id).map(o => o.day), from);
+      if (d) span.occurrences.push({ intention_id: g.id, day: d, done: false, detail: '' });
+    }
+  } else if (delta < 0 && g.target > Math.max(1, doneOf(span, g.id))) {
+    g.target--;
+    const need = g.target - doneOf(span, g.id);
+    while (plannedOf(span, g.id) > need) {
+      const last = occOf(span, g.id).filter(o => !o.done && !o.missed).sort((a, b) => b.day - a.day)[0];
+      span.occurrences = span.occurrences.filter(o => o !== last);
     }
   }
   sh.sel = null;
@@ -1248,16 +1543,21 @@ function sheetPick(day) {
   const span = spanFor(sh.target);
   const days = sheetDays(sh);
   const on = days.includes(day);
+  if (sh.kind === 'new') {
+    if (sh.sel === day) sh.sel = null;
+    else if (sh.sel && !on) { sh.draft.days = days.map(d => d === sh.sel ? day : d); sh.sel = null; }
+    else if (on) sh.sel = day;
+    else if (days.length < 9) sh.draft.days.push(day);
+    render(); return;
+  }
+  markEdited(sh);
+  const g = span.intentions.find(x => x.id === sh.iid);
   if (sh.sel === day) sh.sel = null;
-  else if (sh.sel && !on) {
-    if (sh.kind === 'new') sh.draft.days = days.map(d => d === sh.sel ? day : d);
-    else { const o = findOcc(span, sh.iid, sh.sel); if (o) o.day = day; }
-    sh.sel = null;
-  } else if (on) sh.sel = day;
+  else if (sh.sel && !on) { const o = findOcc(span, sh.iid, sh.sel); if (o) o.day = day; sh.sel = null; }
+  else if (on) sh.sel = day;
   else {
-    if (days.length >= 9) return;
-    if (sh.kind === 'new') sh.draft.days.push(day);
-    else { span.occurrences.push({ intention_id: sh.iid, day, done: false, detail: '' }); syncTargets(span); }
+    span.occurrences.push({ intention_id: sh.iid, day, done: false, detail: '' });
+    if (occOf(span, g.id).filter(o => !o.missed).length > g.target) g.target = Math.min(9, g.target + 1);
   }
   render();
 }
@@ -1265,9 +1565,14 @@ function sheetPick(day) {
 function sheetRemove() {
   const sh = ui.sheet;
   const span = spanFor(sh.target);
-  if (!sh.sel || sheetDays(sh).length <= 1) return;
-  if (sh.kind === 'new') sh.draft.days = sh.draft.days.filter(d => d !== sh.sel);
-  else { span.occurrences = span.occurrences.filter(o => !(o.intention_id === sh.iid && o.day === sh.sel)); syncTargets(span); }
+  if (!sh.sel) return;
+  if (sh.kind === 'new') { if (sh.draft.days.length > 1) sh.draft.days = sh.draft.days.filter(d => d !== sh.sel); sh.sel = null; render(); return; }
+  markEdited(sh);
+  const g = span.intentions.find(x => x.id === sh.iid);
+  const o = findOcc(span, sh.iid, sh.sel);
+  const wasFull = plannedOf(span, g.id) >= g.target - doneOf(span, g.id);
+  span.occurrences = span.occurrences.filter(x => x !== o);
+  if (wasFull && o && !o.missed && g.target > Math.max(1, doneOf(span, g.id))) g.target--;
   sh.sel = null;
   render();
 }
@@ -1276,7 +1581,7 @@ function deleteIntention() {
   const sh = ui.sheet;
   if (!sh.confirmDelete) { sh.confirmDelete = true; renderSheet(); setTimeout(() => { if (ui.sheet === sh && sh.confirmDelete) { sh.confirmDelete = false; renderSheet(); } }, 3000); return; }
   const span = spanFor(sh.target);
-  const before = clone({ i: span.intentions, o: span.occurrences });
+  const before = sh.before || clone({ i: span.intentions, o: span.occurrences });
   const name = nameOf(span, sh.iid);
   span.intentions = span.intentions.filter(it => it.id !== sh.iid);
   span.occurrences = span.occurrences.filter(o => o.intention_id !== sh.iid);
@@ -1289,14 +1594,15 @@ function addFromSheet() {
   const sh = ui.sheet;
   const name = sh.draft.name.trim();
   if (!name) return;
-  const span = spanFor(sh.target);
+  const span = spanFor(sh.target) || chatSpan();
+  const before = clone({ i: span.intentions, o: span.occurrences });
   let id = slug(name);
   while (span.intentions.some(it => it.id === id)) id += '_' + uid().slice(0, 2);
   span.intentions.push({ id, name, type: sh.draft.type, tag: '', target: sh.draft.days.length });
   for (const d of sh.draft.days) span.occurrences.push({ intention_id: id, day: d, done: false, detail: '' });
   ui.sheet = null;
   render();
-  toast(`${name} added.`);
+  toast(`${name} added.`, () => { span.intentions = before.i; span.occurrences = before.o; render(); });
 }
 
 /* Check off */
@@ -1307,6 +1613,7 @@ function toggle(iid, day) {
   if (!o) return;
   o.done = !o.done;
   if (o.done) {
+    o.missed = false;
     ui.pop = `${iid}@${day}`;
     if (navigator.vibrate) navigator.vibrate(8);
   }
@@ -1328,14 +1635,13 @@ document.addEventListener('click', e => {
   if (!el) return;
   const a = el.dataset.a;
   switch (a) {
-    case 'intro-start': S.seen = true; if (!S.current) S.current = newSpan(todayIso()); go('plan'); break;
-    case 'error-act': { const f = ui.error && ui.error.fn; ui.error = null; if (f) f(); else render(); break; }
+    case 'intro-start': S.seen = true; chatSpan(); go('chat'); $('msg')?.focus(); break;
     case 'mic': listen(el); break;
-    case 'go-plan': go('plan'); break;
-    case 'go-today': go('today'); break;
+    case 'go-chat': go('chat'); break;
     case 'more': ui.sheet = { kind: 'more' }; renderSheet(); focusSheet(); break;
     case 'go-past': ui.sheet = null; openSub('past'); break;
     case 'go-settings': ui.sheet = null; openSub('settings'); break;
+    case 'open-thread': openSub('thread', { thread: el.dataset.id }); break;
     case 'back': history.state && history.state.sub ? history.back() : closeSub(); break;
     case 'sheet-close': closeSheet(); break;
     case 'add-int': openNew(el.dataset.t || 'current'); break;
@@ -1343,7 +1649,7 @@ document.addEventListener('click', e => {
     case 'sheet-type': {
       const sh = ui.sheet;
       if (sh.kind === 'new') sh.draft.type = el.dataset.v;
-      else { const it = spanFor(sh.target).intentions.find(x => x.id === sh.iid); if (it) it.type = el.dataset.v; }
+      else { markEdited(sh); const it = spanFor(sh.target).intentions.find(x => x.id === sh.iid); if (it) it.type = el.dataset.v; }
       render(); break;
     }
     case 'sheet-count': sheetCount(Number(el.dataset.v)); break;
@@ -1351,37 +1657,42 @@ document.addEventListener('click', e => {
     case 'pick-remove': sheetRemove(); break;
     case 'delete-int': deleteIntention(); break;
     case 'toast-undo': { const f = ui.toastUndo; hideToast(); if (f) f(); break; }
-    case 'start-over': {
-      if (!confirm('Clear this plan and start again?')) return;
-      const span = spanFor(el.dataset.t);
-      Object.assign(span, { intentions: [], occurrences: [], log: [], note: '', question: '' });
-      render(); break;
-    }
-    case 'accept':
-      Object.assign(S.current, { status: 'live', log: [], note: '', question: '' });
-      go('today'); toast('Deka started.'); break;
-    case 'accept-next':
-      closeCurrent();
-      S.current = S.next; Object.assign(S.current, { status: 'live', log: [], note: '', question: '' }); S.next = null;
-      go('today'); toast('Next deka started.'); break;
     case 'toggle': toggle(el.dataset.iid, Number(el.dataset.day)); break;
-    case 'open-day': openSub('day', Number(el.dataset.day)); break;
-    case 'rebalance': rebalance(); break;
-    case 'undo-rebalance':
-      if (ui.undo) { S.current.intentions = ui.undo.i; S.current.occurrences = ui.undo.o; ui.undo = null; ui.moved = ''; render(); }
+    case 'open-day': openSub('day', { day: Number(el.dataset.day) }); break;
+    case 'confirm': {
+      const span = chatSpan();
+      const msg = span.chat.find(m => m.id === el.dataset.m);
+      const card = msg && msg.cards[Number(el.dataset.c)];
+      if (card && card.status === 'open') confirmProposal(msg, card);
       break;
-    case 'read-span': readSpan(); break;
-    case 'next-by-hand': {
-      const start = nextStart();
-      closeCurrent(); S.current = newSpan(start); S.next = null;
-      go('plan'); openNew('current'); break;
+    }
+    case 'tweak': { ui.tweak = true; renderDock(); $('msg')?.focus(); break; }
+    case 'log-flip': {
+      const span = chatSpan();
+      const msg = span.chat.find(m => m.id === el.dataset.m);
+      const card = msg && msg.cards[Number(el.dataset.c)];
+      const entry = card && card.entries[Number(el.dataset.k)];
+      const o = entry && findOcc(span, entry.goal_id, card.day);
+      if (o) { const was = o.done; o.done = !was; o.missed = was; entry.status = o.done ? 'done' : 'missed'; render(); }
+      break;
+    }
+    case 'retry': {
+      const span = chatSpan();
+      const msg = span.chat.find(m => m.id === el.dataset.m);
+      if (!msg || ui.turn) return;
+      const again = msg.retry || {};
+      span.chat = span.chat.filter(m => m !== msg);
+      const ask = [...span.chat].reverse().find(m => m.role === 'deka' && m.checkin);
+      render();
+      startTurn(span, again.text, again.event, ask);
+      break;
     }
     case 'open-past': ui.openPast = ui.openPast === el.dataset.id ? null : el.dataset.id; render(); break;
     case 'export': exportData(); break;
     case 'import': $('importFile').click(); break;
     case 'discard':
       if (!confirm('Discard this deka? Past dekas stay.')) return;
-      S.current = null; S.next = null; closeSub(); go('today'); break;
+      S.current = null; S.next = null; closeSub(); go('chat'); break;
     case 'lock': api('/api/logout', {}).catch(() => {}).finally(() => { ui.locked = true; ui.loginError = ''; ui.sub = null; render(); }); break;
   }
 });
@@ -1394,19 +1705,19 @@ document.addEventListener('submit', e => {
   if (kind === 'login') {
     const pass = $('pass').value;
     api('/api/login', { passcode: pass })
-      .then(() => { ui.locked = false; ui.loginError = ''; ui.awake = true; render(); })
+      .then(() => { ui.locked = false; ui.loginError = ''; ui.awake = true; render(); boot(); })
       .catch(err => { ui.loginError = err.status === 429 ? 'Too many tries. Wait a few minutes.' : err instanceof TypeError ? 'No connection. Try again.' : 'Wrong passcode.'; render(); $('pass')?.focus(); });
     return;
   }
   if (kind === 'sheet') { if (ui.sheet && ui.sheet.kind === 'new') addFromSheet(); else closeSheet(); return; }
   const ta = $('msg');
   const text = ta.value.trim();
-  if (!text || ui.busy || navigator.onLine === false) return;
+  if (!text || ui.turn) return;
   if (rec) { rec.stop(); rec = null; }
   ta.value = '';
+  ui.tweak = false;
   autosize(ta);
-  ta.blur();
-  send(form.dataset.t, text);
+  sendMessage(text);
 });
 
 let noteTimer = null;
@@ -1414,7 +1725,7 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'msg') {
     autosize(t);
-    $dock.querySelector('.send').disabled = !t.value.trim() || Boolean(ui.busy) || navigator.onLine === false;
+    $dock.querySelector('.send').disabled = !t.value.trim() || Boolean(ui.turn);
     setDockHeight();
     return;
   }
@@ -1422,6 +1733,7 @@ document.addEventListener('input', e => {
     const sh = ui.sheet;
     if (sh.kind === 'new') { sh.draft.name = t.value; $('sheetAdd').disabled = !t.value.trim(); }
     else {
+      markEdited(sh);
       const it = spanFor(sh.target).intentions.find(x => x.id === sh.iid);
       if (it) { it.name = t.value; saveSoon(); }
     }
@@ -1430,9 +1742,6 @@ document.addEventListener('input', e => {
   if (t.dataset && t.dataset.note) {
     S.current.notes[t.dataset.note] = t.value;
     flashSaved(`saved-${t.dataset.note}`);
-  } else if (t.hasAttribute && t.hasAttribute('data-reflection')) {
-    S.current.reflection = t.value;
-    flashSaved('saved-reflection');
   }
 });
 
@@ -1461,17 +1770,18 @@ document.addEventListener('keydown', e => {
 
 document.addEventListener('change', e => {
   if (e.target.id === 'startDate' && e.target.value && S.current) { S.current.start = e.target.value; saveSoon(); }
+  if (e.target.id === 'checkinTime' && e.target.value) { S.settings.checkin = e.target.value; saveSoon(); }
   if (e.target.id === 'importFile') importData(e.target.files[0]);
 });
 
-window.addEventListener('online', renderDock);
+window.addEventListener('online', () => { renderDock(); refreshChat(); flushQueue(); maybeReview(); });
 window.addEventListener('offline', renderDock);
 
 /* Header hairline once the page scrolls */
 const $barEl = $('bar');
 window.addEventListener('scroll', () => $barEl.classList.toggle('scrolled', window.scrollY > 4), { passive: true });
 
-/* Keyboard: keep the Plan input and the sheet above it */
+/* Keyboard: keep the composer and the sheet above it */
 const vv = window.visualViewport;
 function onViewport() {
   if (!vv) return;
@@ -1492,8 +1802,7 @@ document.addEventListener('pointerdown', e => {
 });
 document.addEventListener('pointermove', e => {
   if (!sheetDrag) return;
-  const dy = Math.max(0, e.clientY - sheetDrag.y);
-  sheetDrag.el.style.transform = `translateY(${dy}px)`;
+  sheetDrag.el.style.transform = `translateY(${Math.max(0, e.clientY - sheetDrag.y)}px)`;
 });
 document.addEventListener('pointerup', e => {
   if (!sheetDrag) return;
@@ -1569,27 +1878,46 @@ function exportData() {
 }
 function importData(file) {
   if (!file) return;
+  ui.status = 'Importing'; ui.sub = null; render();
+  const started = Date.now();
   const r = new FileReader();
   r.onload = () => {
-    try {
-      const d = JSON.parse(r.result);
-      if (!isState(d)) throw new Error('shape');
-      if (!confirm('Replace everything on this device with this file?')) return;
-      S = d;
-      if (!S.seen && (S.spans.length || (S.current && S.current.intentions.length))) S.seen = true;
-      ui.sub = null; go('today'); toast('Imported.');
-    } catch { toast('That file is not a Deka export.'); }
-    $('importFile').value = '';
+    // Let the mark be seen for a moment, so the import does not flash past.
+    setTimeout(() => {
+      ui.status = null;
+      try {
+        const d = JSON.parse(r.result);
+        if (!isState(d)) throw new Error('shape');
+        if (!confirm('Replace everything on this device with this file?')) { render(); return; }
+        S = migrate(d);
+        go('chat'); toast('Imported.');
+      } catch { render(); toast('That file is not a Deka export.'); }
+      $('importFile').value = '';
+    }, Math.max(0, 700 - (Date.now() - started)));
   };
   r.readAsText(file);
 }
 
 /* Boot: draw from local data first, then check the session. */
 
-document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.activeElement?.matches('textarea, input') && !ui.sheet) render(); });
+function boot() {
+  maybeCheckin();
+  render();
+  if (ui.tab === 'chat') toBottom();
+  wake().then(() => { flushQueue(); maybeReview(); }).catch(() => {});
+}
 
-render();
-wake().catch(() => {});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  const before = S.current && S.current.chat.length;
+  maybeCheckin();
+  if (!document.activeElement?.matches('textarea, input') && !ui.sheet && !ui.turn) render();
+  else if (S.current && S.current.chat.length !== before) refreshChat();
+  maybeReview();
+});
+setInterval(() => { if (!document.hidden && !ui.turn) { const n = S.current && S.current.chat.length; maybeCheckin(); if (S.current && S.current.chat.length !== n) { refreshChat() || render(); if (nearBottom()) toBottom(true); } } }, 60000);
+
+boot();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
