@@ -1112,7 +1112,8 @@ function importData(file) {
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.activeElement?.matches('textarea, input')) render(); });
 
-api('/api/session').then(() => { ui.checked = true; }).catch(() => {}).finally(render);
+render();
+api('/api/session').then(() => { ui.checked = true; }).catch(() => {});
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));

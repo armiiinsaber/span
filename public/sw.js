@@ -1,5 +1,6 @@
-// Offline shell. The page comes from the network first so updates land;
-// fonts and icons come from the cache first. The API is never cached.
+// Offline shell. The page opens from the cache at once, so a sleeping server
+// never holds it up, and a fresh copy is saved in the background for next time.
+// Fonts and icons come from the cache first. The API is never cached.
 const CACHE = 'span-v1';
 const SHELL = ['/', '/manifest.webmanifest', '/icon.svg', '/icon-180.png', '/icon-192.png', '/fonts/melomaniac-serif-v0.1.woff'];
 
@@ -21,11 +22,12 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET' || url.pathname.startsWith('/api/')) return;
 
   if (req.mode === 'navigate') {
-    e.respondWith(
-      fetch(req)
-        .then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put('/', copy)); return res; })
-        .catch(() => caches.match('/'))
-    );
+    const fresh = fetch(req).then(res => {
+      if (res.ok) { const copy = res.clone(); return caches.open(CACHE).then(c => c.put('/', copy)).then(() => res); }
+      return res;
+    });
+    e.waitUntil(fresh.catch(() => {}));
+    e.respondWith(caches.match('/').then(hit => hit || fresh));
     return;
   }
 
