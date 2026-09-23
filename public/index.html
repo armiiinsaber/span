@@ -253,7 +253,7 @@ body.toasting main { padding-bottom: calc(var(--tabs-top) + var(--dock-h) + 108p
 .msg-error { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--t-subhead); }
 .chat-empty { text-align: center; padding: 40px 0 16px; }
 .chat-empty .mk { margin-bottom: 18px; }
-.day-sep { text-align: center; font-size: var(--t-caption2); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-soft); padding: 4px 0; }
+.day-sep { text-align: center; font-size: var(--t-footnote); font-weight: 600; color: var(--ink-soft); padding: 4px 0; }
 
 /* Cards in the chat */
 /* Cards are content: a solid surface, never glass. */
@@ -341,7 +341,7 @@ button.strip10 { text-align: inherit; }
 .day .dd { font-size: var(--t-caption2); color: var(--ink-soft); margin-top: 4px; white-space: nowrap; }
 .day.past .dn { color: var(--ink-soft); }
 .day .ss { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.day .s { --z: 44px; }
+.day .s { --z: max(44px, 2.6rem); }
 .day .s svg { width: 54%; height: 54%; }
 .day .free { font-size: var(--t-subhead); color: var(--ink-soft); }
 .day.review .rvdot { width: 26px; height: 26px; margin: 0 9px; }
@@ -479,8 +479,8 @@ nav.tabs .in { height: 100%; display: grid; grid-template-columns: repeat(3, 1fr
 nav.tabs button { position: relative; height: 100%; border-radius: 27px; display: grid; place-items: center; color: var(--ink-soft); transition: color .3s var(--ease), background .35s var(--spring), transform .3s var(--spring); }
 nav.tabs button:active { transform: scale(.94); }
 nav.tabs button[aria-current="page"] { background: var(--press); }
-nav.tabs button svg { width: 27px; height: 27px; }
-nav.tabs button .mk { width: 25px; height: 25px; color: currentColor; }
+nav.tabs button svg { width: 1.6rem; height: 1.6rem; }
+nav.tabs button .mk { width: 1.5rem; height: 1.5rem; color: currentColor; }
 nav.tabs button[aria-current="page"] { color: var(--ink); }
 nav.tabs button[aria-current="page"]::after { content: ''; position: absolute; bottom: 5px; left: 50%; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 1px var(--ink); }
 
@@ -525,7 +525,7 @@ body.no-tabs .toast { bottom: calc(var(--safe-b) + 16px); }
 .sheet h2 .sheet-sub { display: block; font-size: var(--t-footnote); font-weight: 400; color: var(--ink-soft); margin-top: 2px; letter-spacing: 0; }
 .sheet .form { display: grid; gap: 18px; padding-bottom: 8px; }
 .seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); border: 1px solid var(--ink); border-radius: 2px; }
-.seg button { min-height: var(--tap); font-size: var(--t-caption1); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+.seg button { min-height: var(--tap); font-size: var(--t-subhead); font-weight: 600; white-space: nowrap; }
 .seg button + button { border-left: 1px solid var(--ink); }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
 .stepper { display: flex; align-items: center; justify-content: space-between; }
@@ -1232,8 +1232,12 @@ function hideToast() { clearTimeout(toastTimer); $toast.innerHTML = ''; ui.toast
 function renderSheet() {
   const sh = ui.sheet;
   if (!sh) {
+    const had = Boolean($sheet.innerHTML);
     $sheet.innerHTML = ''; $sheet.dataset.key = '';
     $main.inert = false; $tabs.inert = false; $dock.inert = false;
+    // Focus goes back to what opened the sheet, when it is still on the page.
+    if (had && ui.opener && ui.opener.isConnected) ui.opener.focus({ preventScroll: true });
+    if (had) ui.opener = null;
     return;
   }
   let body = '';
@@ -1257,6 +1261,7 @@ function renderSheet() {
     return;
   }
   $sheet.dataset.key = shellKey;
+  if (!$sheet.innerHTML) ui.opener = document.activeElement;
   $sheet.innerHTML = `<div class="scrim" data-a="sheet-close"></div>
     <div class="sheet glass" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" id="sheet"><div class="sheet-in">
     <div class="sheet-handle" id="sheetHandle" aria-hidden="true"></div>
