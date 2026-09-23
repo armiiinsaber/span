@@ -1,0 +1,57 @@
+{
+ "model": "claude-opus-5-5",
+ "date": "2026-09-23",
+ "runs": [
+  {
+   "run": 1,
+   "scenarios": [
+    {
+     "name": "1 full dump",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "2 book and trim",
+     "pass": true,
+     "fails": []
+    }
+   ]
+  }
+ ],
+ "turns": [
+  {
+   "run": 1,
+   "scenario": "1 full dump",
+   "said": "In the next 10 days I want at least one ",
+   "ttfw": 7.688,
+   "total": 12.955,
+   "input": 507,
+   "output": 1458,
+   "cacheWrite": 0,
+   "cacheRead": 6949,
+   "cost": 0.0326,
+   "rounds": 1,
+   "plan_check": []
+  },
+  {
+   "run": 1,
+   "scenario": "2 book and trim",
+   "said": "About 120 pages left. Your trim sounds g",
+   "ttfw": 10.621,
+   "total": 26.376,
+   "input": 5209,
+   "output": 3113,
+   "cacheWrite": 7136,
+   "cacheRead": 7136,
+   "cost": 0.1202,
+   "rounds": 2,
+   "plan_check": [
+    {
+     "first": 4,
+     "final": 0,
+     "retried": true
+    }
+   ]
+  }
+ ]
+}

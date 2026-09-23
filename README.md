@@ -9,7 +9,7 @@ Live at dekaapp.com. Design follows DESIGN.md in the melomaniacstudios repo and 
 ## How it is built
 
 ```
-server.js           Express app, default export: passcode gate, rate limits, POST /api/chat
+server.js           Express app, default export: passcode gate, rate limits, POST /api/chat, POST /api/feedback
 vercel.json         Function max duration and static headers
 lib/chat.js         Deka's system prompt, the context each turn sends, the streamed tool loop
 lib/tools.js        The tools and the checks every call must pass
@@ -34,6 +34,12 @@ The app has three tabs, shown as icons: the Deka mark, a grid of ten dots, and a
 - **Deka**, the chat. You add goals in plain language, one at a time or as a long list. Deka answers with a goals card: every goal as its icon, name and count in dots, grouped by category, with a meter of how full the days are (daily habits are left out, since they sit in every day either way). When it is too much, the card shows a suggested trim as faded dots and "5 → 4", the meter shows the room it makes, and Use suggestion or Keep mine answers it. Saying so in words ("sounds good", "keep my numbers") does the same. Then the card settles: "Trim applied" with only the new counts, or "Kept your numbers" with the originals. Only the newest trim can be answered; an older one that was never answered goes quiet. The reply only names the reason. Deka turns them into short goals with a type (do, see or abstain) and a target, and asks one short question only when something is unclear. When the goals look complete, when you ask, or when something changes, Deka proposes a schedule as a card: the whole plan on the compact strip, changed sessions ringed, one short line under it, and Confirm and Tweak. Tap the strip to see a day with names. Nothing changes until you tap Confirm. After a check in, a confirmed change, or when you ask how it is going, a where we are card shows the day and every goal with its progress.
 - **Days**, the full strip: one row per day with big icons, today highlighted. Tap an icon to check it off, tap a day to open it in a sheet with names and notes. On desktop, drag an icon to another day.
 - **Goals**, every goal as its icon, name and a progress ring. Tap one to rename it, pick another icon, change its count, move a day by tapping it and then the new day, or delete it.
+
+**Under each reply**: Copy, thumbs up, thumbs down and Retry, as in the Claude app. Copy takes only the words, not the cards. Thumbs down asks "What went wrong?" in a small sheet. Ratings stay with the message on the device, go into the export, and are posted to `POST /api/feedback`, which writes one `[feedback]` line to the server log with the rating, the reason, the reply and a timestamp, for review in Vercel's logs. Retry is on the newest reply only. It first undoes whatever that reply changed (goals, a logged day, a trim answered, a plan confirmed from it), then sends the same message again, through the same limits as any turn. A long press on your own message offers Copy.
+
+**Attachments.** The plus in the composer opens Photos, Camera and Files. Up to 5 photos (JPEG, PNG, HEIC, WebP) or PDFs per message, shown as thumbnails above the text field; a message can be only attachments. Photos are resized on the device to 1568 px on the long edge and sent as JPEG, so HEIC converts wherever the browser can decode it (Safari can). PDFs over 3 MB and requests over 4 MB are turned away with one sentence. Claude gets photos as image blocks and PDFs as document blocks, with that message only; later turns see a note like `[Attached a photo]`. Deka reads to do lists, calendar screenshots, syllabuses and workout plans into goals and plans through the usual cards, and answers anything unrelated with one line back to the deka. Files live in IndexedDB, not localStorage, and travel in the export and import.
+
+**Feels like an app.** Only message text, notes and fields select. Nothing else calls out or drags on a long press, except a photo opened full screen, which can be saved. A double tap never zooms, pinch zoom still does. The shell stays put and only the content scrolls, so the page never bounces.
 
 Profile and Past dekas sit behind the profile icon in the header. Each deka has its own chat thread; past threads stay readable in Past dekas.
 
@@ -80,6 +86,7 @@ Hard limits, checked on the server before any call to Claude:
 
 | Limit | Value |
 |---|---|
+| Attachments | 5 per message, photos and PDFs only, a PDF up to 3 MB, the whole request under 4 MB (Vercel's limit is 4.5 MB). |
 | Message length | 2,000 characters; longer gets a note to shorten it, with no call. The app stops it in the composer too. |
 | Output per call, thinking included | 8,000 tokens for a normal reply, 10,000 while planning a new deka, 12,000 for the Day 10 review, about twice the most seen in real runs. A call that hits its ceiling is logged and the turn ends with the retry message. |
 | Calls per turn | 4: the first, one retry for a failed call, one try at a better plan, one for a reply that was never written. Past that, the retry message. |

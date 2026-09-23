@@ -98,6 +98,8 @@ try {
       await flow.navigate(base, { name: 'launch' });
       await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: theme }]);
       await snap('chat');
+      await tap('.msg.deka [data-a=rate][data-v=down]'); await snap('feedback sheet'); await tap('#sheet [data-a=sheet-close]');
+      await tap('#dock [data-a=attach]'); await snap('attach menu'); await tap('.ctx-catch');
       await tap('[data-tab=days]'); await snap('days');
       await tap('.day[data-day="4"] .dl'); await snap('day sheet'); await tap('#sheet [data-a=sheet-close]');
       await tap('[data-tab=goals]'); await snap('goals');

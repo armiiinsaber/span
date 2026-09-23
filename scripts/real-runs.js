@@ -76,10 +76,10 @@ class App {
     if (p === 'planning' && span.start < this.today && !span.occurrences.some(o => o.done)) span.start = this.today;
     let target = span;
     if (p === 'review') { if (!this.S.next) this.S.next = newSpan(addDays(span.start, 10) < this.today ? this.today : addDays(span.start, 10)); target = this.S.next; }
-    const history = span.chat.filter(m => m.text && !m.pending);
+    const history = span.chat.filter(m => (m.text || (m.attachments || []).length) && !m.pending);
     if (text) { const i = history.map(m => m.role === 'user' && m.text === text).lastIndexOf(true); if (i >= 0) history.splice(i, 1); }
     const lines = m => {
-      let t = m.text;
+      let t = (m.attachments || []).length ? [m.text, `[Attached ${m.attachments.map(a => a.kind === 'pdf' ? `a PDF, ${a.name}` : 'a photo').join(', ')}]`].filter(Boolean).join('\n') : m.text;
       for (const c of m.cards || []) {
         if (c.type === 'goals' && c.lines.length) t += `\n[Goals updated: ${c.lines.join('; ')}]`;
         if (c.type === 'goals' && c.trim) {
@@ -277,13 +277,17 @@ function recordingClient(sink) {
 
 /* One turn over HTTP */
 
-async function turn(ctx, text, event, ask) {
+// Files: [{ kind, media_type, name, data }], sent with this message only, as the app does.
+async function turn(ctx, text, event, ask, files = []) {
   const { app } = ctx;
   const span = app.S.current;
-  if (text) span.chat.push({ id: uid(), role: 'user', text, cards: [] });
+  const user = text || files.length ? { id: uid(), role: 'user', text: text || '', cards: [], pending: true, ...(files.length ? { attachments: files.map(f => ({ kind: f.kind, name: f.name })) } : {}) } : null;
+  if (user) span.chat.push(user);
   const msg = { id: uid(), role: 'deka', text: '', cards: [], pending: true };
   span.chat.push(msg);
   const { body, target, summarizeTo } = app.buildRequest(span, text, event);
+  if (user) delete user.pending;
+  if (files.length) body.attachments = files;
   const sink = { calls: [], invalid: [], improved: [] };
   ctx.sink.current = sink;
   const events = [];
@@ -336,7 +340,7 @@ async function turn(ctx, text, event, ask) {
     else span.checked = [...new Set([...span.checked, ...event.days])];
   }
   if (!msg.error && event && event.kind === 'review') span.review = msg.text;
-  if (!msg.error && text) span.offStreak = msg.offTopic ? (span.offStreak || 0) + 1 : 0;
+  if (!msg.error && user) span.offStreak = msg.offTopic ? (span.offStreak || 0) + 1 : 0;
   if (!msg.text && !msg.cards.length && !msg.error) span.chat = span.chat.filter(m => m !== msg);
 
   const usage = sink.calls.reduce((a, c) => {
@@ -349,8 +353,8 @@ async function turn(ctx, text, event, ask) {
   const raw = sink.calls.map(c => c.raw).join(' ');
   const toolStrings = sink.calls.flatMap(c => c.tools).flatMap(t => JSON.stringify(t.input).match(/"(?:[^"\\]|\\.)*"/g) || []).map(s => JSON.parse(s));
   const record = {
-    who: text ? 'person' : 'app',
-    said: text || (event && event.kind === 'review' ? '(Day 10: the app opens the review)' : ''),
+    who: user ? 'person' : 'app',
+    said: [text, files.length ? `[attached ${files.map(f => f.name).join(', ')}]` : ''].filter(Boolean).join(' ') || (event && event.kind === 'review' ? '(Day 10: the app opens the review)' : ''),
     event: event || null,
     openCard: Boolean(body.open_card),
     toSummarize: (body.to_summarize || []).length,
@@ -476,7 +480,7 @@ async function run(n) {
     results.push({ name, pass: !fails.length, fails, notes, turns });
     origLog(`  run ${n} ${name}: ${fails.length ? `FAIL\n    ${fails.join('\n    ')}` : 'pass'}`);
   };
-  const say = (text, event, ask) => turn(ctx, text, event, ask);
+  const say = (text, event, ask, files) => turn(ctx, text, event, ask, files);
   const span = () => app.S.current;
   const occNow = () => span().occurrences.map(o => ({ goal_id: o.intention_id, day: o.day }));
 
@@ -949,10 +953,62 @@ async function run(n) {
       if (free.length < 4) f.push(`plan: only ${free.length} evenings free of dinners and dates, for time alone every other evening`);
       if (alone) for (const o of card.occurrences.filter(o => o.goal_id === alone.id)) if (card.occurrences.some(x => x.day === o.day && evening.includes(x.goal_id))) f.push(`plan: a dinner or date on alone evening ${o.day}`);
     });
+
+    // Attachments. The list is a rendered handwritten note in the repo; the landscape is a macOS
+    // wallpaper photo, converted when the run starts and never committed.
+    await scenario('20 photo of a to do list', async (f, notes) => {
+      const a = new App(START); ctx.app = a;
+      const t = await say('', null, null, [photo(path.join(__dirname, '..', 'test', 'real-runs', 'fixtures', 'todo-list.jpg'), 'todo-list.jpg')]);
+      f.push(...turnChecks(t));
+      const goals = a.S.current.intentions;
+      notes.push(`goals: ${goals.map(g => `${g.name} ${g.target}`).join(', ')}`);
+      for (const [label, re] of [['grandma', /grandma|gran/i], ['tax return', /tax/i], ['garage', /garage/i], ['run', /\brun/i], ['reading', /read|book|chapter/i]]) {
+        if (!goals.some(g => re.test(`${g.id} ${g.name}`))) f.push(`no goal for ${label}`);
+      }
+      const run = goals.find(g => /\brun/i.test(`${g.id} ${g.name}`));
+      if (run && run.target !== 3) f.push(`run is ${run.target}, not 3`);
+      if (goals.length !== 5) f.push(`${goals.length} goals, not 5`);
+      if (!t.cards.some(c => c.type === 'goals')) f.push('no goals card');
+      const asks = (t.reply.match(/\?/g) || []).length;
+      notes.push(`questions: ${asks}`);
+      if (asks > 1) f.push(`${asks} questions`);
+      // Naming a couple while saying where they landed is fine; naming four or five is reading the list back.
+      if ([/grandma|\bcall\b/i, /\btax/i, /garage/i, /chapters?|\bbook|\bread(ing)?\b/i, /\bruns?\b/i].filter(re => re.test(t.reply)).length >= 4) f.push('the reply lists the items');
+      if (t.offTopic) f.push('marked off topic');
+    });
+
+    await scenario('21 unrelated photo', async (f, notes) => {
+      live(3);
+      const land = landscape();
+      if (!land) { f.push('no landscape photo on this machine'); return; }
+      const t = await say('', null, null, [land]);
+      f.push(...turnChecks(t, { maxWords: 30 }));
+      if (planned(t).length) f.push(`called ${planned(t).join(', ')}`);
+      const sentences = (t.reply.match(/[^.?]+[.?]/g) || []).length;
+      if (sentences > 2) f.push(`${sentences} sentences, not one short redirect`);
+      // Back to the deka: the plan in general, or what is on it today.
+      if (!/deka|plan|days?|goal|ten|today|tonight|tomorrow|session|run|gym|date|coffee|mom|music|rentletter|sober|book/i.test(t.reply)) f.push('does not bring them back to the deka');
+      notes.push(`tools: ${t.tools.map(x => x.name).join(', ') || 'none'}`);
+    });
   } finally {
     server.close();
   }
   return { n, results, turns: ctx.turns, app };
+}
+
+/* Attachments for scenarios 20 and 21 */
+
+const photo = (file, name) => ({ kind: 'image', media_type: 'image/jpeg', name, data: fs.readFileSync(file).toString('base64') });
+let landCache;
+function landscape() {
+  if (landCache !== undefined) return landCache;
+  const src = '/System/Library/Desktop Pictures/.wallpapers/Sonoma Horizon/Sonoma Horizon.heic';
+  const out = path.join(require('os').tmpdir(), 'deka-landscape.jpg');
+  try {
+    require('child_process').execFileSync('sips', ['-s', 'format', 'jpeg', '-Z', '1568', src, '--out', out], { stdio: 'ignore' });
+    landCache = photo(out, 'IMG_2041.jpg');
+  } catch { landCache = null; }
+  return landCache;
 }
 
 /* Scenario 8: a deka on day 5 with a long chat behind it */
@@ -1038,7 +1094,7 @@ function transcript(r, s) {
 }
 
 (async () => {
-  console.log(`Deka real runs: ${RUNS} x 19 scenarios on ${MODEL}`);
+  console.log(`Deka real runs: ${RUNS} x 21 scenarios on ${MODEL}`);
   const runs = await Promise.all(Array.from({ length: RUNS }, (_, i) => run(i + 1)));
   const rows = [];
   for (const r of runs) for (const s of r.results) for (const t of s.turns) rows.push({ run: r.n, scenario: s.name, said: t.said.slice(0, 40), ttfw: t.ttfw, total: t.total, ...t.usage, cost: +t.cost.toFixed(4), rounds: t.rounds, plan_check: t.score.filter(Boolean) });

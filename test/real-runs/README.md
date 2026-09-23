@@ -1,6 +1,19 @@
 # Real runs
 
-## Latest: the goals card, scenarios 1, 2 and 19 twice, on Opus 5.5 at low effort
+## Latest: attachments, scenarios 20 and 21 twice, 1 and 2 once, on Opus 5.5 at low effort
+
+In `attachments/` and `attachments-core/`, run on 2026-09-23 after photos and PDFs could be sent with a message. Scenario 20 sends only a photo of a handwritten to do list with five items (`fixtures/todo-list.jpg`, a rendered note, not a camera photo). Scenario 21 sends only a landscape photo, a macOS wallpaper converted when the run starts and never committed.
+
+| Scenario | Run 1 | Run 2 |
+|---|---|---|
+| 20 photo of a to do list | pass | pass |
+| 21 unrelated photo | pass | pass |
+| 1 full dump | pass | |
+| 2 book and trim | pass | |
+
+Scenario 20 made the five goals every time (run 3, the rest once or twice) with no question. Scenario 21 answered in one or two sentences, called only `mark_off_topic`, and no planning tool. On the way there, one reply named all five items back and one redirect ran to three sentences with a question; the prompt now rules out both. Spend for the task was about $1.12.
+
+## Earlier: the goals card, scenarios 1, 2 and 19 twice, on Opus 5.5 at low effort
 
 In `goals-card/`, run on 2026-09-23 after trims became data (`suggest_trim`) shown on the goals card, and the reply stopped listing goals and counts. Scenario 19 is a five paragraph message with ten goals, two of them daily, and time alone every other evening; after the trim it taps Use suggestion and checks the plan keeps evenings free.
 
