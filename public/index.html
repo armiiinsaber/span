@@ -473,7 +473,7 @@ const ui = {
   moved: '',
   undo: null,
   locked: false,
-  checked: false,
+  awake: false,
   openPast: null,
   addOpen: false,
   addType: 'do',
@@ -781,10 +781,25 @@ function autosize(t) {
 
 /* Claude flows */
 
+// One shared session check. A free Render instance can take a minute to wake,
+// so the first Claude call waits on this and says so.
+let waking = null;
+function wake() {
+  if (!waking) waking = api('/api/session').then(r => { ui.awake = true; return r; }, err => { waking = null; throw err; });
+  return waking;
+}
+
 async function run(label, fn) {
-  ui.busy = label; ui.error = ''; ui.retry = null;
+  ui.busy = ui.awake ? label : 'Waking up'; ui.error = ''; ui.retry = null;
   render();
-  try { await fn(); }
+  try {
+    if (!ui.awake) {
+      await wake();
+      ui.busy = label;
+      render();
+    }
+    await fn();
+  }
   catch (err) {
     if (err.status === 401) { ui.busy = null; return; }
     ui.error = err.status === 429 ? 'Too many tries. Give it a few minutes.'
@@ -1113,7 +1128,7 @@ function importData(file) {
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.activeElement?.matches('textarea, input')) render(); });
 
 render();
-api('/api/session').then(() => { ui.checked = true; }).catch(() => {});
+wake().catch(() => {});
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
