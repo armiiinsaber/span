@@ -1196,7 +1196,8 @@ function renderDock() {
       <label class="sr" for="msg">Message Deka</label>
       <textarea id="msg" rows="1" enterkeyhint="send"></textarea>
       ${mic}<button class="icon-btn send" type="submit" aria-label="Send" disabled>${I.up}</button></form>
-      <p class="offline" id="offline" hidden>Offline. Messages send when you are back.</p>`;
+      <p class="offline" id="offline" hidden>Offline. Messages send when you are back.</p>
+      <p class="offline" id="tooLong" role="status" hidden>Keep it under 2,000 characters.</p>`;
   }
   const t = $('msg');
   const ph = ui.tweak ? 'What should change?' : phase() === 'planning' && !chatSpan().intentions.length ? 'Tell Deka your goals' : 'Message Deka';
@@ -1481,6 +1482,8 @@ function buildRequest(span, text, event) {
     messages: all.slice(-30),
     message: text || null,
     event: event || null,
+    // Redirects in a row, so Deka can say once that it is built only for planning.
+    off_topic_streak: span.offStreak || 0,
   };
   if (older.length) body.to_summarize = older;
   // The card still waiting for Confirm, with every session on it, so a tweak adjusts that card.
@@ -1564,7 +1567,8 @@ async function startTurn(span, text, event, ask) {
     turn.target = req.target; turn.summarizeTo = req.summarizeTo;
     const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body), credentials: 'same-origin' });
     if (res.status === 401) { ui.locked = true; throw Object.assign(new Error('locked'), { status: 401 }); }
-    if (!res.ok || !res.body) throw Object.assign(new Error('failed'), { status: res.status });
+    // The server's own note for a message that is too long or a day's chat that is used up.
+    if (!res.ok || !res.body) throw Object.assign(new Error('failed'), { status: res.status, note: [413, 429].includes(res.status) ? (await res.json().catch(() => ({}))).error : '' });
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = '';
@@ -1583,7 +1587,7 @@ async function startTurn(span, text, event, ask) {
   } catch (err) {
     clearTimeout(wakeTimer);
     if (err.status === 401) { msg.error = null; span.chat = span.chat.filter(m => m !== msg); ui.turn = null; clearInterval(turn.timer); render(); return; }
-    msg.error = err.status === 503 ? 'Deka is not set up yet.' : err.status === 429 ? 'Too many messages. Wait a few minutes.' : navigator.onLine === false ? 'You are offline.' : 'Deka did not answer.';
+    msg.error = err.note ? err.note : err.status === 503 ? 'Deka is not set up yet.' : err.status === 429 ? 'Too many messages. Wait a few minutes.' : navigator.onLine === false ? 'You are offline.' : 'Deka did not answer.';
     msg.retry = { text, event };
   }
   turn.finished = true;
@@ -1595,6 +1599,7 @@ function onEvent(turn, ev, data) {
   if (ev === 'text') { msg.text += data.delta; turn.pending += data.delta; saveSoon(); return; }
   if (ev === 'error') { msg.error = data.message; msg.retry = { text: turn.text, event: turn.event }; return; }
   if (ev === 'done') return;
+  if (ev === 'off_topic') { turn.offTopic = true; return; }
   if (ev === 'summary') { turn.span.summary = data.summary; turn.span.summarizedUpTo = Math.max(0, turn.summarizeTo); return; }
   const target = spanFor(turn.target) || turn.span;
   if (ev === 'goals') {
@@ -1628,6 +1633,8 @@ function finishTurn() {
   ui.turn = null;
   $('chat')?.removeAttribute('aria-busy');
   const { msg, span, event, ask } = t;
+  // Any answered message moves the streak: one more redirect, or back to zero.
+  if (!msg.error && t.text) span.offStreak = t.offTopic ? (span.offStreak || 0) + 1 : 0;
   msg.text = msg.text.trim();
   if (!msg.error && event && event.kind === 'checkin' && ask) {
     ask.checkin.answered = true;
@@ -2081,6 +2088,9 @@ document.addEventListener('submit', e => {
   if (kind === 'sheet') { if (ui.sheet && ui.sheet.kind === 'new') addFromSheet(); else closeSheet(); return; }
   const ta = $('msg');
   const text = ta.value.trim();
+  // Too long to send: say so and keep the text, so it can be cut down.
+  $('tooLong').hidden = text.length <= 2000;
+  if (text.length > 2000) { setDockHeight(); return; }
   if (!text || ui.turn) return;
   if (rec) { rec.stop(); rec = null; }
   ta.value = '';
@@ -2094,6 +2104,7 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'msg') {
     autosize(t);
+    if (!$('tooLong').hidden && t.value.trim().length <= 2000) { $('tooLong').hidden = true; setDockHeight(); }
     $dock.querySelector('.send').disabled = !t.value.trim() || Boolean(ui.turn);
     setDockHeight();
     return;

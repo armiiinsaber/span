@@ -333,6 +333,18 @@ test.describe('Deka app', { skip }, () => {
     await drag(120); assert.equal(await cls(), 'closed');
   });
 
+  test('a message over 2,000 characters stays in the composer with a note, and nothing is sent', async () => {
+    await seed(liveState(4));
+    const before = sent.length;
+    await say('x'.repeat(2100));
+    assert.equal(await page.js("document.getElementById('tooLong').hidden"), false);
+    assert.equal(await page.js("document.getElementById('msg').value.length"), 2100, 'the text is kept');
+    assert.equal(sent.length, before, 'no request');
+    await page.js("(() => { const t = document.getElementById('msg'); t.value = 'short'; t.dispatchEvent(new Event('input', { bubbles: true })); })()");
+    assert.equal(await page.js("document.getElementById('tooLong').hidden"), true);
+    await page.js("document.getElementById('msg').value = ''");
+  });
+
   test('the living mark moves while Deka thinks and settles when done', async () => {
     await seed(liveState(4));
     await say('plan it');
