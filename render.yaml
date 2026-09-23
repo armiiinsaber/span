@@ -2,7 +2,7 @@ services:
   - type: web
     name: span
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /manifest.webmanifest
