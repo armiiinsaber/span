@@ -58,7 +58,7 @@ function state() {
       { type: 'status', span: 'c1', day: 4, goals: intentions.map(g => ({ id: g.id, name: g.name, type: g.type, icon: g.icon, category: g.category, done: occurrences.filter(o => o.intention_id === g.id && o.done).length, target: g.target })) },
     ] },
   ];
-  return { v: 1, seen: true, next: null, spans: [], settings: { checkin: '23:59' },
+  return { v: 1, seen: true, next: null, spans: [], settings: { checkin: '23:59', theme: 'system' },
     current: { id: 'c1', start: iso(start), status: 'live', notes: { 4: 'Slept well.' }, log: [], chat, summary: '', summarizedUpTo: 0, checked: [1, 2], checkin: {}, intentions, occurrences } };
 }
 
@@ -104,8 +104,9 @@ try {
       await tap('.row-btn'); await tap('[data-a=icon-open]'); await snap('goal sheet'); await tap('#sheet [data-a=sheet-close]');
       await tap('[data-a=more]'); await snap('more sheet');
       await tap('[data-a=go-past]'); await snap('past');
-      await tap('[data-a=back]'); await tap('[data-a=more]'); await tap('[data-a=go-settings]'); await snap('settings');
-      await page.evaluate(() => { localStorage.clear(); location.reload(); }); await new Promise(r => setTimeout(r, 900)); await snap('intro');
+      await tap('[data-a=back]'); await tap('[data-a=more]'); await tap('[data-a=go-profile]'); await snap('profile');
+      await page.evaluate(() => { localStorage.clear(); location.reload(); }); await new Promise(r => setTimeout(r, 900)); await snap('theme choice');
+      await tap('[data-a=theme][data-v=system]'); await snap('intro');
       await page.evaluate(() => fetch('/api/logout', { method: 'POST' }).then(() => location.reload())); await new Promise(r => setTimeout(r, 900)); await snap('login');
       const res = await flow.createFlowResult();
       for (const step of res.steps) {

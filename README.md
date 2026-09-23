@@ -35,9 +35,9 @@ The app has three tabs, shown as icons: the Deka mark, a grid of ten dots, and a
 - **Days**, the full strip: one row per day with big icons, today highlighted. Tap an icon to check it off, tap a day to open it in a sheet with names and notes. On desktop, drag an icon to another day.
 - **Goals**, every goal as its icon, name and a progress ring. Tap one to rename it, pick another icon, change its count, move a day by tapping it and then the new day, or delete it.
 
-Past dekas and Settings sit behind the icon in the header. Each deka has its own chat thread; past threads stay readable in Past dekas.
+Profile and Past dekas sit behind the profile icon in the header. Each deka has its own chat thread; past threads stay readable in Past dekas.
 
-**Check in.** Settings holds a daily check in time, 8:00 pm by default. The first time the app opens after that time, Deka has already asked "How did today go?". Deka logs what you say happened (tap a result on the card to correct it). If something planned that day went unmentioned, it asks about it in one short line and waits for your answer; it never assumes a session was missed, and the check in stays open until you reply. Then it proposes how the rest of the deka fits. A session nobody confirmed shows on Days as a dashed outline, not done and not missed, and the next evening's check in asks about it first. A skipped day is asked about the next evening.
+**Check in.** Profile holds a daily check in time, 8:00 pm by default. The first time the app opens after that time, Deka has already asked "How did today go?". Deka logs what you say happened (tap a result on the card to correct it). If something planned that day went unmentioned, it asks about it in one short line and waits for your answer; it never assumes a session was missed, and the check in stays open until you reply. Then it proposes how the rest of the deka fits. A session nobody confirmed shows on Days as a dashed outline, not done and not missed, and the next evening's check in asks about it first. A skipped day is asked about the next evening.
 
 **Review.** On Day 10 Deka opens the review in the chat: what held, what slipped, one pattern. It then drafts the next deka's goals and schedule. Confirming it starts the next deka with a fresh thread.
 
@@ -45,9 +45,13 @@ Past dekas and Settings sit behind the icon in the header. Each deka has its own
 
 **Look and feel.** Deka follows Apple's guidelines where a web app can. Text uses a scale modeled on Apple's text styles, with Body at 17 points and nothing under 11, and on iPhone it follows the text size setting. Every control is at least 44 by 44 points. Dark mode follows the system: a warm near black under ivory text, the same tints lifted, chartreuse still for done. Glass is only for what floats over content: the tab bar, the composer, toasts and sheets. Cards are solid. Sheets have a grabber, open at medium when they are tall, drag up to large and swipe down to close. Motion uses springs and never runs with Reduce Motion, where sheets and toasts fade instead. The header is static, not fixed: fixed headers near the notch drift on iPhone.
 
+**Light or dark.** Right after the passcode, each device is asked once: Light, Dark, or Match my iPhone, which follows the system setting and is what a device gets until it chooses. The choice lives at the top of Profile and applies at once, with a short crossfade (none with Reduce Motion). It is saved with the data, so export and import carry it, and mirrored in `deka.theme`, which a small script in the page head reads to set the theme before anything paints. iOS launch screens can only follow the system setting, so with a choice that differs from the system, the launch screen shows the system's theme for a moment.
+
+**The top edge.** From iOS 26, where the system finds no flat color at the top of a web app, it blurs the status bar area, and that blur reaches down over the page. Deka puts a fixed strip in the page color at the top edge, only as tall as the status bar, for iOS to read. At the top of a page it is invisible; once content scrolls up under the status bar, a few pixels of soft edge fade in below it. It never covers the header.
+
 **Offline.** Everything except talking to Deka works offline. Messages sent offline show as waiting and send when the connection returns.
 
-All data lives in localStorage on the device, including the chat threads, the summaries and the check in time. Export and import it as JSON under Settings. The server stores nothing.
+All data lives in localStorage on the device, including the chat threads, the summaries and the check in time. Export and import it as JSON under Profile. The server stores nothing.
 
 ### How Deka works
 
@@ -187,4 +191,4 @@ iOS may keep showing the old home screen icon until the app is removed from the 
 
 Open dekaapp.com in Safari, Share, Add to Home Screen. It opens full screen and keeps working offline.
 
-**Sign in and saved data.** After the passcode, a device stays signed in for a year, and every use renews that year, so an active device never signs out. Changing `DEKA_PASSCODE` signs every device out. iOS keeps Safari and the home screen app apart, each with its own sign in and its own saved data, so each asks for the passcode once. The home screen app is the safe place for your data: Safari can clear storage for sites you have not opened in a while, while an installed app keeps it. The app also asks the browser to keep its storage where that is supported. Export a copy now and then under Settings. Plans made offline are by hand until you are back online. An installed copy from an older address is a separate app; add Deka again from dekaapp.com.
+**Sign in and saved data.** After the passcode, a device stays signed in for a year, and every use renews that year, so an active device never signs out. Changing `DEKA_PASSCODE` signs every device out. iOS keeps Safari and the home screen app apart, each with its own sign in and its own saved data, so each asks for the passcode once. The home screen app is the safe place for your data: Safari can clear storage for sites you have not opened in a while, while an installed app keeps it. The app also asks the browser to keep its storage where that is supported. Export a copy now and then under Profile. Plans made offline are by hand until you are back online. An installed copy from an older address is a separate app; add Deka again from dekaapp.com.
