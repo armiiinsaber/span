@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Deka">
+  <title>Deka</title>
+  <rect width="1024" height="1024" fill="#141310"/>
+  <circle id="day1" cx="387.41" cy="435.62" r="16.64" fill="#F5F3EC"/>
+  <circle id="day2" cx="349.11" cy="412.08" r="20.13" fill="#F5F3EC"/>
+  <circle id="day3" cx="328.30" cy="361.75" r="24.40" fill="#F5F3EC"/>
+  <circle id="day4" cx="343.86" cy="297.52" r="29.55" fill="#F5F3EC"/>
+  <circle id="day5" cx="404.80" cy="245.56" r="35.84" fill="#F5F3EC"/>
+  <circle id="day6" cx="501.51" cy="238.08" r="43.44" fill="#F5F3EC"/>
+  <circle id="day7" cx="601.78" cy="299.62" r="52.67" fill="#F5F3EC"/>
+  <circle id="day8" cx="656.29" cy="431.47" r="63.81" fill="#F5F3EC"/>
+  <circle id="day9" cx="615.81" cy="599.61" r="77.34" fill="#F5F3EC"/>
+  <circle id="day10" cx="456.21" cy="735.62" r="93.74" fill="#B8F06E"/>
+</svg>
