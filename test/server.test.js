@@ -153,6 +153,35 @@ test('no served file contains the key or reads it', async () => {
   assert.ok(!root.includes(KEY));
 });
 
+test('attachments: at most 5, photos and PDFs only, PDFs up to 3 MB, and the whole request under 4 MB', async () => {
+  const cookie = cookieOf(await post('/api/login', { passcode: 'letmein' }));
+  const chat = async body => { const r = await post('/api/chat', { phase: 'planning', days, message: '', ...body }, cookie); return [r.status, r.headers.get('content-type').includes('json') ? (await r.json()).error : 'stream']; };
+  const img = { media_type: 'image/jpeg', data: 'AAAA' };
+  assert.deepEqual(await chat({ attachments: Array(6).fill(img) }), [400, 'Up to 5 attachments per message.']);
+  assert.deepEqual(await chat({ attachments: [{ media_type: 'text/html', data: 'AAAA' }] }), [400, 'Those attachments cannot be sent.']);
+  assert.deepEqual(await chat({ attachments: [{ media_type: 'image/jpeg', data: 'not base64!' }] }), [400, 'Those attachments cannot be sent.']);
+  // A PDF over 3 MB is over 4 MB as base64, so the body limit turns it away first.
+  assert.equal((await chat({ attachments: [{ media_type: 'application/pdf', data: 'A'.repeat(4200000) }] }))[0], 413);
+  assert.deepEqual(await chat({ message: 'x'.repeat(4300000) }), [413, 'That is too large. A message can carry up to 4 MB.']);
+  assert.deepEqual(await chat({}), [400, 'Nothing to say.']);
+  assert.deepEqual(await chat({ attachments: [img] }), [200, 'stream'], 'a photo with no words is enough');
+});
+
+test('feedback goes to the server log, never to Claude', async () => {
+  const cookie = cookieOf(await post('/api/login', { passcode: 'letmein' }));
+  const lines = [];
+  const log = console.log;
+  console.log = (...a) => lines.push(a.join(' '));
+  try {
+    const r = await post('/api/feedback', { rating: 'down', reason: 'Too many runs', message: 'Here is the plan.', ts: '2026-09-23T18:00:00.000Z' }, cookie);
+    assert.equal(r.status, 200);
+    assert.equal((await post('/api/feedback', { rating: 'meh' }, cookie)).status, 400);
+    assert.equal((await post('/api/feedback', { rating: 'up' })).status, 401, 'needs a session');
+  } finally { console.log = log; }
+  const entry = JSON.parse(lines.find(l => l.startsWith('[feedback]')).slice(11));
+  assert.deepEqual(entry, { rating: 'down', reason: 'Too many runs', message: 'Here is the plan.', ts: '2026-09-23T18:00:00.000Z' });
+});
+
 test('rate limit kicks in on /api/chat', async () => {
   const login = await post('/api/login', { passcode: 'letmein' });
   const cookie = login.headers.get('set-cookie').split(';')[0];

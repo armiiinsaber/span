@@ -6,7 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
-const { runChat, MODEL } = require('./lib/chat');
+const { runChat, MODEL, checkAttachments } = require('./lib/chat');
 
 const PORT = process.env.PORT || 3000;
 // SPAN_PASSCODE is the name from before the rename, read only when DEKA_PASSCODE is unset.
@@ -16,6 +16,8 @@ const COOKIE = 'span_session';
 const DEVICE = 'deka_device';
 // Hard limits, checked before any call to Claude.
 const MAX_MESSAGE = 2000;
+// A whole chat request, attachments included, stays under Vercel's 4.5 MB body limit.
+const MAX_BODY = '4mb';
 const DAILY_TURNS = 150;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
@@ -80,7 +82,13 @@ function createApp({ client, passcode = PASSCODE, dailyTurns = DAILY_TURNS } = {
   });
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '512kb' }));
+  app.use(express.json({ limit: MAX_BODY }));
+  app.use((err, req, res, next) => {
+    // Read the rest of the upload away, or the client waits on it and never sees the answer.
+    if (err && err.type === 'entity.too.large') { req.resume(); res.set('Connection', 'close'); return res.status(413).json({ error: 'That is too large. A message can carry up to 4 MB.' }); }
+    if (err && err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Bad request.' });
+    next(err);
+  });
 
   app.use((req, res, next) => {
     res.set('X-Content-Type-Options', 'nosniff');
@@ -108,6 +116,16 @@ function createApp({ client, passcode = PASSCODE, dailyTurns = DAILY_TURNS } = {
 
   app.get('/api/session', (req, res) => res.json({ ok: true, model: MODEL, ai: Boolean(client) }));
 
+  // A thumbs up or down on a reply, written to the server log for review. Nothing goes to Claude.
+  app.post('/api/feedback', limiter({ windowMs: 10 * 60 * 1000, max: 60 }), (req, res) => {
+    const b = req.body || {};
+    if (![null, 'up', 'down'].includes(b.rating ?? null)) return res.status(400).json({ error: 'Unknown rating.' });
+    const clip = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+    const at = Date.parse(b.ts);
+    console.log(`[feedback] ${JSON.stringify({ rating: b.rating ?? null, reason: clip(b.reason, 1000), message: clip(b.message, 4000), ts: Number.isNaN(at) ? new Date().toISOString() : new Date(at).toISOString() })}`);
+    res.json({ ok: true });
+  });
+
   // One chat turn, streamed back as server sent events: text, goals, log, proposal, summary, error, done.
   app.post('/api/chat', limiter({ windowMs: 10 * 60 * 1000, max: 40 }), async (req, res) => {
     const body = req.body || {};
@@ -115,7 +133,9 @@ function createApp({ client, passcode = PASSCODE, dailyTurns = DAILY_TURNS } = {
     if (!Array.isArray(body.days) || body.days.length !== 10) return res.status(400).json({ error: 'Need the 10 day mapping.' });
     if (body.message != null && typeof body.message !== 'string') return res.status(400).json({ error: 'Nothing to say.' });
     if (body.message && body.message.length > MAX_MESSAGE) return res.status(413).json({ error: 'That is a long one. Keep it under 2,000 characters and send it again.' });
-    if (!body.message && !body.event) return res.status(400).json({ error: 'Nothing to say.' });
+    const attached = checkAttachments(body.attachments);
+    if (!attached.ok) return res.status(attached.status).json({ error: attached.error });
+    if (!body.message && !body.event && !attached.list.length) return res.status(400).json({ error: 'Nothing to say.' });
     if (!client) return res.status(503).json({ error: 'Claude is not set up on the server.' });
     // The day comes from the app's own date, so the limit resets at the person's midnight.
     const day = (String(body.today || '').match(/\d{4}-\d{2}-\d{2}/) || [new Date().toISOString().slice(0, 10)])[0];
