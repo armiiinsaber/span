@@ -51,6 +51,33 @@ test('session cookie is Lax, host only, and Secure over HTTPS', async () => {
   assert.match(https.headers.get('set-cookie'), /;\s*Secure/i);
 });
 
+const YEAR = 365 * 24 * 60 * 60;
+const cookieOf = r => r.headers.get('set-cookie').split(';')[0];
+const maxAge = r => Number((r.headers.get('set-cookie').match(/Max-Age=(\d+)/i) || [])[1]);
+
+test('a signed in device stays signed in for a year, renewed on every use', async () => {
+  const login = await post('/api/login', { passcode: 'letmein' });
+  assert.equal(maxAge(login), YEAR);
+  assert.match(login.headers.get('set-cookie'), /HttpOnly/i);
+  const again = await fetch(base + '/api/session', { headers: { Cookie: cookieOf(login) } });
+  assert.equal(again.status, 200);
+  assert.equal(maxAge(again), YEAR, 'the expiry is pushed out again');
+  assert.match(again.headers.get('set-cookie'), /Expires=/i);
+});
+
+test('the session survives a restart and fails after a passcode change', async () => {
+  const cookie = cookieOf(await post('/api/login', { passcode: 'letmein' }));
+  const open = async opts => {
+    const s = createApp({ client, ...opts }).listen(0);
+    await new Promise(r => s.once('listening', r));
+    const r = await fetch(`http://127.0.0.1:${s.address().port}/api/session`, { headers: { Cookie: cookie } });
+    s.close();
+    return r.status;
+  };
+  assert.equal(await open({}), 200, 'a fresh server with the same passcode still knows the device');
+  assert.equal(await open({ passcode: 'a new passcode' }), 401, 'a new passcode signs every device out');
+});
+
 test('the module default export is the app, for Vercel', () => {
   const mod = require('../server');
   assert.equal(typeof mod, 'function');

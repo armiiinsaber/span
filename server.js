@@ -16,8 +16,10 @@ const IS_PROD = process.env.NODE_ENV === 'production';
 
 if (!PASSCODE) console.warn('DEKA_PASSCODE is not set. Every login will fail until it is.');
 
-// The session token is derived from the passcode, so changing it signs everyone out.
-const sessionToken = () => crypto.createHmac('sha256', PASSCODE).update('span session v1').digest('hex');
+// A device stays signed in for a year, and every request it makes pushes that year out again.
+const SESSION_MS = 365 * 24 * 60 * 60 * 1000;
+// The session token is derived from the passcode, so changing it signs every device out.
+const sessionToken = pass => crypto.createHmac('sha256', pass).update('span session v1').digest('hex');
 
 function safeEqual(a, b) {
   const x = Buffer.from(String(a));
@@ -53,8 +55,14 @@ function limiter({ windowMs, max }) {
   };
 }
 
-function createApp({ client } = {}) {
+function createApp({ client, passcode = PASSCODE } = {}) {
   const app = express();
+  const token = passcode ? sessionToken(passcode) : '';
+  // HttpOnly, SameSite Lax and host only, so it stays on dekaapp.com. Secure whenever the request
+  // came in over HTTPS, which Vercel reports through the proxy; plain local dev stays usable.
+  const setSession = (req, res) => res.cookie(COOKIE, token, {
+    httpOnly: true, secure: req.secure || IS_PROD, sameSite: 'lax', maxAge: SESSION_MS, path: '/',
+  });
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.use(express.json({ limit: '512kb' }));
@@ -67,16 +75,8 @@ function createApp({ client } = {}) {
 
   app.post('/api/login', limiter({ windowMs: 15 * 60 * 1000, max: 10 }), (req, res) => {
     const given = (req.body && req.body.passcode) || '';
-    if (!PASSCODE || !safeEqual(given, PASSCODE)) return res.status(401).json({ error: 'Wrong passcode.' });
-    res.cookie(COOKIE, sessionToken(), {
-      httpOnly: true,
-      // Host only (no Domain), so it stays on dekaapp.com. Secure whenever the
-      // request came in over HTTPS, which Vercel reports through the proxy.
-      secure: req.secure || IS_PROD,
-      sameSite: 'lax',
-      maxAge: 180 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
+    if (!passcode || !safeEqual(given, passcode)) return res.status(401).json({ error: 'Wrong passcode.' });
+    setSession(req, res);
     res.json({ ok: true });
   });
 
@@ -85,9 +85,9 @@ function createApp({ client } = {}) {
     res.json({ ok: true });
   });
 
-  // Everything else under /api needs a valid session.
+  // Everything else under /api needs a valid session, and using it renews it for another year.
   app.use('/api', (req, res, next) => {
-    if (PASSCODE && safeEqual(readCookie(req, COOKIE), sessionToken())) return next();
+    if (passcode && safeEqual(readCookie(req, COOKIE), token)) { setSession(req, res); return next(); }
     res.status(401).json({ error: 'Locked.' });
   });
 
