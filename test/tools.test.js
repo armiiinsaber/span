@@ -13,7 +13,7 @@ const errs = r => (r.errors || []).join('\n');
 test('update_goals adds, edits and removes, cleaning names', () => {
   const w = planning();
   const r = runTool('update_goals', { changes: [
-    { op: 'add', id: 'see_mom', name: 'See mom — Sundays', type: 'see', tag: '', target: 5 },
+    { op: 'add', id: 'see_mom', name: 'See mom \u2014 Sundays', type: 'see', tag: '', target: 5 },
     { op: 'edit', id: 'run', name: '', type: 'unchanged', tag: '', target: 6 },
     { op: 'remove', id: 'gym', name: '', type: 'unchanged', tag: '', target: 0 },
   ] }, w);

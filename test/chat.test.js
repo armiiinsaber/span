@@ -33,7 +33,7 @@ function scripted(replies) {
 const collect = async (client, b) => { const ev = []; await runChat(client, b, (e, d) => ev.push([e, d])); return ev; };
 
 test('streams text in order and removes dashes used as punctuation', async () => {
-  const ev = await collect(scripted([{ text: 'Two runs — easy ones.' }]), body());
+  const ev = await collect(scripted([{ text: 'Two runs \u2014 easy ones.' }]), body());
   assert.equal(ev.filter(e => e[0] === 'text').map(e => e[1].delta).join(''), 'Two runs, easy ones.');
 });
 
