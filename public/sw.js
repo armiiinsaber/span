@@ -1,7 +1,7 @@
 // Offline shell. The page opens from the cache at once, so a sleeping server
 // never holds it up, and a fresh copy is saved in the background for next time.
 // Fonts and icons come from the cache first. The API is never cached.
-const CACHE = 'deka-v2';
+const CACHE = 'deka-v3';
 const SHELL = ['/', '/manifest.webmanifest', '/icon.svg', '/icon-180.png', '/icon-192.png', '/fonts/melomaniac-serif-v0.1.woff'];
 
 self.addEventListener('install', e => {

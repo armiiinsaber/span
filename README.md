@@ -4,7 +4,7 @@ A planner built on 10 day cycles called dekas instead of weeks, with Claude as t
 
 Days are Day 1 to Day 10. Days 1 to 9 are for living the plan. Day 10 is review. You tell Claude what the next 10 days hold, it proposes a plan, you refine it by talking or by hand, then you live it one day at a time.
 
-Live at dekapp.com. Design follows DESIGN.md in the melomaniacstudios repo.
+Live at dekaapp.com. Design follows DESIGN.md in the melomaniacstudios repo.
 
 ## How it is built
 
@@ -64,7 +64,7 @@ Vercel detects Express from `server.js`. Its default export is the app, and the 
 
 ### Login and rate limits
 
-The session is an HttpOnly cookie, `SameSite=Lax`, `Secure` over HTTPS, and host only, so it belongs to dekapp.com alone. Because www redirects to the apex, every login happens on dekapp.com.
+The session is an HttpOnly cookie, `SameSite=Lax`, `Secure` over HTTPS, and host only, so it belongs to dekaapp.com alone. Because www redirects to the apex, every login happens on dekaapp.com.
 
 The rate limits (30 plan calls per 10 minutes, 10 login tries per 15 minutes, per IP) live in memory. Vercel runs several instances that do not share memory, so these limits are soft: each instance counts on its own and a new instance starts at zero. The passcode is the real protection; keep it long. For a hard limit, add Vercel Firewall rate limiting on `/api/plan`.
 
@@ -78,8 +78,8 @@ The rate limits (30 plan calls per 10 minutes, 10 login tries per 15 minutes, pe
 
 In the project, Settings, Domains:
 
-1. Add `dekapp.com`. Vercel offers to add `www.dekapp.com` too; accept, and choose to redirect `www.dekapp.com` to `dekapp.com` (308).
-2. At the DNS host for dekapp.com, add the records Vercel shows on each domain card:
+1. Add `dekaapp.com`. Vercel offers to add `www.dekaapp.com` too; accept, and choose to redirect `www.dekaapp.com` to `dekaapp.com` (308).
+2. At the DNS host for dekaapp.com, add the records Vercel shows on each domain card:
 
 ```
 Type   Name   Value
@@ -91,4 +91,4 @@ The www value is unique to each project, and Vercel may show a newer A value on 
 
 ## Install on iPhone
 
-Open dekapp.com in Safari, Share, Add to Home Screen. It opens full screen and keeps working offline. Plans made offline are by hand until you are back online. An installed copy from an older address is a separate app; add Deka again from dekapp.com.
+Open dekaapp.com in Safari, Share, Add to Home Screen. It opens full screen and keeps working offline. Plans made offline are by hand until you are back online. An installed copy from an older address is a separate app; add Deka again from dekaapp.com.

@@ -70,7 +70,7 @@ function createApp({ client } = {}) {
     if (!PASSCODE || !safeEqual(given, PASSCODE)) return res.status(401).json({ error: 'Wrong passcode.' });
     res.cookie(COOKIE, sessionToken(), {
       httpOnly: true,
-      // Host only (no Domain), so it stays on dekapp.com. Secure whenever the
+      // Host only (no Domain), so it stays on dekaapp.com. Secure whenever the
       // request came in over HTTPS, which Vercel reports through the proxy.
       secure: req.secure || IS_PROD,
       sameSite: 'lax',
