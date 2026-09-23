@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { runChat, buildMessages, contextBlock } = require('../lib/chat');
+const { runChat, buildMessages, contextBlock, CEILING, MAX_ROUNDS } = require('../lib/chat');
 
 const days = Array.from({ length: 10 }, (_, i) => ({ day: i + 1, date: `2026-09-${String(23 + i).padStart(2, '0')}`, weekday: 'Wednesday' }));
 const body = extra => ({ phase: 'planning', today: 'Wednesday 2026-09-23', days, goals: [{ id: 'run', name: 'Run', type: 'do', tag: '', target: 2 }], schedule: [], messages: [], message: 'plan it', ...extra });
@@ -51,7 +51,7 @@ test('a malformed proposal goes back once with errors, and only the fixed one re
   assert.equal(retry.is_error, true);
   assert.match(retry.content, /twice on day 3/);
   assert.equal(client.calls[0].tool_choice.type, 'auto');
-  assert.deepEqual(client.calls[0].tools.map(t => t.name), ['update_goals', 'log_day', 'propose_schedule']);
+  assert.deepEqual(client.calls[0].tools.map(t => t.name), ['update_goals', 'log_day', 'propose_schedule', 'mark_off_topic']);
 });
 
 test('two invalid calls end the turn with an error and nothing applied', async () => {
@@ -72,7 +72,7 @@ test('goals then a proposal in one turn are judged together', async () => {
 test('review turns cannot log days, and older messages ask for a summary', async () => {
   const client = scripted([{ text: 'Ok.' }]);
   await collect(client, body({ phase: 'review', event: { kind: 'review' }, message: null, to_summarize: [{ role: 'user', text: 'old' }] }));
-  assert.deepEqual(client.calls[0].tools.map(t => t.name), ['update_goals', 'propose_schedule', 'show_status', 'save_summary']);
+  assert.deepEqual(client.calls[0].tools.map(t => t.name), ['update_goals', 'propose_schedule', 'show_status', 'mark_off_topic', 'save_summary']);
   assert.match(client.calls[0].messages.at(-1).content, /Event: review/);
 });
 
@@ -150,4 +150,35 @@ test('a tweak is only asked to fix what it made worse', async () => {
   const ev = await collect(client, tagged({ open_card: card }));
   assert.equal(client.calls.length, 1, 'the flag was already on the card, so no retry');
   assert.equal(ev.filter(e => e[0] === 'proposal').length, 1);
+});
+
+test('output ceilings by kind of turn, and a turn that hits one stops with the retry message', async () => {
+  const seen = [];
+  const cut = { messages: { stream(params) {
+    seen.push(params.max_tokens);
+    return { on() { return this; }, abort() {}, async finalMessage() { return { stop_reason: 'max_tokens', content: [] }; } };
+  } } };
+  const logs = [];
+  const ev = [];
+  await runChat(cut, body(), (e, d) => ev.push([e, d]), { log: m => logs.push(m) });
+  await runChat(cut, body({ phase: 'live', current_day: 3 }), () => {}, { log: () => {} });
+  await runChat(cut, body({ phase: 'review', event: { kind: 'review' }, message: null }), () => {}, { log: () => {} });
+  assert.deepEqual(seen, [CEILING.plan, CEILING.normal, CEILING.review]);
+  assert.equal(ev.at(-1)[0], 'error');
+  assert.match(logs.join(' '), /hit the plan ceiling/);
+});
+
+test('a turn that keeps needing more calls stops at the round limit with the retry message', async () => {
+  // Every call makes a valid call but never writes a reply, so each one asks for another.
+  const client = scripted(Array.from({ length: 8 }, () => ({ tools: [twoRuns([2, 5])] })));
+  const ev = await collect(client, body());
+  assert.equal(client.calls.length, MAX_ROUNDS);
+  assert.equal(ev.at(-1)[0], 'error');
+});
+
+test('the off topic streak from the app reaches Claude, and the marker changes nothing', async () => {
+  const ctx = JSON.parse(contextBlock(body({ off_topic_streak: 2 })).match(/<deka>\n(.*)\n<\/deka>/)[1]);
+  assert.equal(ctx.off_topic_streak, 2);
+  const ev = await collect(scripted([{ text: 'Back to your ten days?', tools: [['mark_off_topic', {}]] }]), body());
+  assert.deepEqual(ev.filter(e => e[0] !== 'text' && e[0] !== 'done').map(e => e[0]), ['off_topic']);
 });

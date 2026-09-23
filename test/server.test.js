@@ -78,6 +78,50 @@ test('the session survives a restart and fails after a passcode change', async (
   assert.equal(await open({ passcode: 'a new passcode' }), 401, 'a new passcode signs every device out');
 });
 
+test('a message over 2,000 characters is turned away before any call to Claude', async () => {
+  let calls = 0;
+  const counting = { messages: { stream(...a) { calls++; return client.messages.stream(...a); } } };
+  const s = createApp({ client: counting }).listen(0);
+  await new Promise(r => s.once('listening', r));
+  const at = `http://127.0.0.1:${s.address().port}`;
+  const cookie = (await fetch(at + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: 'letmein' }) })).headers.get('set-cookie').split(';')[0];
+  const r = await fetch(at + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ phase: 'planning', days, message: 'x'.repeat(2001) }) });
+  s.close();
+  assert.equal(r.status, 413);
+  assert.match((await r.json()).error, /under 2,000 characters/);
+  assert.equal(calls, 0);
+});
+
+test('each device gets its own daily turn limit, with a calm note when it is reached', async () => {
+  const s = createApp({ client, dailyTurns: 2 }).listen(0);
+  await new Promise(r => s.once('listening', r));
+  const at = `http://127.0.0.1:${s.address().port}`;
+  const login = async () => {
+    const r = await fetch(at + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: 'letmein' }) });
+    return r.headers.get('set-cookie').split(';')[0];
+  };
+  const session = await login();
+  const ask = async cookie => {
+    const r = await fetch(at + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ phase: 'planning', days, today: 'Wednesday 2026-09-23', message: 'hi' }) });
+    const device = (r.headers.get('set-cookie') || '').match(/deka_device=([a-f0-9]+)/);
+    await r.text();
+    return { status: r.status, device: device && device[1] };
+  };
+  const first = await ask(session);
+  assert.ok(first.device, 'a device id is set');
+  const phone = `${session}; deka_device=${first.device}`;
+  assert.equal((await ask(phone)).status, 200);
+  const third = await fetch(at + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: phone }, body: JSON.stringify({ phase: 'planning', days, today: 'Wednesday 2026-09-23', message: 'hi' }) });
+  assert.equal(third.status, 429);
+  assert.match((await third.json()).error, /works by hand until tomorrow/);
+  const tomorrow = await fetch(at + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: phone }, body: JSON.stringify({ phase: 'planning', days, today: 'Thursday 2026-09-24', message: 'hi' }) });
+  assert.equal(tomorrow.status, 200, 'a new day starts fresh');
+  await tomorrow.text();
+  const laptop = await ask(session);
+  assert.equal(laptop.status, 200, 'another device has its own count');
+  s.close();
+});
+
 test('the module default export is the app, for Vercel', () => {
   const mod = require('../server');
   assert.equal(typeof mod, 'function');

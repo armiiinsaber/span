@@ -12,6 +12,11 @@ const PORT = process.env.PORT || 3000;
 // SPAN_PASSCODE is the name from before the rename, read only when DEKA_PASSCODE is unset.
 const PASSCODE = process.env.DEKA_PASSCODE || process.env.SPAN_PASSCODE || '';
 const COOKIE = 'span_session';
+// Each device gets its own id, so the daily limit counts per device; the session token is shared.
+const DEVICE = 'deka_device';
+// Hard limits, checked before any call to Claude.
+const MAX_MESSAGE = 2000;
+const DAILY_TURNS = 150;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
 if (!PASSCODE) console.warn('DEKA_PASSCODE is not set. Every login will fail until it is.');
@@ -55,9 +60,19 @@ function limiter({ windowMs, max }) {
   };
 }
 
-function createApp({ client, passcode = PASSCODE } = {}) {
+function createApp({ client, passcode = PASSCODE, dailyTurns = DAILY_TURNS } = {}) {
   const app = express();
   const token = passcode ? sessionToken(passcode) : '';
+  // Turns per device per day, in memory: like the rate limits, each instance counts on its own.
+  const turns = new Map();
+  const device = (req, res) => {
+    let id = readCookie(req, DEVICE);
+    if (!/^[a-f0-9]{24}$/.test(id)) {
+      id = crypto.randomBytes(12).toString('hex');
+      res.cookie(DEVICE, id, { httpOnly: true, secure: req.secure || IS_PROD, sameSite: 'lax', maxAge: SESSION_MS, path: '/' });
+    }
+    return id;
+  };
   // HttpOnly, SameSite Lax and host only, so it stays on dekaapp.com. Secure whenever the request
   // came in over HTTPS, which Vercel reports through the proxy; plain local dev stays usable.
   const setSession = (req, res) => res.cookie(COOKIE, token, {
@@ -98,9 +113,17 @@ function createApp({ client, passcode = PASSCODE } = {}) {
     const body = req.body || {};
     if (!['planning', 'live', 'review'].includes(body.phase)) return res.status(400).json({ error: 'Unknown phase.' });
     if (!Array.isArray(body.days) || body.days.length !== 10) return res.status(400).json({ error: 'Need the 10 day mapping.' });
-    if (body.message != null && (typeof body.message !== 'string' || body.message.length > 4000)) return res.status(400).json({ error: 'That message is too long.' });
+    if (body.message != null && typeof body.message !== 'string') return res.status(400).json({ error: 'Nothing to say.' });
+    if (body.message && body.message.length > MAX_MESSAGE) return res.status(413).json({ error: 'That is a long one. Keep it under 2,000 characters and send it again.' });
     if (!body.message && !body.event) return res.status(400).json({ error: 'Nothing to say.' });
     if (!client) return res.status(503).json({ error: 'Claude is not set up on the server.' });
+    // The day comes from the app's own date, so the limit resets at the person's midnight.
+    const day = (String(body.today || '').match(/\d{4}-\d{2}-\d{2}/) || [new Date().toISOString().slice(0, 10)])[0];
+    const key = `${device(req, res)}:${day}`;
+    const used = turns.get(key) || 0;
+    if (used >= dailyTurns) return res.status(429).json({ error: 'That is all the chat for today. Everything else works by hand until tomorrow.', limit: 'daily' });
+    turns.set(key, used + 1);
+    if (turns.size > 5000) for (const k of turns.keys()) if (!k.endsWith(day)) turns.delete(k);
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
