@@ -1,0 +1,140 @@
+// Span server: serves the app, gates /api with one passcode, and plans with Claude.
+
+const path = require('path');
+const crypto = require('crypto');
+const express = require('express');
+const Anthropic = require('@anthropic-ai/sdk');
+const { plan, PlanError, MODEL } = require('./lib/planner');
+
+const PORT = process.env.PORT || 3000;
+const PASSCODE = process.env.SPAN_PASSCODE || '';
+const COOKIE = 'span_session';
+const IS_PROD = process.env.NODE_ENV === 'production';
+
+if (!PASSCODE) console.warn('SPAN_PASSCODE is not set. Every login will fail until it is.');
+
+// The session token is derived from the passcode, so changing it signs everyone out.
+const sessionToken = () => crypto.createHmac('sha256', PASSCODE).update('span session v1').digest('hex');
+
+function safeEqual(a, b) {
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
+function readCookie(req, name) {
+  const raw = req.headers.cookie || '';
+  for (const part of raw.split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === name) return decodeURIComponent(v.join('='));
+  }
+  return '';
+}
+
+// Fixed window limiter, in memory. Enough for one person on one instance.
+function limiter({ windowMs, max }) {
+  const hits = new Map();
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = req.ip;
+    const entry = hits.get(key);
+    if (!entry || now > entry.reset) {
+      hits.set(key, { count: 1, reset: now + windowMs });
+      return next();
+    }
+    if (++entry.count > max) {
+      res.set('Retry-After', Math.ceil((entry.reset - now) / 1000));
+      return res.status(429).json({ error: 'Too many requests. Try again in a few minutes.' });
+    }
+    next();
+  };
+}
+
+function createApp({ client } = {}) {
+  const app = express();
+  app.set('trust proxy', 1);
+  app.disable('x-powered-by');
+  app.use(express.json({ limit: '512kb' }));
+
+  app.use((req, res, next) => {
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Referrer-Policy', 'same-origin');
+    next();
+  });
+
+  app.post('/api/login', limiter({ windowMs: 15 * 60 * 1000, max: 10 }), (req, res) => {
+    const given = (req.body && req.body.passcode) || '';
+    if (!PASSCODE || !safeEqual(given, PASSCODE)) return res.status(401).json({ error: 'Wrong passcode.' });
+    res.cookie(COOKIE, sessionToken(), {
+      httpOnly: true,
+      secure: IS_PROD,
+      sameSite: 'strict',
+      maxAge: 180 * 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+    res.json({ ok: true });
+  });
+
+  app.post('/api/logout', (req, res) => {
+    res.clearCookie(COOKIE, { path: '/' });
+    res.json({ ok: true });
+  });
+
+  // Everything else under /api needs a valid session.
+  app.use('/api', (req, res, next) => {
+    if (PASSCODE && safeEqual(readCookie(req, COOKIE), sessionToken())) return next();
+    res.status(401).json({ error: 'Locked.' });
+  });
+
+  app.get('/api/session', (req, res) => res.json({ ok: true, model: MODEL, ai: Boolean(client) }));
+
+  app.post('/api/plan', limiter({ windowMs: 10 * 60 * 1000, max: 30 }), async (req, res) => {
+    const body = req.body || {};
+    if (!['plan', 'refine', 'rebalance', 'review'].includes(body.mode)) {
+      return res.status(400).json({ error: 'Unknown mode.' });
+    }
+    if (!Array.isArray(body.days) || body.days.length !== 10) {
+      return res.status(400).json({ error: 'Need the 10 day mapping.' });
+    }
+    if (typeof body.message === 'string' && body.message.length > 4000) {
+      return res.status(400).json({ error: 'That message is too long.' });
+    }
+    if (!client) return res.status(503).json({ error: 'Claude is not set up on the server.' });
+    try {
+      const result = await plan(client, body, msg => console.log(`[plan] ${msg}`));
+      res.json({ ok: true, plan: result });
+    } catch (err) {
+      if (err instanceof PlanError) {
+        console.warn(`[plan] ${err.message} ${err.details.join(' | ')}`);
+        return res.status(502).json({ error: err.message });
+      }
+      console.error('[plan] API error', err.status || '', err.message);
+      const status = err.status === 429 ? 429 : 502;
+      res.status(status).json({ error: status === 429 ? 'Claude is busy. Try again soon.' : 'Could not reach Claude.' });
+    }
+  });
+
+  app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
+
+  const pub = path.join(__dirname, 'public');
+  app.use(express.static(pub, {
+    setHeaders(res, file) {
+      if (file.endsWith('sw.js') || file.endsWith('.html')) res.set('Cache-Control', 'no-cache');
+      else if (file.includes(`${path.sep}fonts${path.sep}`)) res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  }));
+  app.get('*', (req, res) => res.sendFile(path.join(pub, 'index.html')));
+  return app;
+}
+
+if (require.main === module) {
+  let client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
+  if (!client && process.env.SPAN_MOCK === '1' && !IS_PROD) {
+    client = require('./lib/mock');
+    console.warn('SPAN_MOCK is on. Plans come from a local stand in, not Claude.');
+  }
+  if (!client) console.warn('ANTHROPIC_API_KEY is not set. The app works by hand only.');
+  createApp({ client }).listen(PORT, () => console.log(`Span on http://localhost:${PORT} using ${MODEL}`));
+}
+
+module.exports = { createApp };

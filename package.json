@@ -1,0 +1,19 @@
+{
+  "name": "span",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A planner built on 10 day spans, with Claude as the planner.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --env-file-if-exists=.env --watch server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "express": "^4.22.3"
+  }
+}
