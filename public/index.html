@@ -149,6 +149,8 @@ main {
 }
 main:focus { outline: none; }
 body.no-tabs main { padding-bottom: calc(var(--safe-b) + 40px); }
+/* While a toast is up, the page makes room so it never covers the newest card. */
+body.toasting main { padding-bottom: calc(var(--tabs-h) + var(--safe-b) + var(--dock-h) + 108px); }
 
 .eyebrow { font-size: .6875rem; font-weight: 500; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-soft); }
 .head { text-align: center; margin: 16px 0 28px; }
@@ -849,7 +851,7 @@ function chatView() {
   const span = chatSpan();
   const msgs = span.chat;
   if (!msgs.length && !ui.turn) return `<div class="chat" id="chat" role="log" data-span="${span.id}">${chatEmpty(span)}</div>`;
-  return `<div class="chat" id="chat" role="log" data-span="${span.id}">${msgs.map(m => msgView(m)).join('')}</div>`;
+  return `<h1 class="sr">Chat with Deka</h1><div class="chat" id="chat" role="log" data-span="${span.id}">${msgs.map(m => msgView(m)).join('')}</div>`;
 }
 
 // Keeps the chat in place while things change, so a streaming reply is never redrawn.
@@ -858,7 +860,7 @@ function refreshChat() {
   const span = chatSpan();
   if (!box || box.dataset.span !== span.id || ui.tab !== 'chat' || ui.sub) return false;
   if (!span.chat.length) return false;
-  if (box.querySelector('.chat-empty')) box.innerHTML = '';
+  if (box.querySelector('.chat-empty')) { box.innerHTML = ''; box.insertAdjacentHTML('beforebegin', '<h1 class="sr">Chat with Deka</h1>'); }
   const seen = new Set([...box.children].map(c => c.id));
   for (const m of span.chat) {
     const el = $(`m-${m.id}`);
@@ -1015,10 +1017,13 @@ let toastTimer = null;
 function toast(text, undo) {
   clearTimeout(toastTimer);
   ui.toastUndo = undo || null;
+  const stick = ui.tab === 'chat' && !ui.sub && (ui.pinned || nearBottom());
   $toast.innerHTML = `<div class="toast glass"><span>${esc(text)}</span>${undo ? '<button data-a="toast-undo">Undo</button>' : ''}</div>`;
+  document.body.classList.add('toasting');
+  if (stick) toBottom(true);
   toastTimer = setTimeout(hideToast, 4000);
 }
-function hideToast() { clearTimeout(toastTimer); $toast.innerHTML = ''; ui.toastUndo = null; }
+function hideToast() { clearTimeout(toastTimer); $toast.innerHTML = ''; ui.toastUndo = null; document.body.classList.remove('toasting'); }
 
 function renderSheet() {
   const sh = ui.sheet;
@@ -1252,9 +1257,8 @@ function revealTick() {
     t.shown += word;
     const el = document.querySelector(`#m-${t.msg.id} .t`);
     if (el) {
-      const stick = nearBottom();
       el.textContent = t.shown;
-      if (stick) toBottom();
+      if (ui.pinned) toBottom();
     }
   }
   if (!t.pending && t.finished) finishTurn();
@@ -1264,6 +1268,7 @@ async function startTurn(span, text, event, ask) {
   const msg = { id: uid(), role: 'deka', text: '', ts: Date.now(), cards: [] };
   span.chat.push(msg);
   const turn = ui.turn = { msg, span, shown: '', pending: '', finished: false, event, ask, text };
+  ui.pinned = true;
   render(); toBottom(true);
   $('chat')?.setAttribute('aria-busy', 'true');
   turn.timer = setInterval(revealTick, 32);
@@ -1322,7 +1327,7 @@ function onEvent(turn, ev, data) {
     msg.cards.push({ type: 'proposal', id: uid(), target: turn.target, occurrences: data.occurrences, changes: data.changes, changed_days: data.changed_days, status: 'open' });
   }
   if (!refreshChat()) render(); else renderDock();
-  if (nearBottom()) toBottom(true);
+  if (ui.pinned) toBottom(true);
   saveSoon();
 }
 
@@ -1349,7 +1354,8 @@ function finishTurn() {
   }
   if (!msg.text && !msg.cards.length && !msg.error) span.chat = span.chat.filter(m => m !== msg);
   settleMark(mk);
-  setTimeout(() => { render(); renderDock(); }, mk ? 1100 : 0);
+  if (ui.pinned) toBottom(true);
+  setTimeout(() => { const keep = ui.pinned || nearBottom(); render(); renderDock(); if (keep) toBottom(); ui.pinned = false; }, mk ? 1100 : 0);
   save();
   renderDock();
   setTimeout(flushQueue, 50);
@@ -1779,7 +1785,13 @@ window.addEventListener('offline', renderDock);
 
 /* Header hairline once the page scrolls */
 const $barEl = $('bar');
-window.addEventListener('scroll', () => $barEl.classList.toggle('scrolled', window.scrollY > 4), { passive: true });
+let lastY = window.scrollY;
+window.addEventListener('scroll', () => {
+  $barEl.classList.toggle('scrolled', window.scrollY > 4);
+  // Scrolling up during a reply lets the person read back without being pulled down.
+  if (ui.pinned && window.scrollY < lastY - 8) ui.pinned = false;
+  lastY = window.scrollY;
+}, { passive: true });
 
 /* Keyboard: keep the composer and the sheet above it */
 const vv = window.visualViewport;
