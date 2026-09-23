@@ -61,7 +61,7 @@ test('request shape: tool, model, no forced tool choice', async () => {
 });
 
 test('user message carries real weekdays, today, and history', () => {
-  const m = buildUserMessage({ ...body, days: days.map(d => ({ ...d, weekday: 'Friday' })), history: [{ role: 'user', text: 'mom on the weekend' }], past: ['Span Sep 12 to Sep 21: Run 5/6.'] });
+  const m = buildUserMessage({ ...body, days: days.map(d => ({ ...d, weekday: 'Friday' })), history: [{ role: 'user', text: 'mom on the weekend' }], past: ['Deka Sep 12 to Sep 21: Run 5/6.'] });
   assert.match(m, /Day 1: Friday 2026-09-22/);
   assert.match(m, /Day 10: .*review day/);
   assert.match(m, /Today: Tuesday 2026-09-22/);

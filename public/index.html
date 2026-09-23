@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Span</title>
-<meta name="description" content="Plan in 10 day spans.">
+<title>Deka</title>
+<meta name="description" content="Plan in 10 day dekas.">
 <meta name="theme-color" content="#F5F3EC">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Span">
+<meta name="apple-mobile-web-app-title" content="Deka">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon-180.png">
@@ -151,7 +151,7 @@ button { cursor: pointer; }
 .loading p { margin: 0; color: var(--ink-soft); font-size: 14px; }
 .error { text-align: center; font-size: 14px; margin: 20px 0 0; }
 
-/* Span grid */
+/* Deka grid */
 .grid { --cols: 10; }
 .grid .days, .grid .cells {
   display: grid; grid-template-columns: repeat(var(--cols), 1fr);
@@ -312,7 +312,7 @@ nav.tabs button[aria-current="page"]::before {
 <nav class="tabs" id="tabs" hidden>
   <div class="in">
     <button data-tab="today">Today</button>
-    <button data-tab="span">Span</button>
+    <button data-tab="span">Deka</button>
     <button data-tab="past">Past</button>
     <button data-tab="settings">Settings</button>
   </div>
@@ -325,13 +325,20 @@ nav.tabs button[aria-current="page"]::before {
 
 /* Storage */
 
-const KEY = 'span.v1';
+// Data saved before the rename lives under the old key. It is copied to the
+// new key once and left in place, so it stays readable.
+const KEY = 'deka.v1';
+const OLD_KEY = 'span.v1';
 const blank = () => ({ v: 1, current: null, next: null, spans: [] });
 let S = load();
 
 function load() {
   try {
-    const raw = localStorage.getItem(KEY);
+    let raw = localStorage.getItem(KEY);
+    if (!raw) {
+      raw = localStorage.getItem(OLD_KEY);
+      if (raw) localStorage.setItem(KEY, raw);
+    }
     if (!raw) return blank();
     const d = JSON.parse(raw);
     return isState(d) ? d : blank();
@@ -396,7 +403,7 @@ function summary(span) {
     const occ = occOf(span, it.id);
     return `${it.name} ${occ.filter(o => o.done).length}/${occ.length}`;
   });
-  const bits = [`Span ${range(span.start)}: ${parts.join(', ') || 'nothing planned'}.`];
+  const bits = [`Deka ${range(span.start)}: ${parts.join(', ') || 'nothing planned'}.`];
   if (span.reflection) bits.push(`Their reflection: ${span.reflection}`);
   if (span.review) bits.push(`Your read: ${span.review}`);
   return bits.join(' ');
@@ -486,7 +493,7 @@ const $tabs = document.getElementById('tabs');
 /* Views */
 
 function header(meta = '') {
-  return `<div class="top"><span class="mark">Span</span><span class="meta">${meta}</span></div>`;
+  return `<div class="top"><span class="mark">Deka</span><span class="meta">${meta}</span></div>`;
 }
 
 function loadingView(text) {
@@ -567,7 +574,7 @@ function editBar(span) {
 
 function planView(span, { next = false } = {}) {
   const hasPlan = span.intentions.length > 0;
-  let h = header(next ? 'Next span' : 'New span');
+  let h = header(next ? 'Next deka' : 'New deka');
   if (!hasPlan && !ui.busy) {
     h += `<div class="head fade"><div class="eyebrow">${range(span.start)}</div>
       <h1 class="display">What do the next 10&nbsp;days hold?</h1></div>`;
@@ -587,7 +594,7 @@ function planView(span, { next = false } = {}) {
   } else {
     h += '<div class="section">' + composer(span.question ? 'Answer, or change anything' : 'Change anything') + '</div>';
     h += errorView();
-    h += `<div class="actions"><button class="btn primary block" data-a="${next ? 'accept-next' : 'accept'}" ${hasPlan ? '' : 'disabled'}>${next ? 'Start next span' : 'Accept plan'}</button>
+    h += `<div class="actions"><button class="btn primary block" data-a="${next ? 'accept-next' : 'accept'}" ${hasPlan ? '' : 'disabled'}>${next ? 'Start next deka' : 'Accept plan'}</button>
       <button class="link" data-a="start-over">Start over</button></div>`;
   }
   return h;
@@ -617,7 +624,7 @@ function todayView(span) {
   const n = dayNum(span);
   if (n < 1) {
     return header(range(span.start)) + `<div class="head fade"><div class="eyebrow">Starts ${fmt(span.start)}</div>
-      <h1 class="display small">Your next span is&nbsp;set.</h1></div>` + grid(span, { live: false });
+      <h1 class="display small">Your next deka is&nbsp;set.</h1></div>` + grid(span, { live: false });
   }
   let h = header(`Day ${n} of 10`);
   h += `<div class="head fade"><div class="eyebrow">Today</div><h1 class="display">Day ${n}</h1><div class="sub">${fmt(todayIso())}</div></div>`;
@@ -639,25 +646,25 @@ function dayView(span, d) {
   h += `<div class="head fade"><div class="eyebrow">${d === dayNum(span) ? 'Today' : d === 10 ? 'Review day' : 'Day'}</div><h1 class="display">Day ${d}</h1><div class="sub">${fmt(dayDate(span, d))}</div></div>`;
   h += itemsView(span, d);
   h += notesField(span, d, 'Notes', 'Anything worth keeping.');
-  h += '<div class="actions"><button class="link" data-a="back">Back to span</button></div>';
+  h += '<div class="actions"><button class="link" data-a="back">Back to deka</button></div>';
   return h;
 }
 
 function spanView(span) {
   const n = dayNum(span);
   let h = header(n >= 1 ? `Day ${Math.min(n, 10)} of 10` : `Starts ${fmt(span.start)}`);
-  h += `<div class="head fade"><div class="eyebrow">${range(span.start)}</div><h1 class="display">${completion(span)}<span style="font-size:.5em">%</span></h1><div class="sub">landed so far</div></div>`;
+  h += `<div class="head fade"><div class="eyebrow">This deka · ${range(span.start)}</div><h1 class="display">${completion(span)}<span style="font-size:.5em">%</span></h1><div class="sub">landed so far</div></div>`;
   h += editBar(span);
   if (!span.intentions.length && !ui.editing) h += '<p class="empty-day">Nothing planned yet.</p>';
   h += grid(span, { editable: true, live: true });
   if (ui.editing) h += '<p class="hint">Drag to move. Tap to add or remove.</p>' + addForm();
-  if (n >= 10 && !ui.editing) h += '<div class="actions"><button class="btn primary" data-a="go-review">Review this span</button></div>';
+  if (n >= 10 && !ui.editing) h += '<div class="actions"><button class="btn primary" data-a="go-review">Review this deka</button></div>';
   return h;
 }
 
 function reviewView(span) {
   let h = header('Day 10 of 10');
-  h += `<div class="head fade"><div class="eyebrow">Review</div><h1 class="display">How it landed</h1><div class="sub">${range(span.start)}</div></div>`;
+  h += `<div class="head fade"><div class="eyebrow">Deka review</div><h1 class="display">How it landed</h1><div class="sub">${range(span.start)}</div></div>`;
   h += '<ul class="tally">' + span.intentions.map(it => {
     const occ = occOf(span, it.id);
     return `<li><span>${esc(it.name)}</span><span class="n">${occ.filter(o => o.done).length}<small> of ${occ.length}</small></span></li>`;
@@ -675,7 +682,7 @@ function reviewView(span) {
 
   const next = S.next;
   if (next && next.intentions.length) {
-    h += `<hr class="rule"><div class="head"><div class="eyebrow">Next span · ${range(next.start)}</div></div>`;
+    h += `<hr class="rule"><div class="head"><div class="eyebrow">Next deka · ${range(next.start)}</div></div>`;
     if (ui.busy) return h + loadingView(ui.busy);
     if (next.note) h += `<p class="note">${nb(next.note)}</p>`;
     if (next.question) h += `<p class="question">${nb(next.question)}</p>`;
@@ -683,25 +690,25 @@ function reviewView(span) {
     if (ui.editing) h += '<p class="hint">Drag to move. Tap to add or remove.</p>' + addForm();
     else {
       h += '<div class="section">' + composer('Change anything', 'msgNext') + '</div>' + errorView();
-      h += '<div class="actions"><button class="btn primary block" data-a="accept-next">Start next span</button></div>';
+      h += '<div class="actions"><button class="btn primary block" data-a="accept-next">Start next deka</button></div>';
     }
     return h;
   }
   if (ui.busy) return h + loadingView(ui.busy);
   h += errorView();
-  h += `<div class="actions"><button class="btn primary block" data-a="read-span">Read my span</button>
-    <button class="link" data-a="next-by-hand">Plan the next one by hand</button></div>`;
+  h += `<div class="actions"><button class="btn primary block" data-a="read-span">Read my deka</button>
+    <button class="link" data-a="next-by-hand">Plan your next deka by&nbsp;hand</button></div>`;
   return h;
 }
 
 function pastView() {
-  let h = header('Past spans');
+  let h = header('Past dekas');
   h += `<div class="head fade"><div class="eyebrow">Archive</div><h1 class="display">Past</h1></div>`;
   if (!S.spans.length) return h + '<p class="empty-day">No past spans yet.</p>';
   h += '<ul class="past">' + S.spans.map((sp, i) => {
     const open = ui.openPast === sp.id;
     return `<li><button class="sum" data-a="open-past" data-id="${esc(sp.id)}" aria-expanded="${open}">
-      <span><span class="ttl">Span ${S.spans.length - i}</span><br><span class="when">${range(sp.start)}</span></span>
+      <span><span class="ttl">Deka ${S.spans.length - i}</span><br><span class="when">${range(sp.start)}</span></span>
       <span class="pct">${completion(sp)}<small style="font-size:.5em">%</small></span></button>
       ${open ? `<div class="more fade">${sp.reflection ? `<p class="pretty">${nb(sp.reflection)}</p>` : ''}${sp.review ? `<p class="read" style="font-size:18px">${nb(sp.review)}</p>` : ''}${grid(sp, {})}</div>` : ''}</li>`;
   }).join('') + '</ul>';
@@ -713,17 +720,17 @@ function settingsView() {
   h += `<div class="head fade"><div class="eyebrow">Your data lives on this device</div><h1 class="display">Settings</h1></div>`;
   h += '<div>';
   if (S.current) {
-    h += `<div class="settings-row"><label for="startDate">Span started</label><input type="date" id="startDate" value="${S.current.start}"></div>`;
+    h += `<div class="settings-row"><label for="startDate">Deka started</label><input type="date" id="startDate" value="${S.current.start}"></div>`;
   }
   h += `<div class="settings-row"><span>Export all data</span><button class="link" data-a="export">Download</button></div>
     <div class="settings-row"><span>Import from a file</span><button class="link" data-a="import">Choose file</button></div>`;
-  if (S.current) h += `<div class="settings-row"><span>Discard this span</span><button class="link" data-a="discard">Discard</button></div>`;
+  if (S.current) h += `<div class="settings-row"><span>Discard this deka</span><button class="link" data-a="discard">Discard</button></div>`;
   h += `<div class="settings-row"><span>Lock this device</span><button class="link" data-a="lock">Lock</button></div></div>`;
   return h;
 }
 
 function loginView() {
-  return `<div class="login fade"><h1 class="display">Span</h1>
+  return `<div class="login fade"><h1 class="display">Deka</h1>
     <form data-form="login"><label class="sr" for="pass">Passcode</label>
       <input class="input" id="pass" type="password" inputmode="text" autocomplete="current-password" placeholder="Passcode" required>
       <button class="btn primary block" type="submit">Enter</button>
@@ -781,22 +788,35 @@ function autosize(t) {
 
 /* Claude flows */
 
-// One shared session check. A free Render instance can take a minute to wake,
-// so the first Claude call waits on this and says so.
+// One shared session check. The first Claude call waits on it. "Waking up"
+// appears only if that check is still pending after a moment, and once shown
+// it stays long enough to read, so a fast reply never makes it flash.
 let waking = null;
 function wake() {
   if (!waking) waking = api('/api/session').then(r => { ui.awake = true; return r; }, err => { waking = null; throw err; });
   return waking;
 }
+const WAKE_DELAY = 800;
+const WAKE_MIN = 700;
 
 async function run(label, fn) {
-  ui.busy = ui.awake ? label : 'Waking up'; ui.error = ''; ui.retry = null;
+  ui.busy = label; ui.error = ''; ui.retry = null;
   render();
+  let timer = null;
   try {
     if (!ui.awake) {
+      let shownAt = 0;
+      timer = setTimeout(() => {
+        if (ui.awake || ui.busy !== label) return;
+        ui.busy = 'Waking up'; shownAt = Date.now(); render();
+      }, WAKE_DELAY);
       await wake();
-      ui.busy = label;
-      render();
+      clearTimeout(timer);
+      if (shownAt) {
+        timer = setTimeout(() => {
+          if (ui.busy === 'Waking up') { ui.busy = label; render(); }
+        }, Math.max(0, WAKE_MIN - (Date.now() - shownAt)));
+      }
     }
     await fn();
   }
@@ -808,6 +828,7 @@ async function run(label, fn) {
       : 'Claude did not answer. Try again.';
     ui.retry = () => run(label, fn);
   } finally {
+    clearTimeout(timer);
     ui.busy = null;
     render();
   }
@@ -817,7 +838,7 @@ function send(target, text) {
   const span = target === 'next' ? S.next : S.current;
   const mode = span.intentions.length ? 'refine' : 'plan';
   span.log.push({ role: 'user', text });
-  run(mode === 'plan' ? 'Planning your span' : 'Updating the plan', async () => {
+  run(mode === 'plan' ? 'Planning your deka' : 'Updating the plan', async () => {
     const p = await askClaude(mode, span, text);
     applyPlan(span, p);
     span.log.push({ role: 'claude', text: [p.note, p.question].filter(Boolean).join(' ') });
@@ -840,7 +861,7 @@ function rebalance() {
 function readSpan() {
   const span = S.current;
   const start = addDays(span.start, 10) < todayIso() ? todayIso() : addDays(span.start, 10);
-  run('Reading your span', async () => {
+  run('Reading your deka', async () => {
     const p = await askClaude('review', span, 'Review this span and draft the next one.', { start, reflection: span.reflection, log: [] });
     span.review = p.review;
     const next = newSpan(start);
@@ -919,7 +940,7 @@ document.addEventListener('click', e => {
     case 'export': exportData(); break;
     case 'import': document.getElementById('importFile').click(); break;
     case 'discard':
-      if (!confirm('Discard this span? Past spans stay.')) return;
+      if (!confirm('Discard this deka? Past dekas stay.')) return;
       S.current = null; S.next = null; ui.tab = 'today'; render(); break;
     case 'lock': api('/api/logout', {}).catch(() => {}).finally(() => { ui.locked = true; ui.error = ''; render(); }); break;
   }
@@ -1104,7 +1125,7 @@ function exportData() {
   const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `span-${todayIso()}.json`;
+  a.download = `deka-${todayIso()}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
@@ -1117,7 +1138,7 @@ function importData(file) {
       if (!isState(d)) throw new Error('shape');
       if (!confirm('Replace everything on this device with this file?')) return;
       S = d; ui.tab = 'today'; render();
-    } catch { alert('That file is not a Span export.'); }
+    } catch { alert('That file is not a Deka export.'); }
     document.getElementById('importFile').value = '';
   };
   r.readAsText(file);

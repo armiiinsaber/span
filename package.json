@@ -1,9 +1,10 @@
 {
-  "name": "span",
+  "name": "deka",
   "version": "1.0.0",
   "private": true,
-  "description": "A planner built on 10 day spans, with Claude as the planner.",
+  "description": "A planner built on 10 day dekas, with Claude as the planner.",
   "main": "server.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node server.js",
     "dev": "node --env-file-if-exists=.env --watch server.js",

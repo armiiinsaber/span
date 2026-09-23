@@ -5,7 +5,7 @@ const path = require('path');
 
 const KEY = 'sk-ant-test-SECRET-should-never-leak-123';
 process.env.ANTHROPIC_API_KEY = KEY;
-process.env.SPAN_PASSCODE = 'letmein';
+process.env.DEKA_PASSCODE = 'letmein';
 const { createApp } = require('../server');
 
 const valid = {
@@ -37,6 +37,25 @@ test('wrong passcode fails, right one returns an HttpOnly cookie', async () => {
   const r = await post('/api/login', { passcode: 'letmein' });
   assert.equal(r.status, 200);
   assert.match(r.headers.get('set-cookie'), /HttpOnly/i);
+});
+
+test('session cookie is Lax, host only, and Secure over HTTPS', async () => {
+  const plain = (await post('/api/login', { passcode: 'letmein' })).headers.get('set-cookie');
+  assert.match(plain, /SameSite=Lax/i);
+  assert.doesNotMatch(plain, /Domain=/i);
+  assert.doesNotMatch(plain, /Secure/i);
+  const https = await fetch(base + '/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https' },
+    body: JSON.stringify({ passcode: 'letmein' }),
+  });
+  assert.match(https.headers.get('set-cookie'), /;\s*Secure/i);
+});
+
+test('the module default export is the app, for Vercel', () => {
+  const mod = require('../server');
+  assert.equal(typeof mod, 'function');
+  assert.equal(typeof mod.handle, 'function');
 });
 
 test('plan works with a session and never echoes the key', async () => {

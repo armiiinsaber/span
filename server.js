@@ -1,4 +1,6 @@
-// Span server: serves the app, gates /api with one passcode, and plans with Claude.
+// Deka server: gates /api with one passcode and plans with Claude.
+// On Vercel this file is the one function. The default export is the app, and
+// files in public/ are served by Vercel directly. Locally, npm start serves both.
 
 const path = require('path');
 const crypto = require('crypto');
@@ -7,11 +9,12 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { plan, PlanError, MODEL } = require('./lib/planner');
 
 const PORT = process.env.PORT || 3000;
-const PASSCODE = process.env.SPAN_PASSCODE || '';
+// SPAN_PASSCODE is the name from before the rename, read only when DEKA_PASSCODE is unset.
+const PASSCODE = process.env.DEKA_PASSCODE || process.env.SPAN_PASSCODE || '';
 const COOKIE = 'span_session';
 const IS_PROD = process.env.NODE_ENV === 'production';
 
-if (!PASSCODE) console.warn('SPAN_PASSCODE is not set. Every login will fail until it is.');
+if (!PASSCODE) console.warn('DEKA_PASSCODE is not set. Every login will fail until it is.');
 
 // The session token is derived from the passcode, so changing it signs everyone out.
 const sessionToken = () => crypto.createHmac('sha256', PASSCODE).update('span session v1').digest('hex');
@@ -67,8 +70,10 @@ function createApp({ client } = {}) {
     if (!PASSCODE || !safeEqual(given, PASSCODE)) return res.status(401).json({ error: 'Wrong passcode.' });
     res.cookie(COOKIE, sessionToken(), {
       httpOnly: true,
-      secure: IS_PROD,
-      sameSite: 'strict',
+      // Host only (no Domain), so it stays on dekapp.com. Secure whenever the
+      // request came in over HTTPS, which Vercel reports through the proxy.
+      secure: req.secure || IS_PROD,
+      sameSite: 'lax',
       maxAge: 180 * 24 * 60 * 60 * 1000,
       path: '/',
     });
@@ -123,18 +128,27 @@ function createApp({ client } = {}) {
       else if (file.includes(`${path.sep}fonts${path.sep}`)) res.set('Cache-Control', 'public, max-age=31536000, immutable');
     },
   }));
-  app.get('*', (req, res) => res.sendFile(path.join(pub, 'index.html')));
+  app.get('*', (req, res) => res.sendFile(path.join(pub, 'index.html'), err => {
+    if (err && !res.headersSent) res.status(404).end();
+  }));
   return app;
 }
 
-if (require.main === module) {
-  let client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
-  if (!client && process.env.SPAN_MOCK === '1' && !IS_PROD) {
-    client = require('./lib/mock');
-    console.warn('SPAN_MOCK is on. Plans come from a local stand in, not Claude.');
+function defaultClient() {
+  if (process.env.ANTHROPIC_API_KEY) return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  if ((process.env.DEKA_MOCK || process.env.SPAN_MOCK) === '1' && !IS_PROD) {
+    console.warn('DEKA_MOCK is on. Plans come from a local stand in, not Claude.');
+    return require('./lib/mock');
   }
-  if (!client) console.warn('ANTHROPIC_API_KEY is not set. The app works by hand only.');
-  createApp({ client }).listen(PORT, () => console.log(`Span on http://localhost:${PORT} using ${MODEL}`));
+  console.warn('ANTHROPIC_API_KEY is not set. The app works by hand only.');
+  return null;
 }
 
-module.exports = { createApp };
+const app = createApp({ client: defaultClient() });
+
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`Deka on http://localhost:${PORT} using ${MODEL}`));
+}
+
+module.exports = app;
+module.exports.createApp = createApp;

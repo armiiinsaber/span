@@ -1,7 +1,7 @@
 {
-  "name": "Span",
-  "short_name": "Span",
-  "description": "Plan in 10 day spans.",
+  "name": "Deka",
+  "short_name": "Deka",
+  "description": "Plan in 10 day dekas.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
