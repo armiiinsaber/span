@@ -4,7 +4,7 @@ A planner built on 10 day cycles called dekas instead of weeks, with a chat at i
 
 Days are Day 1 to Day 10. Days 1 to 9 are for living the plan. Day 10 is the review, which happens in the chat.
 
-Live at dekaapp.com. Design follows DESIGN.md in the melomaniacstudios repo.
+Live at dekaapp.com. Design follows DESIGN.md in the melomaniacstudios repo and Apple's Human Interface Guidelines, summed up with how Deka applies them in `docs/apple-hig.md`.
 
 ## How it is built
 
@@ -42,6 +42,8 @@ Past dekas and Settings sit behind the icon in the header. Each deka has its own
 **Review.** On Day 10 Deka opens the review in the chat: what held, what slipped, one pattern. It then drafts the next deka's goals and schedule. Confirming it starts the next deka with a fresh thread.
 
 **The mark.** The ten dots of the logo are the app's only loading indicator. While Deka thinks, and while a reply streams in, a wave runs through the dots from Day 1 to Day 10. With reduced motion, the mark stays still and gently pulses instead.
+
+**Look and feel.** Deka follows Apple's guidelines where a web app can. Text uses a scale modeled on Apple's text styles, with Body at 17 points and nothing under 11, and on iPhone it follows the text size setting. Every control is at least 44 by 44 points. Dark mode follows the system: a warm near black under ivory text, the same tints lifted, chartreuse still for done. Glass is only for what floats over content: the tab bar, the composer, toasts and sheets. Cards are solid. Sheets have a grabber, open at medium when they are tall, drag up to large and swipe down to close. Motion uses springs and never runs with Reduce Motion, where sheets and toasts fade instead. The header is static, not fixed: fixed headers near the notch drift on iPhone.
 
 **Offline.** Everything except talking to Deka works offline. Messages sent offline show as waiting and send when the connection returns.
 
@@ -99,7 +101,7 @@ With no key, `DEKA_MOCK=1 DEKA_PASSCODE=test npm run dev` runs the whole app aga
 
 After changing `lib/icons.js`, run `node scripts/icons.js` to rebuild the icon sprite in `public/index.html`, and bump `CACHE` in `public/sw.js`.
 
-`node scripts/audit.mjs out.json` runs Lighthouse on every screen at 375, 390 and 430 px in light and dark, against the scripted stand in. It needs Lighthouse and puppeteer-core installed somewhere; point `LIGHTHOUSE_DIR` at that `node_modules` folder.
+`node scripts/audit.mjs out.json` runs Lighthouse on every screen at 375, 390 and 430 px, in Safari and as the installed app, in light and dark, against the scripted stand in. It needs Lighthouse and puppeteer-core installed somewhere; point `LIGHTHOUSE_DIR` at that `node_modules` folder.
 
 `node --env-file=.env.local scripts/real-runs.js --runs 2 --out test/real-runs` plays ten scenarios against the real API through the real server and tool loop (planning, tweaks, check ins, the Day 10 review, a long chat that needs a summary, a check in question left unanswered, two fun nights to spread), checks each turn, and writes the transcripts with timing and cost. It costs about $0.45 a run. Set `CLAUDE_MODEL` and `CLAUDE_EFFORT` to try other setups, and `--only 10` to run one scenario. See `test/real-runs/README.md` for the latest results.
 
