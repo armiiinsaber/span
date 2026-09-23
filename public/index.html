@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="Deka">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="preload" href="/fonts/melomaniac-serif-v0.1.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/inter-deka.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/figtree-deka.woff2" as="font" type="font/woff2" crossorigin>
 <!-- Brand: every icon and splash screen lives in /brand/. Swap the files there to change the logo. -->
 <link rel="icon" href="/brand/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/brand/icon-180.png">
@@ -37,9 +37,9 @@
   font-display: swap;
 }
 @font-face {
-  font-family: 'Inter';
-  src: url('/fonts/inter-deka.woff2') format('woff2');
-  font-weight: 400 600;
+  font-family: 'Figtree';
+  src: url('/fonts/figtree-deka.woff2') format('woff2');
+  font-weight: 400 700;
   font-display: swap;
 }
 :root {
@@ -52,7 +52,9 @@
   --ink-faint: rgba(20,19,16,.3);
   --hairline: rgba(20,19,16,.14);
   --serif: 'Melomaniac Serif', Georgia, 'Times New Roman', serif;
-  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --sans: 'Figtree', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  /* One soft tint per goal category. Chartreuse is kept for done. */
+  --body: #3E7A5B; --people: #B0503A; --fun: #8A4EA3; --work: #3B679B; --mind: #936A12; --rest: #56648A;
   --ease: cubic-bezier(.16, 1, .3, 1);
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
@@ -157,8 +159,8 @@ body.toasting main { padding-bottom: calc(var(--tabs-h) + var(--safe-b) + var(--
 .head .eyebrow { margin-bottom: 12px; }
 .display {
   /* Grows with the iOS text size but never wider than the screen allows. */
-  font-family: var(--serif); font-size: min(max(2.25rem, 11vw), 13vw, 3.75rem);
-  line-height: .98; letter-spacing: -.02em; overflow-wrap: break-word;
+  font-size: min(max(2.25rem, 11vw), 13vw, 3.5rem); font-weight: 600;
+  line-height: 1.02; letter-spacing: -.025em; overflow-wrap: break-word;
 }
 .display.small { font-size: min(max(1.9rem, 8.5vw), 11vw, 2.75rem); line-height: 1.05; }
 .display small { font-size: .5em; }
@@ -211,16 +213,13 @@ body.toasting main { padding-bottom: calc(var(--tabs-h) + var(--safe-b) + var(--
 .card { margin-top: 12px; border-radius: 16px; padding: 14px 16px 12px; }
 .card .eyebrow { display: block; margin-bottom: 8px; }
 .card ul { list-style: none; margin: 0; padding: 0; }
-.card li { position: relative; padding: 3px 0 3px 16px; font-size: .9375rem; }
-.card li::before { content: ''; position: absolute; left: 1px; top: .78em; width: 6px; height: 6px; border-radius: 50%; border: 1.25px solid var(--ink); }
+.card .lines li { position: relative; padding: 3px 0 3px 16px; font-size: .9375rem; }
+.card .lines li::before { content: ''; position: absolute; left: 1px; top: .78em; width: 6px; height: 6px; border-radius: 50%; border: 1.25px solid var(--ink); }
 .card .row { display: flex; gap: 8px; margin-top: 12px; }
 .card .row .btn { flex: 1; }
 .card .state { margin-top: 10px; font-size: .8125rem; color: var(--ink-soft); display: flex; align-items: center; gap: 6px; }
 .card .state svg { width: 14px; height: 14px; }
 .card.quiet { opacity: .72; }
-.daystrip { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px; margin-top: 10px; }
-.daystrip span { text-align: center; font-size: .6875rem; color: var(--ink-soft); padding: 3px 0; border-radius: 2px; }
-.daystrip span.on { background: var(--green); color: var(--ink); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
   min-height: var(--tap); padding: 0 14px; border-radius: 22px; border: 1px solid var(--hairline);
@@ -231,59 +230,108 @@ body.toasting main { padding-bottom: calc(var(--tabs-h) + var(--safe-b) + var(--
 .chip.missed { color: var(--ink-soft); }
 .chip.missed i { border-color: var(--ink-faint); }
 
-/* Day tiles */
-.tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
-.tiles li { display: flex; }
-.tile {
-  position: relative; width: 100%; height: 100%; min-height: 76px;
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 2px;
-  padding: 8px 2px; border: 1px solid var(--hairline); border-radius: 2px; background: transparent;
-  transition: background .3s var(--ease), transform .2s var(--ease);
+/* Sessions: every goal has an icon, outlined in its category tint. Done fills with
+   chartreuse, missed fades, not confirmed keeps a dashed outline. Hold back goals are squarer. */
+.c-body { --c: var(--body); } .c-people { --c: var(--people); } .c-fun { --c: var(--fun); }
+.c-work { --c: var(--work); } .c-mind { --c: var(--mind); } .c-rest { --c: var(--rest); }
+.s {
+  --z: 22px; position: relative; flex: none; display: inline-grid; place-items: center;
+  width: var(--z); height: var(--z); border-radius: 50%; border: 1.5px solid transparent;
+  color: var(--c, var(--ink)); background: color-mix(in srgb, var(--c, var(--ink)) 11%, var(--paper));
+  transition: background .35s var(--ease), color .35s var(--ease), opacity .35s var(--ease);
 }
-button.tile:active { background: var(--paper-deep); transform: scale(.97); }
-.tile .tn { font-family: var(--serif); font-size: 1.4rem; line-height: 1; }
-.tile .td { font-size: .6875rem; color: var(--ink-soft); }
-.tile .tdots { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; margin-top: 4px; max-width: 48px; }
-.tile .tdots i { width: 7px; height: 7px; border-radius: 50%; border: 1.25px solid var(--ink); }
-.tile .tdots i.done { background: var(--green); }
-.tile .tdots i.sq { border-radius: 1.5px; }
-.tile .tdots i.missed { border-color: var(--ink-faint); }
-.tile .tdots i.unconfirmed { border-style: dashed; border-color: var(--ink-faint); }
-.tile.today { border-color: var(--ink); }
-.tile.today .tn::after { content: ''; display: block; height: 3px; margin: 3px -3px 0; background: var(--green); }
-.tile.review { background: var(--paper-deep); border-color: transparent; }
-.tile.review .rv { font-size: .6875rem; color: var(--ink-soft); margin-top: 4px; }
-.tile.past .tn { color: var(--ink-soft); }
-.tile.flash { animation: flash 1.8s var(--ease) 2; }
-@keyframes flash { 0%, 100% { background: transparent; } 35% { background: var(--green); } }
+.s svg { width: 66%; height: 66%; fill: currentColor; }
+.s.sq { border-radius: 30%; }
+.s.done { background: var(--green); color: var(--ink); }
+.s.missed { opacity: .32; background: transparent; border-color: var(--hairline); }
+.s.unsure { background: transparent; border-style: dashed; border-color: var(--ink-faint); }
+.s.changed::after { content: ''; position: absolute; inset: -4px; border-radius: inherit; border: 2px solid var(--green); }
+button.s:active { transform: scale(.94); }
+.s.pop { animation: pop .45s var(--ease); }
+.s.enter { animation: enter .3s var(--ease) both; animation-delay: var(--dl, 0ms); }
+@keyframes enter { from { opacity: 0; transform: scale(.3); } to { opacity: 1; transform: none; } }
+.burst { position: absolute; inset: 0; pointer-events: none; }
+.burst i { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: var(--green); animation: burst .6s var(--ease) forwards; }
+.burst i:nth-child(even) { background: var(--c, var(--ink)); width: 4px; height: 4px; margin: -2px; }
+@keyframes burst { from { transform: none; opacity: 1; } to { transform: translate(var(--x), var(--y)) scale(.3); opacity: 0; } }
+
+/* The ten day strip, compact: one column per day, used in the chat. */
+.strip10 { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 2px; margin: 2px -6px 0; width: calc(100% + 12px); border-radius: 12px; }
+button.strip10 { text-align: inherit; }
+.dayopen .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -6px -8px 2px 0; }
+.dayopen .top .icon-btn svg { width: 20px; height: 20px; }
+.strip10 .col { display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 64px; padding: 6px 0 8px; border-radius: 10px; transition: background .3s var(--ease); }
+.strip10 .dn { font-size: .6875rem; line-height: 1.3; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.strip10 .col.today { background: color-mix(in srgb, var(--green) 38%, transparent); }
+.strip10 .col.today .dn { color: var(--ink); font-weight: 600; }
+.strip10 .col.past .s { opacity: .7; }
+.strip10 .col.open { background: var(--paper-deep); }
+.strip10 .col.open .dn { color: var(--ink); font-weight: 600; }
+.strip10 .s { --z: 21px; }
+.rvdot { display: block; flex: none; width: 16px; height: 16px; margin-top: 4px; border-radius: 50%; border: 1.5px solid var(--ink); }
+.dayopen { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--paper-deep); }
+.dayopen .h { font-size: .8125rem; font-weight: 600; margin: 0 0 4px; }
+.dayopen ul li { display: flex; align-items: center; gap: 10px; min-height: 30px; font-size: .9375rem; }
+.dayopen .none { margin: 0; font-size: .875rem; color: var(--ink-soft); }
+.card .summary { margin: 10px 0 0; font-size: .9375rem; }
+
+/* The ten day strip, mini: where we are. Dots grow from day 1 to day 10, like the mark. */
+.mini { display: inline-flex; align-items: center; gap: 5px; }
+.mini i { flex: none; width: var(--d); height: var(--d); border-radius: 50%; border: 1.5px solid var(--ink-faint); }
+.mini i.past { background: var(--ink); border-color: var(--ink); }
+.mini i.today { background: var(--green); border-color: var(--ink); }
+
+/* The ten day strip, full: the Days tab, one row per day. */
+.days { list-style: none; margin: 0; padding: 0; }
+.day { position: relative; isolation: isolate; display: flex; align-items: center; gap: 8px; min-height: 64px; padding: 8px 8px 8px 0; border-bottom: 1px solid var(--hairline); }
+.day::before { content: ''; position: absolute; inset: 3px -8px; border-radius: 14px; background: transparent; z-index: -1; transition: background .3s var(--ease); }
+.day.today::before { background: color-mix(in srgb, var(--green) 30%, transparent); }
+.day.drop::before { background: var(--paper-deep); }
+.day.flash::before { animation: flash 1.8s var(--ease) 2; }
+@keyframes flash { 0%, 100% { background: transparent; } 35% { background: color-mix(in srgb, var(--green) 55%, transparent); } }
+.day .dl { flex: none; width: 60px; min-height: 48px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding-left: 4px; border-radius: 12px; text-align: left; }
+.day .dn { font-size: 1.375rem; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.day .dd { font-size: .6875rem; color: var(--ink-soft); margin-top: 4px; white-space: nowrap; }
+.day.past .dn { color: var(--ink-soft); }
+.day .ss { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.day .s { --z: 44px; }
+.day .s svg { width: 54%; height: 54%; }
+.day .free { font-size: .875rem; color: var(--ink-soft); }
+.day.review .rvdot { width: 26px; height: 26px; margin: 0 9px; }
+.day.review .free { color: var(--ink); }
+.s.dragging { transform: scale(1.12); z-index: 2; }
 
 /* Goals */
-.rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--hairline); }
-.row-btn { display: block; width: 100%; text-align: left; padding: 14px 0 12px; border-bottom: 1px solid var(--hairline); }
-button.row-btn:active { background: rgba(20,19,16,.03); }
-.row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
-.row-top .name { font-size: 1rem; font-weight: 500; min-width: 0; }
-.row-top .name em { font-style: normal; font-weight: 400; color: var(--ink-soft); font-size: .8125rem; }
-.row-top .count { font-size: .8125rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
-.row-top .count svg { width: 14px; height: 14px; }
-.row-top .count b { font-weight: 500; color: var(--ink); }
-.strip { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); height: 22px; }
-.strip .c { display: grid; place-items: center; }
-.strip .c.rv { background: var(--paper-deep); border-radius: 2px; }
-.dot { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--ink); transition: background .4s var(--ease); }
-.dot.done { background: var(--green); }
-.dot.missed { border-color: var(--ink-faint); }
-.dot.unconfirmed { border-style: dashed; border-color: var(--ink-faint); }
-.dot.sq { border-radius: 2.5px; }
-.strip .c.drop { background: var(--paper-deep); }
-.dot.dragging { transform: scale(1.35); }
-.unplaced { font-size: .8125rem; color: var(--ink-soft); margin: -2px 0 0; }
-.legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 18px; margin-top: 14px; font-size: .75rem; color: var(--ink-soft); }
-.legend span { display: inline-flex; align-items: center; gap: 6px; }
-.legend i { width: 10px; height: 10px; border: 1.5px solid var(--ink); border-radius: 50%; display: inline-block; }
-.legend i.sq { border-radius: 2px; }
-.legend i.done { background: var(--green); }
-.legend i.unconfirmed { border-style: dashed; border-color: var(--ink-faint); }
+.goals { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--hairline); }
+.goal { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 68px; padding: 10px 0; border-bottom: 1px solid var(--hairline); text-align: left; }
+button.goal:active { background: rgba(20,19,16,.03); }
+.goal .s { --z: 42px; }
+.goal .gn { flex: 1; min-width: 0; }
+.goal .gn b { display: block; font-size: 1.0625rem; font-weight: 500; line-height: 1.3; }
+.goal .gn span { display: block; font-size: .8125rem; color: var(--ink-soft); }
+.ring { flex: none; width: 36px; height: 36px; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 3.5; }
+.ring .bg { stroke: var(--hairline); }
+.ring .fg { stroke: var(--green-ink); stroke-linecap: round; transition: stroke-dashoffset .6s var(--ease); }
+.goal .ring { width: 30px; height: 30px; }
+
+/* Where we are: the status card under a reply. */
+.status .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.status .dayn { font-size: 1.125rem; font-weight: 600; }
+.status .gl { display: flex; flex-wrap: wrap; gap: 8px 10px; }
+.status .gl li { position: relative; width: 42px; height: 42px; display: grid; place-items: center; }
+.status .gl .ring { position: absolute; inset: 0; width: 42px; height: 42px; }
+.status .gl .ring .fg { stroke: var(--ink); }
+.status .gl .s { --z: 30px; }
+.status .gl .s.full { background: var(--green); color: var(--ink); }
+
+/* Icon picker in the goal sheet */
+.icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px; }
+.icons button { height: 48px; border-radius: 12px; display: grid; place-items: center; }
+.icons button[aria-pressed="true"] { background: var(--paper-deep); box-shadow: inset 0 0 0 1.5px var(--ink); }
+.icons .s { --z: 32px; }
+.icon-row { display: flex; align-items: center; gap: 12px; }
+.icon-row .s { --z: 44px; }
 
 /* Checklist */
 .items { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--hairline); }
@@ -298,6 +346,7 @@ button.row-btn:active { background: rgba(20,19,16,.03); }
 .item.pop .check { animation: pop .45s var(--ease); }
 @keyframes pop { 0% { transform: scale(1); } 35% { transform: scale(1.22); } 100% { transform: scale(1); } }
 .item .txt { flex: 1; min-width: 0; }
+.item .s { --z: 38px; }
 .item .nm { display: block; font-size: 1.125rem; line-height: 1.3; }
 .item.done .nm { color: var(--ink-soft); }
 .item .dt { display: block; font-size: .8125rem; color: var(--ink-soft); margin-top: 2px; }
@@ -320,12 +369,12 @@ button.row-btn:active { background: rgba(20,19,16,.03); }
 .list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--hairline); }
 .list > li { border-bottom: 1px solid var(--hairline); }
 .list .sum { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 16px; min-height: 64px; padding: 12px 0; text-align: left; }
-.list .pct { font-family: var(--serif); font-size: 2rem; line-height: 1; white-space: nowrap; }
+.list .pct { font-size: 1.75rem; font-weight: 600; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .list .when { display: block; font-size: .8125rem; color: var(--ink-soft); }
 .list .ttl { display: block; font-size: 1.0625rem; }
 .list .more { padding: 0 0 24px; }
 .list .more p { margin: 0 0 16px; }
-.read { font-family: var(--serif); font-size: 1.2rem; line-height: 1.42; }
+.read { font-size: 1.0625rem; line-height: 1.5; }
 .setting { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 16px; min-height: 60px; padding: 8px 0; }
 .setting > * { white-space: nowrap; }
 .setting input[type="date"], .setting input[type="time"] { min-height: var(--tap); border: 0; background: none; font-size: max(16px, 1rem); text-align: right; color: var(--ink); }
@@ -377,12 +426,11 @@ nav.tabs {
 }
 body.kb nav.tabs, body.no-tabs nav.tabs, body.no-tabs .dock { display: none; }
 nav.tabs .in { max-width: 620px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); }
-nav.tabs button {
-  position: relative; height: var(--tabs-h);
-  font-size: .6875rem; font-weight: 500; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-soft);
-}
+nav.tabs button { position: relative; height: var(--tabs-h); display: grid; place-items: center; color: var(--ink-soft); transition: color .3s var(--ease); }
+nav.tabs button svg { width: 26px; height: 26px; }
+nav.tabs button .mk { width: 25px; height: 25px; color: currentColor; }
 nav.tabs button[aria-current="page"] { color: var(--ink); }
-nav.tabs button[aria-current="page"]::before { content: ''; position: absolute; top: -1px; left: 50%; width: 22px; margin-left: -11px; height: 3px; background: var(--green); }
+nav.tabs button[aria-current="page"]::after { content: ''; position: absolute; bottom: 6px; left: 50%; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 1px var(--ink); }
 
 /* Toast */
 .toast {
@@ -410,8 +458,9 @@ body.no-tabs .toast { bottom: calc(var(--safe-b) + 16px); }
 .sheet-handle { display: flex; justify-content: center; align-items: center; height: 28px; cursor: grab; touch-action: none; }
 .sheet-handle::before { content: ''; width: 36px; height: 4px; border-radius: 2px; background: var(--hairline); }
 .sheet-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-.sheet h2 { font-family: var(--serif); font-size: 1.6rem; line-height: 1.1; }
+.sheet h2 { font-size: 1.375rem; font-weight: 600; line-height: 1.15; letter-spacing: -.01em; }
 .sheet h2:focus { outline: none; }
+.sheet h2 .sheet-sub { display: block; font-size: .8125rem; font-weight: 400; color: var(--ink-soft); margin-top: 2px; letter-spacing: 0; }
 .sheet .form { display: grid; gap: 18px; padding-bottom: 8px; }
 .seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); border: 1px solid var(--ink); border-radius: 2px; }
 .seg button { min-height: var(--tap); font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
@@ -419,7 +468,7 @@ body.no-tabs .toast { bottom: calc(var(--safe-b) + 16px); }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
 .stepper { display: flex; align-items: center; justify-content: space-between; }
 .stepper .ctl { display: flex; align-items: center; gap: 10px; }
-.stepper .val { font-family: var(--serif); font-size: 1.75rem; min-width: 2ch; text-align: center; }
+.stepper .val { font-size: 1.5rem; font-weight: 600; min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; }
 .stepper .icon-btn { border: 1px solid var(--ink); font-size: 1.25rem; }
 .stepper .icon-btn[disabled] { opacity: .3; }
 .pick { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
@@ -427,7 +476,7 @@ body.no-tabs .toast { bottom: calc(var(--safe-b) + 16px); }
   width: 100%; min-height: 74px; padding: 8px 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
   border: 1px solid var(--hairline); border-radius: 2px;
 }
-.pick .pn { font-family: var(--serif); font-size: 1.2rem; line-height: 1; }
+.pick .pn { font-size: 1.125rem; font-weight: 600; line-height: 1; }
 .pick .pd { font-size: .6875rem; color: var(--ink-soft); }
 .pick .dot { width: 11px; height: 11px; }
 .pick .dot.empty { border-color: transparent; }
@@ -455,14 +504,17 @@ body.no-tabs .toast { bottom: calc(var(--safe-b) + 16px); }
 </style>
 </head>
 <body>
+<!-- Icons: built by scripts/icons.js -->
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><symbol id="i-run" viewBox="0 0 256 256"><path d="M152,88a32,32,0,1,0-32-32A32,32,0,0,0,152,88Zm0-48a16,16,0,1,1-16,16A16,16,0,0,1,152,40Zm67.31,100.68c-.61.28-7.49,3.28-19.67,3.28-13.85,0-34.55-3.88-60.69-20a169.31,169.31,0,0,1-15.41,32.34,104.29,104.29,0,0,1,31.31,15.81C173.92,186.65,184,207.35,184,232a8,8,0,0,1-16,0c0-41.7-34.69-56.71-54.14-61.85-.55.7-1.12,1.41-1.69,2.1-19.64,23.8-44.25,36.18-71.63,36.18A92.29,92.29,0,0,1,31.2,208,8,8,0,0,1,32.8,192c25.92,2.58,48.47-7.49,67-30,12.49-15.14,21-33.61,25.25-47C86.13,92.35,61.27,111.63,61,111.84A8,8,0,1,1,51,99.36c1.5-1.2,37.22-29,89.51,6.57,45.47,30.91,71.93,20.31,72.18,20.19a8,8,0,1,1,6.63,14.56Z"/></symbol><symbol id="i-gym" viewBox="0 0 256 256"><path d="M248,120h-8V88a16,16,0,0,0-16-16H208V64a16,16,0,0,0-16-16H168a16,16,0,0,0-16,16v56H104V64A16,16,0,0,0,88,48H64A16,16,0,0,0,48,64v8H32A16,16,0,0,0,16,88v32H8a8,8,0,0,0,0,16h8v32a16,16,0,0,0,16,16H48v8a16,16,0,0,0,16,16H88a16,16,0,0,0,16-16V136h48v56a16,16,0,0,0,16,16h24a16,16,0,0,0,16-16v-8h16a16,16,0,0,0,16-16V136h8a8,8,0,0,0,0-16ZM32,168V88H48v80Zm56,24H64V64H88V192Zm104,0H168V64h24V175.82c0,.06,0,.12,0,.18s0,.12,0,.18V192Zm32-24H208V88h16Z"/></symbol><symbol id="i-walk" viewBox="0 0 256 256"><path d="M152,80a32,32,0,1,0-32-32A32,32,0,0,0,152,80Zm0-48a16,16,0,1,1-16,16A16,16,0,0,1,152,32Zm64,112a8,8,0,0,1-8,8c-35.31,0-52.95-17.81-67.12-32.12-2.74-2.77-5.36-5.4-8-7.84l-13.43,30.88,37.2,26.57A8,8,0,0,1,160,176v56a8,8,0,0,1-16,0V180.12l-31.07-22.2L79.34,235.19A8,8,0,0,1,72,240a7.84,7.84,0,0,1-3.19-.67,8,8,0,0,1-4.15-10.52l54.08-124.37c-9.31-1.65-20.92,1.2-34.7,8.58a163.88,163.88,0,0,0-30.57,21.77,8,8,0,0,1-10.95-11.66c2.5-2.35,61.69-57.23,98.72-25.08,3.83,3.32,7.48,7,11,10.57C166.19,122.7,179.36,136,208,136A8,8,0,0,1,216,144Z"/></symbol><symbol id="i-yoga" viewBox="0 0 256 256"><path d="M128,80A32,32,0,1,0,96,48,32,32,0,0,0,128,80Zm0-48a16,16,0,1,1-16,16A16,16,0,0,1,128,32Zm96,72a8,8,0,0,1-8,8H136v26.72l51.15,21.93A8,8,0,0,1,192,168v48a8,8,0,0,1-16,0V173.28l-46.45-19.91L53.35,222a8,8,0,1,1-10.7-11.9L120,140.44V112H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,104Z"/></symbol><symbol id="i-bike" viewBox="0 0 256 256"><path d="M208,112a47.81,47.81,0,0,0-16.93,3.09L165.93,72H192a8,8,0,0,1,8,8,8,8,0,0,0,16,0,24,24,0,0,0-24-24H152a8,8,0,0,0-6.91,12l11.65,20H99.26L82.91,60A8,8,0,0,0,76,56H48a8,8,0,0,0,0,16H71.41L85.12,95.51,69.41,117.06a48.13,48.13,0,1,0,12.92,9.44l11.59-15.9L125.09,164A8,8,0,1,0,138.91,156l-30.32-52h57.48l11.19,19.17A48,48,0,1,0,208,112ZM80,160a32,32,0,1,1-20.21-29.74l-18.25,25a8,8,0,1,0,12.92,9.42l18.25-25A31.88,31.88,0,0,1,80,160Zm128,32a32,32,0,0,1-22.51-54.72L201.09,164A8,8,0,1,0,214.91,156L199.3,129.21A32,32,0,1,1,208,192Z"/></symbol><symbol id="i-swim" viewBox="0 0 256 256"><path d="M176,104a32,32,0,1,0-32-32A32,32,0,0,0,176,104Zm0-48a16,16,0,1,1-16,16A16,16,0,0,1,176,56Zm46.16,129.24a8,8,0,0,1-1,11.26c-17.36,14.39-32.86,19.5-47,19.5-18.58,0-34.82-8.82-49.93-17-25.35-13.76-47.24-25.65-79.07.74a8,8,0,1,1-10.22-12.31c40.17-33.29,70.32-16.93,96.93-2.49,25.35,13.77,47.24,25.65,79.07-.74A8,8,0,0,1,222.16,185.24ZM34.89,147.42a8,8,0,1,0,10.22,12.31c31.83-26.38,53.72-14.5,79.07-.74,15.11,8.2,31.35,17,49.93,17,14.14,0,29.64-5.11,47-19.5a8,8,0,1,0-10.22-12.31,75.79,75.79,0,0,1-19.28,12.06l-53.84-53.82A103.34,103.34,0,0,0,64.24,72H40a8,8,0,0,0,0,16H64.24a87.66,87.66,0,0,1,41.88,10.56L76.49,128.17C63.82,129.35,50.07,134.84,34.89,147.42Zm91.57-33.67,46.13,46.12c-14-.43-26.88-7.39-40.77-14.93-10.75-5.84-22.09-12-34.42-15.05l22.26-22.26A87.14,87.14,0,0,1,126.46,113.75Z"/></symbol><symbol id="i-hike" viewBox="0 0 256 256"><path d="M164,80a28,28,0,1,0-28-28A28,28,0,0,0,164,80Zm0-40a12,12,0,1,1-12,12A12,12,0,0,1,164,40Zm90.88,155.92-54.56-92.08A15.87,15.87,0,0,0,186.55,96h0a15.85,15.85,0,0,0-13.76,7.84L146.63,148l-44.84-76.1a16,16,0,0,0-27.58,0L1.11,195.94A8,8,0,0,0,8,208H248a8,8,0,0,0,6.88-12.08ZM88,80l23.57,40H64.43ZM22,192l33-56h66l18.74,31.8,0,0L154,192Zm150.57,0-16.66-28.28L186.55,112,234,192Z"/></symbol><symbol id="i-sport" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm76.52,147.42H170.9l-9.26-12.76,12.63-36.78,15-4.89,26.24,20.13A87.38,87.38,0,0,1,204.52,171.42Zm-164-34.3L66.71,117l15,4.89,12.63,36.78L85.1,171.42H51.48A87.38,87.38,0,0,1,40.47,137.12Zm10-50.64,5.51,18.6L40.71,116.77A87.33,87.33,0,0,1,50.43,86.48ZM109,152,97.54,118.65,128,97.71l30.46,20.94L147,152Zm91.07-46.92,5.51-18.6a87.33,87.33,0,0,1,9.72,30.29Zm-6.2-35.38-9.51,32.08-15.07,4.89L136,83.79V68.21l29.09-20A88.58,88.58,0,0,1,193.86,69.7ZM146.07,41.87,128,54.29,109.93,41.87a88.24,88.24,0,0,1,36.14,0ZM90.91,48.21l29.09,20V83.79L86.72,106.67l-15.07-4.89L62.14,69.7A88.58,88.58,0,0,1,90.91,48.21ZM63.15,187.42H83.52l7.17,20.27A88.4,88.4,0,0,1,63.15,187.42ZM110,214.13,98.12,180.71,107.35,168h41.3l9.23,12.71-11.83,33.42a88,88,0,0,1-36.1,0Zm55.36-6.44,7.17-20.27h20.37A88.4,88.4,0,0,1,165.31,207.69Z"/></symbol><symbol id="i-water" viewBox="0 0 256 256"><path d="M174,47.75a254.19,254.19,0,0,0-41.45-38.3,8,8,0,0,0-9.18,0A254.19,254.19,0,0,0,82,47.75C54.51,79.32,40,112.6,40,144a88,88,0,0,0,176,0C216,112.6,201.49,79.32,174,47.75ZM128,216a72.08,72.08,0,0,1-72-72c0-57.23,55.47-105,72-118,16.53,13,72,60.75,72,118A72.08,72.08,0,0,1,128,216Zm55.89-62.66a57.6,57.6,0,0,1-46.56,46.55A8.75,8.75,0,0,1,136,200a8,8,0,0,1-1.32-15.89c16.57-2.79,30.63-16.85,33.44-33.45a8,8,0,0,1,15.78,2.68Z"/></symbol><symbol id="i-pill" viewBox="0 0 256 256"><path d="M216.42,39.6a53.26,53.26,0,0,0-75.32,0L39.6,141.09a53.26,53.26,0,0,0,75.32,75.31h0L216.43,114.91A53.31,53.31,0,0,0,216.42,39.6ZM103.61,205.09h0a37.26,37.26,0,0,1-52.7-52.69L96,107.31,148.7,160ZM205.11,103.6,160,148.69,107.32,96l45.1-45.09a37.26,37.26,0,0,1,52.69,52.69ZM189.68,82.34a8,8,0,0,1,0,11.32l-24,24a8,8,0,1,1-11.31-11.32l24-24A8,8,0,0,1,189.68,82.34Z"/></symbol><symbol id="i-dog" viewBox="0 0 256 256"><path d="M239.71,125l-16.42-88a16,16,0,0,0-19.61-12.58l-.31.09L150.85,40h-45.7L52.63,24.56l-.31-.09A16,16,0,0,0,32.71,37.05L16.29,125a15.77,15.77,0,0,0,9.12,17.52A16.26,16.26,0,0,0,32.12,144,15.48,15.48,0,0,0,40,141.84V184a40,40,0,0,0,40,40h96a40,40,0,0,0,40-40V141.85a15.5,15.5,0,0,0,7.87,2.16,16.31,16.31,0,0,0,6.72-1.47A15.77,15.77,0,0,0,239.71,125ZM32,128h0L48.43,40,90.5,52.37Zm144,80H136V195.31l13.66-13.65a8,8,0,0,0-11.32-11.32L128,180.69l-10.34-10.35a8,8,0,0,0-11.32,11.32L120,195.31V208H80a24,24,0,0,1-24-24V123.11L107.92,56h40.15L200,123.11V184A24,24,0,0,1,176,208Zm48-80L165.5,52.37,207.57,40,224,128ZM104,140a12,12,0,1,1-12-12A12,12,0,0,1,104,140Zm72,0a12,12,0,1,1-12-12A12,12,0,0,1,176,140Z"/></symbol><symbol id="i-family" viewBox="0 0 256 256"><path d="M178,40c-20.65,0-38.73,8.88-50,23.89C116.73,48.88,98.65,40,78,40a62.07,62.07,0,0,0-62,62c0,70,103.79,126.66,108.21,129a8,8,0,0,0,7.58,0C136.21,228.66,240,172,240,102A62.07,62.07,0,0,0,178,40ZM128,214.8C109.74,204.16,32,155.69,32,102A46.06,46.06,0,0,1,78,56c19.45,0,35.78,10.36,42.6,27a8,8,0,0,0,14.8,0c6.82-16.67,23.15-27,42.6-27a46.06,46.06,0,0,1,46,46C224,155.61,146.24,204.15,128,214.8Z"/></symbol><symbol id="i-friends" viewBox="0 0 256 256"><path d="M244.8,150.4a8,8,0,0,1-11.2-1.6A51.6,51.6,0,0,0,192,128a8,8,0,0,1-7.37-4.89,8,8,0,0,1,0-6.22A8,8,0,0,1,192,112a24,24,0,1,0-23.24-30,8,8,0,1,1-15.5-4A40,40,0,1,1,219,117.51a67.94,67.94,0,0,1,27.43,21.68A8,8,0,0,1,244.8,150.4ZM190.92,212a8,8,0,1,1-13.84,8,57,57,0,0,0-98.16,0,8,8,0,1,1-13.84-8,72.06,72.06,0,0,1,33.74-29.92,48,48,0,1,1,58.36,0A72.06,72.06,0,0,1,190.92,212ZM128,176a32,32,0,1,0-32-32A32,32,0,0,0,128,176ZM72,120a8,8,0,0,0-8-8A24,24,0,1,1,87.24,82a8,8,0,1,0,15.5-4A40,40,0,1,0,37,117.51,67.94,67.94,0,0,0,9.6,139.19a8,8,0,1,0,12.8,9.61A51.6,51.6,0,0,1,64,128,8,8,0,0,0,72,120Z"/></symbol><symbol id="i-call" viewBox="0 0 256 256"><path d="M222.37,158.46l-47.11-21.11-.13-.06a16,16,0,0,0-15.17,1.4,8.12,8.12,0,0,0-.75.56L134.87,160c-15.42-7.49-31.34-23.29-38.83-38.51l20.78-24.71c.2-.25.39-.5.57-.77a16,16,0,0,0,1.32-15.06l0-.12L97.54,33.64a16,16,0,0,0-16.62-9.52A56.26,56.26,0,0,0,32,80c0,79.4,64.6,144,144,144a56.26,56.26,0,0,0,55.88-48.92A16,16,0,0,0,222.37,158.46ZM176,208A128.14,128.14,0,0,1,48,80,40.2,40.2,0,0,1,82.87,40a.61.61,0,0,0,0,.12l21,47L83.2,111.86a6.13,6.13,0,0,0-.57.77,16,16,0,0,0-1,15.7c9.06,18.53,27.73,37.06,46.46,46.11a16,16,0,0,0,15.75-1.14,8.44,8.44,0,0,0,.74-.56L168.89,152l47,21.05h0s.08,0,.11,0A40.21,40.21,0,0,1,176,208Z"/></symbol><symbol id="i-chat" viewBox="0 0 256 256"><path d="M128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-6.54-.67L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216Z"/></symbol><symbol id="i-coffee" viewBox="0 0 256 256"><path d="M80,56V24a8,8,0,0,1,16,0V56a8,8,0,0,1-16,0Zm40,8a8,8,0,0,0,8-8V24a8,8,0,0,0-16,0V56A8,8,0,0,0,120,64Zm32,0a8,8,0,0,0,8-8V24a8,8,0,0,0-16,0V56A8,8,0,0,0,152,64Zm96,56v8a40,40,0,0,1-37.51,39.91,96.59,96.59,0,0,1-27,40.09H208a8,8,0,0,1,0,16H32a8,8,0,0,1,0-16H56.54A96.3,96.3,0,0,1,24,136V88a8,8,0,0,1,8-8H208A40,40,0,0,1,248,120ZM200,96H40v40a80.27,80.27,0,0,0,45.12,72h69.76A80.27,80.27,0,0,0,200,136Zm32,24a24,24,0,0,0-16-22.62V136a95.78,95.78,0,0,1-1.2,15A24,24,0,0,0,232,128Z"/></symbol><symbol id="i-baby" viewBox="0 0 256 256"><path d="M92,140a12,12,0,1,1,12-12A12,12,0,0,1,92,140Zm72-24a12,12,0,1,0,12,12A12,12,0,0,0,164,116Zm-12.27,45.23a45,45,0,0,1-47.46,0,8,8,0,0,0-8.54,13.54,61,61,0,0,0,64.54,0,8,8,0,0,0-8.54-13.54ZM232,128A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88.11,88.11,0,0,0-84.09-87.91C120.32,56.38,120,71.88,120,72a8,8,0,0,0,16,0,8,8,0,0,1,16,0,24,24,0,0,1-48,0c0-.73.13-14.3,8.46-30.63A88,88,0,1,0,216,128Z"/></symbol><symbol id="i-date" viewBox="0 0 256 256"><path d="M205.33,103.67,183.56,29.74A8,8,0,0,0,175.89,24H80.11a8,8,0,0,0-7.67,5.74L50.67,103.67a63.46,63.46,0,0,0,17.42,64.67A87.39,87.39,0,0,0,120,191.63V232H88a8,8,0,1,0,0,16h80a8,8,0,1,0,0-16H136V191.63a87.41,87.41,0,0,0,51.91-23.29A63.46,63.46,0,0,0,205.33,103.67ZM86.09,40h83.82L190,108.19c.09.3.17.6.25.9-21.42,7.68-45.54-1.6-58.63-8.23C106.43,88.11,86.43,86.49,71.68,88.93ZM177,156.65a71.69,71.69,0,0,1-98,0,47.55,47.55,0,0,1-13-48.46l.45-1.52c12-4.06,31.07-5.14,57.93,8.47,11.15,5.65,29.16,12.85,48.43,12.85a68.64,68.64,0,0,0,19.05-2.6A47.2,47.2,0,0,1,177,156.65Z"/></symbol><symbol id="i-party" viewBox="0 0 256 256"><path d="M111.49,52.63a15.8,15.8,0,0,0-26,5.77L33,202.78A15.83,15.83,0,0,0,47.76,224a16,16,0,0,0,5.46-1l144.37-52.5a15.8,15.8,0,0,0,5.78-26Zm-8.33,135.21-35-35,13.16-36.21,58.05,58.05Zm-55,20,14-38.41,24.45,24.45ZM156,168.64,87.36,100l13-35.87,91.43,91.43ZM160,72a37.8,37.8,0,0,1,3.84-15.58C169.14,45.83,179.14,40,192,40c6.7,0,11-2.29,13.65-7.21A22,22,0,0,0,208,23.94,8,8,0,0,1,224,24c0,12.86-8.52,32-32,32-6.7,0-11,2.29-13.65,7.21A22,22,0,0,0,176,72.06,8,8,0,0,1,160,72ZM136,40V16a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm101.66,82.34a8,8,0,1,1-11.32,11.31l-16-16a8,8,0,0,1,11.32-11.32Zm4.87-42.75-24,8a8,8,0,0,1-5.06-15.18l24-8a8,8,0,0,1,5.06,15.18Z"/></symbol><symbol id="i-drinks" viewBox="0 0 256 256"><path d="M104,104v80a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm40-8a8,8,0,0,0-8,8v80a8,8,0,0,0,16,0V104A8,8,0,0,0,144,96Zm96,16v64a24,24,0,0,1-24,24H200v8a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V72c0-30.88,28.71-56,64-56,16.77,0,32.91,5.8,44.82,16H160a40,40,0,0,1,40,40V88h16A24,24,0,0,1,240,112ZM57,64H182.62A24,24,0,0,0,160,48H145.74a8,8,0,0,1-5.53-2.22C131.06,37,117.87,32,104,32,80.82,32,61.43,45.76,57,64ZM184,208V80H56V208H184Zm40-96a8,8,0,0,0-8-8H200v80h16a8,8,0,0,0,8-8Z"/></symbol><symbol id="i-music" viewBox="0 0 256 256"><path d="M212.92,17.69a8,8,0,0,0-6.86-1.45l-128,32A8,8,0,0,0,72,56V166.08A36,36,0,1,0,88,196V110.25l112-28v51.83A36,36,0,1,0,216,164V24A8,8,0,0,0,212.92,17.69ZM52,216a20,20,0,1,1,20-20A20,20,0,0,1,52,216ZM88,93.75V62.25l112-28v31.5ZM180,184a20,20,0,1,1,20-20A20,20,0,0,1,180,184Z"/></symbol><symbol id="i-headphones" viewBox="0 0 256 256"><path d="M201.89,54.66A103.43,103.43,0,0,0,128.79,24H128A104,104,0,0,0,24,128v56a24,24,0,0,0,24,24H64a24,24,0,0,0,24-24V144a24,24,0,0,0-24-24H40.36A88,88,0,0,1,128,40h.67a87.71,87.71,0,0,1,87,80H192a24,24,0,0,0-24,24v40a24,24,0,0,0,24,24h16a24,24,0,0,0,24-24V128A103.41,103.41,0,0,0,201.89,54.66ZM64,136a8,8,0,0,1,8,8v40a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V136Zm152,48a8,8,0,0,1-8,8H192a8,8,0,0,1-8-8V144a8,8,0,0,1,8-8h24Z"/></symbol><symbol id="i-guitar" viewBox="0 0 256 256"><path d="M249.66,46.34l-40-40a8,8,0,0,0-11.31,11.32L200.69,20,140.52,80.16C117.73,68.3,92.21,69.29,76.75,84.74a42.27,42.27,0,0,0-9.39,14.37A8.24,8.24,0,0,1,59.81,104c-14.59.49-27.26,5.72-36.65,15.11C11.08,131.22,6,148.6,8.74,168.07,11.4,186.7,21.07,205.15,36,220s33.34,24.56,52,27.22A71.13,71.13,0,0,0,98.1,248c15.32,0,28.83-5.23,38.76-15.16,9.39-9.39,14.62-22.06,15.11-36.65a8.24,8.24,0,0,1,4.92-7.55,42.12,42.12,0,0,0,14.37-9.39c15.45-15.46,16.44-41,4.58-63.77L236,55.31l2.34,2.34a8,8,0,1,0,11.32-11.31ZM160,167.93a26.12,26.12,0,0,1-8.95,5.83,24.24,24.24,0,0,0-15,21.89c-.36,10.46-4,19.41-10.43,25.88-8.44,8.43-21,11.95-35.36,9.89C75,229.25,59.73,221.19,47.27,208.73S26.75,181,24.58,165.81c-2-14.37,1.46-26.92,9.89-35.36C40.94,124,49.89,120.37,60.35,120h0a24.22,24.22,0,0,0,21.89-15,26.12,26.12,0,0,1,5.83-9c5.49-5.49,13-8.13,21.38-8.13a49.38,49.38,0,0,1,19.13,4.19L108.5,112.19a32,32,0,1,0,35.31,35.31l20.08-20.08C170.41,142.71,169.47,158.41,160,167.93Zm-10.4-61.48a72.9,72.9,0,0,1,5.93,6.75l-15.42,15.42a32.22,32.22,0,0,0-12.68-12.68l15.42-15.43A73,73,0,0,1,149.55,106.45ZM112,128a16,16,0,0,1,16,16h0a16,16,0,1,1-16-16Zm48.85-32.85a86.94,86.94,0,0,0-6.68-6L176,67.31,188.69,80l-21.83,21.82A86.94,86.94,0,0,0,160.86,95.14ZM200,68.68,187.32,56,212,31.31,224.69,44ZM93.66,194.33a8,8,0,0,1-11.31,11.32l-32-32a8,8,0,0,1,11.32-11.31Z"/></symbol><symbol id="i-game" viewBox="0 0 256 256"><path d="M176,112H152a8,8,0,0,1,0-16h24a8,8,0,0,1,0,16ZM104,96H96V88a8,8,0,0,0-16,0v8H72a8,8,0,0,0,0,16h8v8a8,8,0,0,0,16,0v-8h8a8,8,0,0,0,0-16ZM241.48,200.65a36,36,0,0,1-54.94,4.81c-.12-.12-.24-.24-.35-.37L146.48,160h-37L69.81,205.09l-.35.37A36.08,36.08,0,0,1,44,216,36,36,0,0,1,8.56,173.75a.68.68,0,0,1,0-.14L24.93,89.52A59.88,59.88,0,0,1,83.89,40H172a60.08,60.08,0,0,1,59,49.25c0,.06,0,.12,0,.18l16.37,84.17a.68.68,0,0,1,0,.14A35.74,35.74,0,0,1,241.48,200.65ZM172,144a44,44,0,0,0,0-88H83.89A43.9,43.9,0,0,0,40.68,92.37l0,.13L24.3,176.59A20,20,0,0,0,58,194.3l41.92-47.59a8,8,0,0,1,6-2.71Zm59.7,32.59-8.74-45A60,60,0,0,1,172,160h-4.2L198,194.31a20.09,20.09,0,0,0,17.46,5.39,20,20,0,0,0,16.23-23.11Z"/></symbol><symbol id="i-movie" viewBox="0 0 256 256"><path d="M216,104H102.09L210,75.51a8,8,0,0,0,5.68-9.84l-8.16-30a15.93,15.93,0,0,0-19.42-11.13L35.81,64.74a15.75,15.75,0,0,0-9.7,7.4,15.51,15.51,0,0,0-1.55,12L32,111.56c0,.14,0,.29,0,.44v88a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V112A8,8,0,0,0,216,104ZM192.16,40l6,22.07-22.62,6L147.42,51.83Zm-66.69,17.6,28.12,16.24-36.94,9.75L88.53,67.37Zm-79.4,44.62-6-22.08,26.5-7L94.69,89.4ZM208,200H48V120H208v80Z"/></symbol><symbol id="i-camera" viewBox="0 0 256 256"><path d="M208,56H180.28L166.65,35.56A8,8,0,0,0,160,32H96a8,8,0,0,0-6.65,3.56L75.71,56H48A24,24,0,0,0,24,80V192a24,24,0,0,0,24,24H208a24,24,0,0,0,24-24V80A24,24,0,0,0,208,56Zm8,136a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V80a8,8,0,0,1,8-8H80a8,8,0,0,0,6.66-3.56L100.28,48h55.43l13.63,20.44A8,8,0,0,0,176,72h32a8,8,0,0,1,8,8ZM128,88a44,44,0,1,0,44,44A44.05,44.05,0,0,0,128,88Zm0,72a28,28,0,1,1,28-28A28,28,0,0,1,128,160Z"/></symbol><symbol id="i-travel" viewBox="0 0 256 256"><path d="M235.58,128.84,160,91.06V48a32,32,0,0,0-64,0V91.06L20.42,128.84A8,8,0,0,0,16,136v32a8,8,0,0,0,9.57,7.84L96,161.76v18.93L82.34,194.34A8,8,0,0,0,80,200v32a8,8,0,0,0,11,7.43l37-14.81,37,14.81A8,8,0,0,0,176,232V200a8,8,0,0,0-2.34-5.66L160,180.69V161.76l70.43,14.08A8,8,0,0,0,240,168V136A8,8,0,0,0,235.58,128.84ZM224,158.24l-70.43-14.08A8,8,0,0,0,144,152v32a8,8,0,0,0,2.34,5.66L160,203.31v16.87l-29-11.61a8,8,0,0,0-5.94,0L96,220.18V203.31l13.66-13.65A8,8,0,0,0,112,184V152a8,8,0,0,0-9.57-7.84L32,158.24v-17.3l75.58-37.78A8,8,0,0,0,112,96V48a16,16,0,0,1,32,0V96a8,8,0,0,0,4.42,7.16L224,140.94Z"/></symbol><symbol id="i-sparkle" viewBox="0 0 256 256"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></symbol><symbol id="i-laptop" viewBox="0 0 256 256"><path d="M232,168h-8V72a24,24,0,0,0-24-24H56A24,24,0,0,0,32,72v96H24a8,8,0,0,0-8,8v16a24,24,0,0,0,24,24H216a24,24,0,0,0,24-24V176A8,8,0,0,0,232,168ZM48,72a8,8,0,0,1,8-8H200a8,8,0,0,1,8,8v96H48ZM224,192a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8v-8H224ZM152,88a8,8,0,0,1-8,8H112a8,8,0,0,1,0-16h32A8,8,0,0,1,152,88Z"/></symbol><symbol id="i-work" viewBox="0 0 256 256"><path d="M216,56H176V48a24,24,0,0,0-24-24H104A24,24,0,0,0,80,48v8H40A16,16,0,0,0,24,72V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V72A16,16,0,0,0,216,56ZM96,48a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96ZM216,72v41.61A184,184,0,0,1,128,136a184.07,184.07,0,0,1-88-22.38V72Zm0,128H40V131.64A200.19,200.19,0,0,0,128,152a200.25,200.25,0,0,0,88-20.37V200ZM104,112a8,8,0,0,1,8-8h32a8,8,0,0,1,0,16H112A8,8,0,0,1,104,112Z"/></symbol><symbol id="i-code" viewBox="0 0 256 256"><path d="M69.12,94.15,28.5,128l40.62,33.85a8,8,0,1,1-10.24,12.29l-48-40a8,8,0,0,1,0-12.29l48-40a8,8,0,0,1,10.24,12.3Zm176,27.7-48-40a8,8,0,1,0-10.24,12.3L227.5,128l-40.62,33.85a8,8,0,1,0,10.24,12.29l48-40a8,8,0,0,0,0-12.29ZM162.73,32.48a8,8,0,0,0-10.25,4.79l-64,176a8,8,0,0,0,4.79,10.26A8.14,8.14,0,0,0,96,224a8,8,0,0,0,7.52-5.27l64-176A8,8,0,0,0,162.73,32.48Z"/></symbol><symbol id="i-money" viewBox="0 0 256 256"><path d="M184,89.57V84c0-25.08-37.83-44-88-44S8,58.92,8,84v40c0,20.89,26.25,37.49,64,42.46V172c0,25.08,37.83,44,88,44s88-18.92,88-44V132C248,111.3,222.58,94.68,184,89.57ZM232,132c0,13.22-30.79,28-72,28-3.73,0-7.43-.13-11.08-.37C170.49,151.77,184,139,184,124V105.74C213.87,110.19,232,122.27,232,132ZM72,150.25V126.46A183.74,183.74,0,0,0,96,128a183.74,183.74,0,0,0,24-1.54v23.79A163,163,0,0,1,96,152,163,163,0,0,1,72,150.25Zm96-40.32V124c0,8.39-12.41,17.4-32,22.87V123.5C148.91,120.37,159.84,115.71,168,109.93ZM96,56c41.21,0,72,14.78,72,28s-30.79,28-72,28S24,97.22,24,84,54.79,56,96,56ZM24,124V109.93c8.16,5.78,19.09,10.44,32,13.57v23.37C36.41,141.4,24,132.39,24,124Zm64,48v-4.17c2.63.1,5.29.17,8,.17,3.88,0,7.67-.13,11.39-.35A121.92,121.92,0,0,0,120,171.41v23.46C100.41,189.4,88,180.39,88,172Zm48,26.25V174.4a179.48,179.48,0,0,0,24,1.6,183.74,183.74,0,0,0,24-1.54v23.79a165.45,165.45,0,0,1-48,0Zm64-3.38V171.5c12.91-3.13,23.84-7.79,32-13.57V172C232,180.39,219.59,189.4,200,194.87Z"/></symbol><symbol id="i-cook" viewBox="0 0 256 256"><path d="M88,48V16a8,8,0,0,1,16,0V48a8,8,0,0,1-16,0Zm40,8a8,8,0,0,0,8-8V16a8,8,0,0,0-16,0V48A8,8,0,0,0,128,56Zm32,0a8,8,0,0,0,8-8V16a8,8,0,0,0-16,0V48A8,8,0,0,0,160,56Zm92.8,46.4L224,124v60a32,32,0,0,1-32,32H64a32,32,0,0,1-32-32V124L3.2,102.4a8,8,0,0,1,9.6-12.8L32,104V80a8,8,0,0,1,8-8H216a8,8,0,0,1,8,8v24l19.2-14.4a8,8,0,0,1,9.6,12.8ZM208,88H48v96a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16Z"/></symbol><symbol id="i-clean" viewBox="0 0 256 256"><path d="M235.5,216.81c-22.56-11-35.5-34.58-35.5-64.8V134.73a15.94,15.94,0,0,0-10.09-14.87L165,110a8,8,0,0,1-4.48-10.34l21.32-53a28,28,0,0,0-16.1-37,28.14,28.14,0,0,0-35.82,16,.61.61,0,0,0,0,.12L108.9,79a8,8,0,0,1-10.37,4.49L73.11,73.14A15.89,15.89,0,0,0,55.74,76.8C34.68,98.45,24,123.75,24,152a111.45,111.45,0,0,0,31.18,77.53A8,8,0,0,0,61,232H232a8,8,0,0,0,3.5-15.19ZM67.14,88l25.41,10.3a24,24,0,0,0,31.23-13.45l21-53c2.56-6.11,9.47-9.27,15.43-7a12,12,0,0,1,6.88,15.92L145.69,93.76a24,24,0,0,0,13.43,31.14L184,134.73V152c0,.33,0,.66,0,1L55.77,101.71A108.84,108.84,0,0,1,67.14,88Zm48,128a87.53,87.53,0,0,1-24.34-42,8,8,0,0,0-15.49,4,105.16,105.16,0,0,0,18.36,38H64.44A95.54,95.54,0,0,1,40,152a85.9,85.9,0,0,1,7.73-36.29l137.8,55.12c3,18,10.56,33.48,21.89,45.16Z"/></symbol><symbol id="i-shop" viewBox="0 0 256 256"><path d="M230.14,58.87A8,8,0,0,0,224,56H62.68L56.6,22.57A8,8,0,0,0,48.73,16H24a8,8,0,0,0,0,16h18L67.56,172.29a24,24,0,0,0,5.33,11.27,28,28,0,1,0,44.4,8.44h45.42A27.75,27.75,0,0,0,160,204a28,28,0,1,0,28-28H91.17a8,8,0,0,1-7.87-6.57L80.13,152h116a24,24,0,0,0,23.61-19.71l12.16-66.86A8,8,0,0,0,230.14,58.87ZM104,204a12,12,0,1,1-12-12A12,12,0,0,1,104,204Zm96,0a12,12,0,1,1-12-12A12,12,0,0,1,200,204Zm4-74.57A8,8,0,0,1,196.1,136H77.22L65.59,72H214.41Z"/></symbol><symbol id="i-home" viewBox="0 0 256 256"><path d="M219.31,108.68l-80-80a16,16,0,0,0-22.62,0l-80,80A15.87,15.87,0,0,0,32,120v96a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V160h32v56a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V120A15.87,15.87,0,0,0,219.31,108.68ZM208,208H160V152a8,8,0,0,0-8-8H104a8,8,0,0,0-8,8v56H48V120l80-80,80,80Z"/></symbol><symbol id="i-book" viewBox="0 0 256 256"><path d="M232,48H160a40,40,0,0,0-32,16A40,40,0,0,0,96,48H24a8,8,0,0,0-8,8V200a8,8,0,0,0,8,8H96a24,24,0,0,1,24,24,8,8,0,0,0,16,0,24,24,0,0,1,24-24h72a8,8,0,0,0,8-8V56A8,8,0,0,0,232,48ZM96,192H32V64H96a24,24,0,0,1,24,24V200A39.81,39.81,0,0,0,96,192Zm128,0H160a39.81,39.81,0,0,0-24,8V88a24,24,0,0,1,24-24h64Z"/></symbol><symbol id="i-write" viewBox="0 0 256 256"><path d="M227.31,73.37,182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z"/></symbol><symbol id="i-brain" viewBox="0 0 256 256"><path d="M248,124a56.11,56.11,0,0,0-32-50.61V72a48,48,0,0,0-88-26.49A48,48,0,0,0,40,72v1.39a56,56,0,0,0,0,101.2V176a48,48,0,0,0,88,26.49A48,48,0,0,0,216,176v-1.41A56.09,56.09,0,0,0,248,124ZM88,208a32,32,0,0,1-31.81-28.56A55.87,55.87,0,0,0,64,180h8a8,8,0,0,0,0-16H64A40,40,0,0,1,50.67,86.27,8,8,0,0,0,56,78.73V72a32,32,0,0,1,64,0v68.26A47.8,47.8,0,0,0,88,128a8,8,0,0,0,0,16,32,32,0,0,1,0,64Zm104-44h-8a8,8,0,0,0,0,16h8a55.87,55.87,0,0,0,7.81-.56A32,32,0,1,1,168,144a8,8,0,0,0,0-16,47.8,47.8,0,0,0-32,12.26V72a32,32,0,0,1,64,0v6.73a8,8,0,0,0,5.33,7.54A40,40,0,0,1,192,164Zm16-52a8,8,0,0,1-8,8h-4a36,36,0,0,1-36-36V80a8,8,0,0,1,16,0v4a20,20,0,0,0,20,20h4A8,8,0,0,1,208,112ZM60,120H56a8,8,0,0,1,0-16h4A20,20,0,0,0,80,84V80a8,8,0,0,1,16,0v4A36,36,0,0,1,60,120Z"/></symbol><symbol id="i-learn" viewBox="0 0 256 256"><path d="M251.76,88.94l-120-64a8,8,0,0,0-7.52,0l-120,64a8,8,0,0,0,0,14.12L32,117.87v48.42a15.91,15.91,0,0,0,4.06,10.65C49.16,191.53,78.51,216,128,216a130,130,0,0,0,48-8.76V240a8,8,0,0,0,16,0V199.51a115.63,115.63,0,0,0,27.94-22.57A15.91,15.91,0,0,0,224,166.29V117.87l27.76-14.81a8,8,0,0,0,0-14.12ZM128,200c-43.27,0-68.72-21.14-80-33.71V126.4l76.24,40.66a8,8,0,0,0,7.52,0L176,143.47v46.34C163.4,195.69,147.52,200,128,200Zm80-33.75a97.83,97.83,0,0,1-16,14.25V134.93l16-8.53ZM188,118.94l-.22-.13-56-29.87a8,8,0,0,0-7.52,14.12L171,128l-43,22.93L25,96,128,41.07,231,96Z"/></symbol><symbol id="i-language" viewBox="0 0 256 256"><path d="M247.15,212.42l-56-112a8,8,0,0,0-14.31,0l-21.71,43.43A88,88,0,0,1,108,126.93,103.65,103.65,0,0,0,135.69,64H160a8,8,0,0,0,0-16H104V32a8,8,0,0,0-16,0V48H32a8,8,0,0,0,0,16h87.63A87.76,87.76,0,0,1,96,116.35a87.74,87.74,0,0,1-19-31,8,8,0,1,0-15.08,5.34A103.63,103.63,0,0,0,84,127a87.55,87.55,0,0,1-52,17,8,8,0,0,0,0,16,103.46,103.46,0,0,0,64-22.08,104.18,104.18,0,0,0,51.44,21.31l-26.6,53.19a8,8,0,0,0,14.31,7.16L148.94,192h70.11l13.79,27.58A8,8,0,0,0,240,224a8,8,0,0,0,7.15-11.58ZM156.94,176,184,121.89,211.05,176Z"/></symbol><symbol id="i-art" viewBox="0 0 256 256"><path d="M232,32a8,8,0,0,0-8-8c-44.08,0-89.31,49.71-114.43,82.63A60,60,0,0,0,32,164c0,30.88-19.54,44.73-20.47,45.37A8,8,0,0,0,16,224H92a60,60,0,0,0,57.37-77.57C182.3,121.31,232,76.08,232,32ZM92,208H34.63C41.38,198.41,48,183.92,48,164a44,44,0,1,1,44,44Zm32.42-94.45q5.14-6.66,10.09-12.55A76.23,76.23,0,0,1,155,121.49q-5.9,4.94-12.55,10.09A60.54,60.54,0,0,0,124.42,113.55Zm42.7-2.68a92.57,92.57,0,0,0-22-22c31.78-34.53,55.75-45,69.9-47.91C212.17,55.12,201.65,79.09,167.12,110.87Z"/></symbol><symbol id="i-puzzle" viewBox="0 0 256 256"><path d="M220.27,158.54a8,8,0,0,0-7.7-.46,20,20,0,1,1,0-36.16A8,8,0,0,0,224,114.69V72a16,16,0,0,0-16-16H171.78a35.36,35.36,0,0,0,.22-4,36.11,36.11,0,0,0-11.36-26.24,36,36,0,0,0-60.55,23.62,36.56,36.56,0,0,0,.14,6.62H64A16,16,0,0,0,48,72v32.22a35.36,35.36,0,0,0-4-.22,36.12,36.12,0,0,0-26.24,11.36,35.7,35.7,0,0,0-9.69,27,36.08,36.08,0,0,0,33.31,33.6,35.68,35.68,0,0,0,6.62-.14V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V165.31A8,8,0,0,0,220.27,158.54ZM208,208H64V165.31a8,8,0,0,0-11.43-7.23,20,20,0,1,1,0-36.16A8,8,0,0,0,64,114.69V72h46.69a8,8,0,0,0,7.23-11.43,20,20,0,1,1,36.16,0A8,8,0,0,0,161.31,72H208v32.23a35.68,35.68,0,0,0-6.62-.14A36,36,0,0,0,204,176a35.36,35.36,0,0,0,4-.22Z"/></symbol><symbol id="i-target" viewBox="0 0 256 256"><path d="M221.87,83.16A104.1,104.1,0,1,1,195.67,49l22.67-22.68a8,8,0,0,1,11.32,11.32l-96,96a8,8,0,0,1-11.32-11.32l27.72-27.72a40,40,0,1,0,17.87,31.09,8,8,0,1,1,16-.9,56,56,0,1,1-22.38-41.65L184.3,60.39a87.88,87.88,0,1,0,23.13,29.67,8,8,0,0,1,14.44-6.9Z"/></symbol><symbol id="i-moon" viewBox="0 0 256 256"><path d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.09,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.34A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.34Z"/></symbol><symbol id="i-bed" viewBox="0 0 256 256"><path d="M216,72H32V48a8,8,0,0,0-16,0V208a8,8,0,0,0,16,0V176H240v32a8,8,0,0,0,16,0V112A40,40,0,0,0,216,72ZM32,88h72v72H32Zm88,72V88h96a24,24,0,0,1,24,24v48Z"/></symbol><symbol id="i-meditate" viewBox="0 0 256 256"><path d="M245.83,121.63a15.53,15.53,0,0,0-9.52-7.33,73.51,73.51,0,0,0-22.17-2.22c4-19.85,1-35.55-2.06-44.86a16.15,16.15,0,0,0-18.79-10.88,85.53,85.53,0,0,0-28.55,12.12,94.58,94.58,0,0,0-27.11-33.25,16.05,16.05,0,0,0-19.26,0A94.48,94.48,0,0,0,91.26,68.46,85.53,85.53,0,0,0,62.71,56.34,16.15,16.15,0,0,0,43.92,67.22c-3,9.31-6,25-2.06,44.86a73.51,73.51,0,0,0-22.17,2.22,15.53,15.53,0,0,0-9.52,7.33,16,16,0,0,0-1.6,12.27c3.39,12.57,13.8,36.48,45.33,55.32S113.13,208,128.05,208s42.67,0,74-18.78c31.53-18.84,41.94-42.75,45.33-55.32A16,16,0,0,0,245.83,121.63ZM59.14,72.14a.2.2,0,0,1,.23-.15A70.43,70.43,0,0,1,85.18,83.66,118.65,118.65,0,0,0,80,119.17c0,18.74,3.77,34,9.11,46.28A123.59,123.59,0,0,1,69.57,140C51.55,108.62,55.3,84,59.14,72.14Zm3,103.35C35.47,159.57,26.82,140.05,24,129.7a59.82,59.82,0,0,1,22.5-1.17,129.08,129.08,0,0,0,9.15,19.41,142.28,142.28,0,0,0,34,39.56A114.92,114.92,0,0,1,62.1,175.49ZM128,190.4c-9.33-6.94-32-28.23-32-71.23C96,76.7,118.38,55.24,128,48c9.62,7.26,32,28.72,32,71.19C160,162.17,137.33,183.46,128,190.4ZM170.82,83.66A70.43,70.43,0,0,1,196.63,72a.2.2,0,0,1,.23.15C200.7,84,204.45,108.62,186.43,140a123.32,123.32,0,0,1-19.54,25.48c5.34-12.26,9.11-27.54,9.11-46.28A118.65,118.65,0,0,0,170.82,83.66ZM232,129.72c-2.77,10.25-11.4,29.81-38.09,45.77a114.92,114.92,0,0,1-27.55,12,142.28,142.28,0,0,0,34-39.56,129.08,129.08,0,0,0,9.15-19.41A59.69,59.69,0,0,1,232,129.71Z"/></symbol><symbol id="i-leaf" viewBox="0 0 256 256"><path d="M223.45,40.07a8,8,0,0,0-7.52-7.52C139.8,28.08,78.82,51,52.82,94a87.09,87.09,0,0,0-12.76,49c.57,15.92,5.21,32,13.79,47.85l-19.51,19.5a8,8,0,0,0,11.32,11.32l19.5-19.51C81,210.73,97.09,215.37,113,215.94q1.67.06,3.33.06A86.93,86.93,0,0,0,162,203.18C205,177.18,227.93,116.21,223.45,40.07ZM153.75,189.5c-22.75,13.78-49.68,14-76.71.77l88.63-88.62a8,8,0,0,0-11.32-11.32L65.73,179c-13.19-27-13-54,.77-76.71,22.09-36.47,74.6-56.44,141.31-54.06C210.2,114.89,190.22,167.41,153.75,189.5Z"/></symbol><symbol id="i-plant" viewBox="0 0 256 256"><path d="M247.63,47.89a8,8,0,0,0-7.52-7.52c-51.76-3-93.32,12.74-111.18,42.22-11.8,19.49-11.78,43.16-.16,65.74a71.34,71.34,0,0,0-14.17,27L98.33,159c7.82-16.33,7.52-33.35-1-47.49-13.2-21.79-43.67-33.47-81.5-31.25a8,8,0,0,0-7.52,7.52c-2.23,37.83,9.46,68.3,31.25,81.5A45.82,45.82,0,0,0,63.44,176,54.58,54.58,0,0,0,87,170.33l25,25V224a8,8,0,0,0,16,0V194.51a55.61,55.61,0,0,1,12.27-35,73.91,73.91,0,0,0,33.31,8.4,60.9,60.9,0,0,0,31.83-8.86C234.89,141.21,250.67,99.65,247.63,47.89ZM47.81,155.6C32.47,146.31,23.79,124.32,24,96c28.32-.24,50.31,8.47,59.6,23.81,4.85,8,5.64,17.33,2.46,26.94L61.65,122.34a8,8,0,0,0-11.31,11.31l24.41,24.41C65.14,161.24,55.82,160.45,47.81,155.6Zm149.31-10.22c-13.4,8.11-29.15,8.73-45.15,2l53.69-53.7a8,8,0,0,0-11.31-11.31L140.65,136c-6.76-16-6.15-31.76,2-45.15,13.94-23,47-35.82,89.33-34.83C232.94,98.34,220.14,131.44,197.12,145.38Z"/></symbol><symbol id="i-sun" viewBox="0 0 256 256"><path d="M120,40V16a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm72,88a64,64,0,1,1-64-64A64.07,64.07,0,0,1,192,128Zm-16,0a48,48,0,1,0-48,48A48.05,48.05,0,0,0,176,128ZM58.34,69.66A8,8,0,0,0,69.66,58.34l-16-16A8,8,0,0,0,42.34,53.66Zm0,116.68-16,16a8,8,0,0,0,11.32,11.32l16-16a8,8,0,0,0-11.32-11.32ZM192,72a8,8,0,0,0,5.66-2.34l16-16a8,8,0,0,0-11.32-11.32l-16,16A8,8,0,0,0,192,72Zm5.66,114.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32-11.32ZM48,128a8,8,0,0,0-8-8H16a8,8,0,0,0,0,16H40A8,8,0,0,0,48,128Zm80,80a8,8,0,0,0-8,8v24a8,8,0,0,0,16,0V216A8,8,0,0,0,128,208Zm112-88H216a8,8,0,0,0,0,16h24a8,8,0,0,0,0-16Z"/></symbol><symbol id="i-phone_off" viewBox="0 0 256 256"><path d="M213.92,210.62l-160-176A8,8,0,1,0,42.08,45.38L56,60.69V216a24,24,0,0,0,24,24h96a24,24,0,0,0,23.82-21.11l2.26,2.49a8,8,0,1,0,11.84-10.76ZM184,216a8,8,0,0,1-8,8H80a8,8,0,0,1-8-8V78.29l112,123.2ZM68.7,24a8,8,0,0,1,8-8H176a24,24,0,0,1,24,24V150.83a8,8,0,1,1-16,0V40a8,8,0,0,0-8-8H76.7A8,8,0,0,1,68.7,24Z"/></symbol><symbol id="i-ui_target" viewBox="0 0 256 256"><path d="M221.87,83.16A104.1,104.1,0,1,1,195.67,49l22.67-22.68a8,8,0,0,1,11.32,11.32l-96,96a8,8,0,0,1-11.32-11.32l27.72-27.72a40,40,0,1,0,17.87,31.09,8,8,0,1,1,16-.9,56,56,0,1,1-22.38-41.65L184.3,60.39a87.88,87.88,0,1,0,23.13,29.67,8,8,0,0,1,14.44-6.9Z"/></symbol></svg>
+<!-- End icons -->
 <header class="bar" id="bar"><div class="bar-in" id="barIn"></div></header>
 <main id="main" tabindex="-1"></main>
 <section class="dock glass" id="dock" aria-label="Message Deka" hidden></section>
 <nav class="tabs glass" id="tabs" aria-label="Tabs" hidden>
   <div class="in">
-    <button data-tab="chat">Deka</button>
-    <button data-tab="days">Days</button>
-    <button data-tab="goals">Goals</button>
+    <button data-tab="chat" aria-label="Deka"><svg class="mk" viewBox="0 0 1188 1188" aria-hidden="true" focusable="false"><circle cx="360.86" cy="451.08" r="31.13"/><circle cx="289.21" cy="407.04" r="37.67"/><circle cx="250.25" cy="312.85" r="45.67"/><circle cx="279.38" cy="192.66" r="55.3"/><circle cx="393.4" cy="95.44" r="67.07"/><circle cx="574.37" cy="81.44" r="81.28"/><circle cx="762" cy="196.59" r="98.57"/><circle cx="864" cy="443.32" r="119.41"/><circle cx="788.26" cy="757.94" r="144.73"/><circle cx="489.61" cy="1012.44" r="175.41"/></svg></button>
+    <button data-tab="days" aria-label="Days"><svg viewBox="0 0 26 26" fill="currentColor" aria-hidden="true" focusable="false"><circle cx="3" cy="9" r="1.9"/><circle cx="8" cy="9" r="1.9"/><circle cx="13" cy="9" r="1.9"/><circle cx="18" cy="9" r="1.9"/><circle cx="23" cy="9" r="1.9"/><circle cx="3" cy="17" r="1.9"/><circle cx="8" cy="17" r="1.9"/><circle cx="13" cy="17" r="1.9"/><circle cx="18" cy="17" r="1.9"/><circle cx="23" cy="17" r="2.6"/></svg></button>
+    <button data-tab="goals" aria-label="Goals"><svg viewBox="0 0 256 256" aria-hidden="true" focusable="false" fill="currentColor"><use href="#i-ui_target"/></svg></button>
   </div>
 </nav>
 <div id="toastRoot" aria-live="polite" role="status"></div>
@@ -472,6 +524,26 @@ body.no-tabs .toast { bottom: calc(var(--safe-b) + 16px); }
 <script>
 (() => {
 'use strict';
+
+/* Icon list: built by scripts/icons.js */
+const GOAL_ICONS = {"run":["body","heavy","no","no","any","no"],"gym":["body","heavy","no","no","any","no"],"walk":["body","light","no","no","any","no"],"yoga":["body","light","no","no","any","no"],"bike":["body","heavy","no","no","any","no"],"swim":["body","heavy","no","no","any","no"],"hike":["body","heavy","no","yes","day","yes"],"sport":["body","heavy","yes","yes","any","no"],"water":["body","light","no","no","any","no"],"pill":["body","light","no","no","morning","no"],"dog":["body","light","no","no","any","no"],"family":["people","light","yes","no","any","no"],"friends":["people","light","yes","yes","evening","yes"],"call":["people","light","yes","no","any","no"],"chat":["people","light","yes","no","any","no"],"coffee":["people","light","yes","no","day","no"],"baby":["people","light","yes","no","any","no"],"date":["fun","light","yes","yes","evening","yes"],"party":["fun","light","yes","yes","evening","yes"],"drinks":["fun","light","yes","yes","evening","yes"],"music":["fun","light","no","no","evening","no"],"headphones":["fun","light","no","no","any","no"],"guitar":["fun","light","no","no","evening","no"],"game":["fun","light","no","yes","evening","no"],"movie":["fun","light","no","yes","evening","no"],"camera":["fun","light","no","no","day","no"],"travel":["fun","heavy","no","yes","any","yes"],"sparkle":["fun","light","no","yes","any","no"],"laptop":["work","heavy","no","no","any","no"],"work":["work","heavy","no","no","day","no"],"code":["work","heavy","no","no","any","no"],"money":["work","light","no","no","any","no"],"cook":["work","light","no","no","evening","no"],"clean":["work","light","no","no","any","no"],"shop":["work","light","no","no","any","no"],"home":["work","light","no","no","any","no"],"book":["mind","light","no","no","evening","no"],"write":["mind","heavy","no","no","any","no"],"brain":["mind","heavy","no","no","any","no"],"learn":["mind","heavy","no","no","any","no"],"language":["mind","light","no","no","any","no"],"art":["mind","light","no","no","any","no"],"puzzle":["mind","light","no","no","any","no"],"target":["mind","light","no","no","any","no"],"moon":["rest","light","no","no","evening","no"],"bed":["rest","light","no","no","evening","no"],"meditate":["rest","light","no","no","morning","no"],"leaf":["rest","light","no","no","any","no"],"plant":["rest","light","no","no","any","no"],"sun":["rest","light","no","no","morning","no"],"phone_off":["rest","light","no","no","any","no"]};
+const CATEGORIES = ["body","people","fun","work","mind","rest"];
+/* End icon list */
+
+// Goals made before icons get one from their name.
+const GUESS = [[/run|jog/, 'run'], [/gym|lift|weights/, 'gym'], [/walk/, 'walk'], [/yoga|stretch|pilates/, 'yoga'], [/bike|cycl/, 'bike'], [/swim/, 'swim'], [/hike/, 'hike'],
+  [/mom|mum|dad|mother|father|family|parent|grand|sister|brother/, 'family'], [/boys|girls|night out|party|club/, 'party'], [/drink|beer|pub/, 'drinks'], [/date/, 'date'],
+  [/friend|mates/, 'friends'], [/coffee|cafe/, 'coffee'], [/call/, 'call'], [/music|song|produc/, 'music'], [/guitar/, 'guitar'], [/sober|sleep|dry/, 'moon'], [/read|book/, 'book'],
+  [/writ|journal/, 'write'], [/medita|breath/, 'meditate'], [/cook|meal/, 'cook'], [/clean|tidy/, 'clean'], [/code|coding/, 'code'], [/study|learn|course|class/, 'learn'],
+  [/money|budget|invest/, 'money'], [/phone|screen/, 'phone_off'], [/plant|garden/, 'plant'], [/travel|trip/, 'travel'], [/photo|camera/, 'camera'], [/game/, 'game'],
+  [/film|movie/, 'movie'], [/paint|draw|art/, 'art'], [/work|project|letter|startup|side/, 'laptop']];
+function guessIcon(name, type) {
+  const n = String(name || '').toLowerCase();
+  const hit = GUESS.find(([re]) => re.test(n));
+  return hit ? hit[1] : type === 'abstain' ? 'moon' : type === 'see' ? 'friends' : 'sparkle';
+}
+const iconOf = it => (it && GOAL_ICONS[it.icon] ? it.icon : guessIcon(it && it.name, it && it.type));
+const catOf = it => (it && CATEGORIES.includes(it.category) ? it.category : GOAL_ICONS[iconOf(it)][0]);
 
 /* Storage */
 
@@ -517,6 +589,7 @@ function migrate(d) {
     sp.notes = sp.notes || {};
     sp.intentions = sp.intentions || [];
     sp.occurrences = sp.occurrences || [];
+    for (const it of sp.intentions) if (!GOAL_ICONS[it.icon]) { it.icon = guessIcon(it.name, it.type); it.category = GOAL_ICONS[it.icon][0]; }
   }
   if (!d.seen && (d.spans.length || (d.current && d.current.intentions.length))) d.seen = true;
   return d;
@@ -643,6 +716,8 @@ function waitingView(text) {
 
 /* Icons */
 
+
+
 const I = {
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>',
   up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
@@ -686,84 +761,121 @@ const ui = {
   turn: null,       // the reply streaming right now
   flash: null,      // { days, until } after a confirm
   status: null,     // a centred waiting state, like importing
+  cardOpen: null,   // 'msg:card:day', a day opened on a plan card
+  enter: new Set(), // plan cards that just arrived and should animate in
 };
 
 const $ = id => document.getElementById(id);
 const $bar = $('barIn'), $main = $('main'), $dock = $('dock'), $tabs = $('tabs'), $toast = $('toastRoot'), $sheet = $('sheetRoot');
 
-/* Pieces */
+/* Pieces: one visual language. Every session is its goal's icon on one of ten days. */
 
-function dotsFor(span, day, live, today) {
-  const order = new Map(span.intentions.map((it, i) => [it.id, i]));
-  return span.occurrences.filter(o => o.day === day)
-    .sort((a, b) => (order.get(a.intention_id) ?? 99) - (order.get(b.intention_id) ?? 99))
-    .map(o => {
-      const it = span.intentions.find(x => x.id === o.intention_id) || {};
-      const unsure = live && !o.done && !o.missed && day < today;
-      return `<i class="${o.done ? 'done' : ''}${it.type === 'abstain' ? ' sq' : ''}${o.missed ? ' missed' : ''}${unsure ? ' unconfirmed' : ''}"></i>`;
-    }).join('');
+const iconLabel = k => k.replace('_', ' ');
+function sIcon(it, { tag = 'span', cls = '', attrs = '' } = {}) {
+  return `<${tag} class="s c-${catOf(it)}${it.type === 'abstain' ? ' sq' : ''}${cls}"${attrs ? ` ${attrs}` : ''}><svg aria-hidden="true" focusable="false"><use href="#i-${iconOf(it)}"/></svg></${tag}>`;
+}
+const stateOf = (span, o) => o.done ? 'done' : o.missed ? 'missed' : unconfirmed(span, o) ? 'unsure' : 'planned';
+const STATE_WORD = { done: 'done', missed: 'missed', unsure: 'not confirmed', planned: 'planned' };
+const byGoal = span => { const order = new Map(span.intentions.map((it, i) => [it.id, i])); return (a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99); };
+
+// A progress ring, done out of target.
+function ring(done, target) {
+  const c = 2 * Math.PI * 15.5, f = Math.min(1, target ? done / target : 0);
+  return `<svg class="ring" viewBox="0 0 36 36" aria-hidden="true" focusable="false"><circle class="bg" cx="18" cy="18" r="15.5"/>${f ? `<circle class="fg" cx="18" cy="18" r="15.5" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${(c * (1 - f)).toFixed(2)}"/>` : ''}</svg>`;
 }
 
-function tiles(span, { live = false } = {}) {
-  const today = live ? dayNum(span) : 0;
-  const flash = ui.flash && ui.flash.until > Date.now() && ui.flash.span === span.id ? ui.flash.days : [];
-  let h = '<ol class="tiles" aria-label="Days">';
+// Mini: ten dots, filled as days pass. They grow toward day 10, like the mark.
+function mini(today) {
+  let h = `<span class="mini" role="img" aria-label="${today ? `Day ${Math.min(today, 10)} of 10` : 'Not started yet'}">`;
+  for (let d = 1; d <= 10; d++) h += `<i class="${d < today ? 'past' : d === today ? 'today' : ''}" style="--d:${6 + Math.round((d - 1) * 8 / 9)}px"></i>`;
+  return h + '</span>';
+}
+
+// Compact: one column per day. sessions: [{ it, day, state, changed, from }].
+// On a plan card the whole strip is one button, so the target stays large: a tap opens the day under it.
+function stripCompact(sessions, { today = 0, open = null, tap = null, sort } = {}) {
+  let h = tap ? `<button class="strip10" ${tap} aria-expanded="${Boolean(open)}"><span class="sr">${open ? 'Close the day' : 'Open the plan day by day'}</span>` : '<div class="strip10">';
   for (let d = 1; d <= 10; d++) {
-    const occ = span.occurrences.filter(o => o.day === d);
+    const mine = sessions.filter(x => x.day === d);
+    if (sort) mine.sort((a, b) => sort(a.it.id, b.it.id));
+    const cls = ['col', d === today ? 'today' : '', today && d < today ? 'past' : '', open === d ? 'open' : ''].filter(Boolean).join(' ');
+    const icons = d === 10 ? '<span class="rvdot" aria-hidden="true"></span>'
+      : mine.map((x, k) => sIcon(x.it, { cls: ` ${x.state}${x.changed ? ' changed' : ''}`, attrs: `data-day="${d}"${x.from ? ` data-from="${x.from}"` : ''} style="--dl:${(d - 1) * 45 + k * 30}ms"` })).join('');
+    const label = d === 10 ? 'Day 10, review' : `Day ${d}${d === today ? ', today' : ''}${mine.length ? `: ${mine.map(x => `${x.it.name}${x.state === 'planned' ? '' : ` ${STATE_WORD[x.state]}`}`).join(', ')}` : ', free'}`;
+    const inner = `<span class="dn" aria-hidden="true">${d}</span>${icons}`;
+    h += tap ? `<span class="${cls}" data-day="${d}" aria-hidden="true">${inner}</span>` : `<div class="${cls}" role="img" aria-label="${esc(label)}">${inner}</div>`;
+  }
+  return h + (tap ? '</button>' : '</div>');
+}
+const occSessions = span => span.occurrences.map(o => ({ it: span.intentions.find(x => x.id === o.intention_id), day: o.day, state: stateOf(span, o) })).filter(x => x.it);
+
+// Full: the Days tab, one row per day with big icons. Tap an icon to check it off, a day to open it.
+function daysView(span, { live = false, today = 0 } = {}) {
+  const sort = byGoal(span);
+  const flash = ui.flash && ui.flash.until > Date.now() && ui.flash.span === span.id ? ui.flash.days : [];
+  let h = '<ol class="days" aria-label="Days">';
+  for (let d = 1; d <= 10; d++) {
+    const occ = span.occurrences.filter(o => o.day === d).sort((a, b) => sort(a.intention_id, b.intention_id));
+    const date = fmt(dayDate(span, d));
     const done = occ.filter(o => o.done).length;
     const unsure = occ.filter(o => unconfirmed(span, o)).length;
-    const date = fmt(dayDate(span, d));
-    const cls = ['tile', d === today ? 'today' : '', d === 10 ? 'review' : '', live && d < today ? 'past' : '', flash.includes(d) ? 'flash' : ''].join(' ');
-    const label = d === 10 ? `Day 10, ${date}, review` : `Day ${d}, ${date}, ${live ? `${done} of ${occ.length} done${unsure ? `, ${unsure} not confirmed` : ''}` : `${occ.length} planned`}${d === today ? ', today' : ''}`;
-    const inner = `<span class="tn" aria-hidden="true">${d}</span><span class="td" aria-hidden="true">${parse(dayDate(span, d)).getDate()}</span>` +
-      (d === 10 ? '<span class="rv" aria-hidden="true">Review</span>' : `<span class="tdots" aria-hidden="true">${dotsFor(span, d, live, today)}</span>`);
-    h += live
-      ? `<li><button class="${cls}" data-a="open-day" data-day="${d}" aria-label="${esc(label)}">${inner}</button></li>`
-      : `<li><div class="${cls}" role="img" aria-label="${esc(label)}">${inner}</div></li>`;
+    const cls = ['day', d === today ? 'today' : '', live && d < today ? 'past' : '', d === 10 ? 'review' : '', flash.includes(d) ? 'flash' : ''].filter(Boolean).join(' ');
+    const label = d === 10 ? `Day 10, ${date}, review` : `Day ${d}, ${date}${d === today ? ', today' : ''}, ${occ.length ? (live ? `${done} of ${occ.length} done${unsure ? `, ${unsure} not confirmed` : ''}` : `${occ.length} planned`) : 'free'}`;
+    const rest = d === 10 ? ', review' : `${d === today ? `, ${date}` : ''}, ${occ.length ? (live ? `${done} of ${occ.length} done${unsure ? `, ${unsure} not confirmed` : ''}` : `${occ.length} planned`) : 'free'}`;
+    const dl = `<span class="sr">Day </span><span class="dn">${d}</span><span class="sr">, </span><span class="dd">${d === today ? 'Today' : date}</span><span class="sr">${esc(rest)}</span>`;
+    const head = live && d < 10 ? `<button class="dl" data-a="open-day" data-day="${d}">${dl}</button>` : `<div class="dl" role="img" aria-label="${esc(label)}">${dl}</div>`;
+    let ss;
+    if (d === 10) ss = '<span class="rvdot" aria-hidden="true"></span><span class="free">Review</span>';
+    else if (!occ.length) ss = '<span class="free">Free</span>';
+    else ss = occ.map(o => {
+      const it = span.intentions.find(x => x.id === o.intention_id) || { id: o.intention_id, name: o.intention_id };
+      const st = stateOf(span, o);
+      const key = `${o.intention_id}@${d}`;
+      return live
+        ? sIcon(it, { tag: 'button', cls: ` ${st}`, attrs: `data-a="toggle" data-iid="${esc(o.intention_id)}" data-day="${d}" data-flip="${esc(key)}" role="checkbox" aria-checked="${Boolean(o.done)}" aria-label="${esc(`${it.name}, ${STATE_WORD[st]}`)}"` })
+        : sIcon(it, { cls: ` ${st}`, attrs: `data-flip="${esc(key)}" role="img" aria-label="${esc(it.name)}"` });
+    }).join('');
+    h += `<li class="${cls}" data-day="${d}">${head}<div class="ss">${ss}</div></li>`;
   }
   return h + '</ol>';
 }
 
-function rows(span, { live = false, editable = false, target = 'current' } = {}) {
-  const today = live ? dayNum(span) : 0;
-  let h = '<ul class="rows">';
+// Goals as rows: icon, name, and done out of target.
+function goalRows(span, { live = false, editable = false, target = 'current' } = {}) {
+  let h = '<ul class="goals rows">';
   for (const it of span.intentions) {
     const occ = occOf(span, it.id);
     const done = occ.filter(o => o.done).length;
     const placed = occ.filter(o => !o.missed).length;
-    let strip = '';
-    for (let d = 1; d <= 10; d++) {
-      const o = findOcc(span, it.id, d);
-      const dot = o ? `<span class="dot${o.done ? ' done' : ''}${it.type === 'abstain' ? ' sq' : ''}${o.missed ? ' missed' : ''}${live && !o.done && !o.missed && d < today ? ' unconfirmed' : ''}" data-iid="${esc(it.id)}" data-day="${d}"></span>` : '';
-      strip += `<span class="c${d === 10 ? ' rv' : ''}" data-day="${d}">${dot}</span>`;
-    }
-    const count = live ? `<b>${done}</b>&nbsp;of ${it.target}` : `${it.target}×`;
-    const days = occ.map(o => o.day).sort((a, b) => a - b).join(', ');
-    const short = placed < it.target ? `<p class="unplaced">${placed ? `${placed} of ${it.target} placed` : 'Not placed yet'}</p>` : '';
-    const inner = `<span class="row-top"><span class="name">${nb(it.name)}${it.tag ? `&nbsp;&nbsp;<em>${esc(it.tag)}</em>` : ''}</span>
-      <span class="count">${count}${editable ? I.edit : ''}</span></span><span class="strip" aria-hidden="true" data-iid="${esc(it.id)}">${strip}</span>${short}`;
-    const label = `${it.name}, ${live ? `${done} of ${it.target} done` : `${it.target} times`}${days ? `, days ${days}` : ', not placed yet'}`;
+    const count = live ? `${done} of ${it.target}` : `${it.target} ${it.target === 1 ? 'time' : 'times'}`;
+    const short = placed < it.target ? `, ${placed ? `${placed} placed` : 'not placed yet'}` : '';
+    const inner = `${sIcon(it)}<span class="gn"><b>${nb(it.name)}</b><span class="sr">, </span><span>${count}${live ? '<span class="sr"> done</span>' : ''}${short}</span></span>${live ? ring(done, it.target) : ''}`;
+    const label = `${it.name}, ${live ? `${done} of ${it.target} done` : `${it.target} times`}${short}`;
     h += editable
-      ? `<li><button class="row-btn" data-a="edit-int" data-t="${target}" data-iid="${esc(it.id)}" aria-label="${esc(`Edit ${label}`)}">${inner}</button></li>`
-      : `<li><div class="row-btn" role="img" aria-label="${esc(label)}">${inner}</div></li>`;
+      ? `<li><button class="goal row-btn" data-a="edit-int" data-t="${target}" data-iid="${esc(it.id)}">${inner}<span class="sr">. Edit</span></button></li>`
+      : `<li><div class="goal" role="img" aria-label="${esc(label)}">${inner}</div></li>`;
   }
-  h += '</ul>';
-  if (span.intentions.length) h += `<div class="legend" aria-hidden="true"><span><i></i>Do or see</span><span><i class="sq"></i>Hold back</span><span><i class="done"></i>Done</span>${span.occurrences.some(o => unconfirmed(span, o)) ? '<span><i class="unconfirmed"></i>Not confirmed</span>' : ''}</div>`;
-  return h;
+  return h + '</ul>';
+}
+
+// A snapshot of where the deka stands, shown under a reply.
+function statusCard(span) {
+  return { type: 'status', span: span.id, day: Math.min(10, Math.max(1, dayNum(span))),
+    goals: span.intentions.map(g => ({ id: g.id, name: g.name, type: g.type, icon: iconOf(g), category: catOf(g), done: doneOf(span, g.id), target: g.target })) };
 }
 
 function itemsView(span, day) {
   const occ = span.occurrences.filter(o => o.day === day);
   if (!occ.length) return `<p class="quiet">${day === 10 ? 'Review day.' : 'Nothing planned. A free&nbsp;day.'}</p>`;
-  const order = new Map(span.intentions.map((it, i) => [it.id, i]));
-  occ.sort((a, b) => (order.get(a.intention_id) ?? 99) - (order.get(b.intention_id) ?? 99));
+  const sort = byGoal(span);
+  occ.sort((a, b) => sort(a.intention_id, b.intention_id));
   return '<ul class="items">' + occ.map(o => {
     const it = span.intentions.find(x => x.id === o.intention_id) || { name: o.intention_id };
     const unsure = unconfirmed(span, o);
     const sub = [o.missed ? 'Missed' : '', unsure ? 'Not confirmed' : '', o.detail, it.tag].filter(Boolean).join(', ');
     const key = `${o.intention_id}@${day}`;
     return `<li><button class="item${o.done ? ' done' : ''}${o.missed ? ' missed' : ''}${unsure ? ' unconfirmed' : ''}${ui.pop === key ? ' pop' : ''}" data-a="toggle" data-iid="${esc(o.intention_id)}" data-day="${day}" role="checkbox" aria-checked="${Boolean(o.done)}">
-      <span class="check${it.type === 'abstain' ? ' sq' : ''}">${I.check}</span>
+      ${sIcon(it, { cls: ` ${stateOf(span, o)}${ui.pop === key ? ' pop' : ''}` })}
       <span class="txt"><span class="nm">${esc(it.name)}</span>${sub ? `<span class="dt">${esc(sub)}</span>` : ''}</span></button></li>`;
   }).join('') + '</ul>';
 }
@@ -816,7 +928,7 @@ const paragraphs = t => esc(t);
 
 function cardView(msg, card, i, readonly) {
   if (card.type === 'goals') {
-    return `<div class="card glass"><span class="eyebrow">Goals</span><ul>${card.lines.map(l => `<li>${nb(l)}</li>`).join('')}</ul></div>`;
+    return `<div class="card glass"><span class="eyebrow">Goals</span><ul class="lines">${card.lines.map(l => `<li>${nb(l)}</li>`).join('')}</ul></div>`;
   }
   if (card.type === 'log') {
     const span = spanById(card.span);
@@ -832,14 +944,40 @@ function cardView(msg, card, i, readonly) {
     return `<div class="card glass"><span class="eyebrow">Day ${card.day}</span><div class="chips">${chips}</div></div>`;
   }
   if (card.type === 'proposal') {
-    const strip = Array.from({ length: 10 }, (_, k) => `<span class="${card.changed_days.includes(k + 1) ? 'on' : ''}">${k + 1}</span>`).join('');
+    // The plan as a picture: every session on its day. Changed ones are ringed and glide into place.
+    const span = spanFor(card.target) || chatSpan();
+    const find = id => span.intentions.find(x => x.id === id);
+    const moved = card.moved || null;
+    const fixed = card.target === 'next' ? [] : span.occurrences.filter(o => o.done || o.missed).map(o => ({ it: find(o.intention_id), day: o.day, state: o.done ? 'done' : 'missed' }));
+    const sessions = [...fixed, ...card.occurrences.map(o => {
+      const key = `${o.goal_id}@${o.day}`;
+      return { it: find(o.goal_id), day: o.day, state: 'planned', changed: Boolean(moved && key in moved), from: moved ? moved[key] : 0, detail: o.detail };
+    })].filter(x => x.it);
+    const today = card.target !== 'next' && isLive(span) ? dayNum(span) : 0;
+    const openKey = `${msg.id}:${i}:`;
+    const open = ui.cardOpen && ui.cardOpen.startsWith(openKey) ? Number(ui.cardOpen.slice(openKey.length)) : null;
+    const tap = readonly ? null : `data-a="card-day" data-m="${msg.id}" data-c="${i}"`;
+    let panel = '';
+    if (open) {
+      const mine = sessions.filter(x => x.day === open).sort((a, b) => byGoal(span)(a.it.id, b.it.id));
+      const step = (v, lbl, dis) => `<button class="icon-btn" data-a="card-step" data-m="${msg.id}" data-c="${i}" data-v="${v}" aria-label="${lbl}"${dis ? ' disabled' : ''}>${v < 0 ? I.back : I.chev}</button>`;
+      panel = `<div class="dayopen" aria-live="polite"><div class="top"><p class="h">Day ${open}, ${fmt(dayDate(span, open))}</p><span>${step(-1, 'Previous day', open <= 1)}${step(1, 'Next day', open >= 9)}</span></div>${mine.length
+        ? `<ul>${mine.map(x => `<li>${sIcon(x.it, { cls: ` ${x.state}` })}<span>${esc(x.it.name)}${x.detail ? `, ${esc(x.detail)}` : ''}</span></li>`).join('')}</ul>`
+        : '<p class="none">Free</p>'}</div>`;
+    }
+    const line = card.summary || (card.changes || [])[0] || '';
     const state = card.status === 'confirmed' ? `<div class="state">${I.tick}Confirmed</div>`
       : card.status === 'replaced' ? '<div class="state">Replaced by a newer plan</div>'
       : card.status === 'stale' ? '<div class="state">Out of date. Ask Deka&nbsp;again.</div>'
       : readonly ? '' : `<div class="row"><button class="btn primary" data-a="confirm" data-m="${msg.id}" data-c="${i}">Confirm</button><button class="btn" data-a="tweak">Tweak</button></div>`;
-    return `<div class="card glass${card.status === 'replaced' || card.status === 'stale' ? ' quiet' : ''}"><span class="eyebrow">${card.target === 'next' ? 'Next deka' : 'Proposed plan'}</span>
-      <ul>${card.changes.map(l => `<li>${nb(l)}</li>`).join('')}</ul>
-      <div class="daystrip" aria-label="${esc(`Changes on ${card.changed_days.length ? `days ${card.changed_days.join(', ')}` : 'no days'}`)}" role="img">${strip}</div>${state}</div>`;
+    return `<div class="card glass proposal${card.status === 'replaced' || card.status === 'stale' ? ' quiet' : ''}" data-card="${esc(card.id || '')}"${moved ? ' data-base="1"' : ''}><span class="eyebrow">${card.target === 'next' ? 'Next deka' : 'Proposed plan'}</span>
+      ${stripCompact(sessions, { today, open, tap, sort: byGoal(span) })}${panel}
+      ${line ? `<p class="summary">${nb(line)}</p>` : ''}${state}</div>`;
+  }
+  if (card.type === 'status') {
+    const label = `Where we are: day ${card.day}. ${card.goals.map(g => `${g.name} ${g.done} of ${g.target}`).join(', ')}.`;
+    const goals = card.goals.map(g => `<li>${ring(g.done, g.target)}${sIcon(g, { cls: g.done >= g.target ? ' full' : '' })}</li>`).join('');
+    return `<div class="card glass status" role="img" aria-label="${esc(label)}"><div class="top"><span class="dayn">Day ${card.day}</span>${mini(card.day)}</div><ul class="gl">${goals}</ul></div>`;
   }
   return '';
 }
@@ -882,6 +1020,7 @@ function refreshChat() {
     if (el.outerHTML !== html) el.outerHTML = html;
   }
   for (const id of seen) $(id)?.remove();
+  play();
   return true;
 }
 
@@ -892,38 +1031,24 @@ function toBottom(smooth) { window.scrollTo({ top: document.documentElement.scro
 
 function daysTab() {
   const cur = S.current;
-  if (ui.sub === 'day' && isLive(cur)) return dayView(cur, ui.day);
   if (!cur || !cur.occurrences.length) {
     return empty('No days&nbsp;planned', 'Tell Deka your goals and ask for a&nbsp;plan.', 'Open chat', 'go-chat');
   }
   if (!isLive(cur)) {
-    return `<div class="head fade"><div class="eyebrow">Draft · ${range(cur.start)}</div><h1 class="display small">Not started&nbsp;yet</h1>
-      <p class="sub">Confirm a plan in the chat to&nbsp;begin.</p></div>` + tiles(cur);
+    return `<div class="head fade"><div class="eyebrow">Draft, ${range(cur.start)}</div><h1 class="display small">Not started&nbsp;yet</h1>
+      <p class="sub">Confirm a plan in the chat to&nbsp;begin.</p></div>` + daysView(cur);
   }
   const n = dayNum(cur);
-  if (n < 1) return `<div class="head fade"><div class="eyebrow">Starts ${fmt(cur.start)}</div><h1 class="display small">Your next deka is&nbsp;set.</h1></div>` + tiles(cur, { live: true });
-  let h = '';
-  if (n >= 10) {
-    h += `<div class="head fade"><div class="eyebrow">Day 10 · ${fmt(todayIso())}</div><h1 class="display">Review</h1>
-      <p class="sub">${completion(cur)}% landed</p></div><div class="actions" style="margin:-8px 0 28px"><button class="btn primary" data-a="go-chat">Open the review</button></div>`;
-  } else {
-    const mine = cur.occurrences.filter(o => o.day === n);
-    h += `<div class="head fade"><div class="eyebrow">Today · ${fmt(todayIso())}</div><h1 class="display">Day ${n}</h1>
-      ${mine.length ? `<p class="sub">${mine.filter(o => o.done).length} of ${mine.length} done</p>` : ''}</div>`;
-    h += itemsView(cur, n);
-    h += notesField(cur, n, 'Thoughts', 'Anything on your mind.');
-  }
-  h += `<div class="section"><h2 class="label">This deka · ${range(cur.start)}</h2>${tiles(cur, { live: true })}</div>`;
-  return h;
+  if (n < 1) return `<div class="head fade"><div class="eyebrow">Starts ${fmt(cur.start)}</div><h1 class="display small">Your next deka is&nbsp;set.</h1></div>` + daysView(cur, { live: true });
+  let h = `<div class="head fade"><div class="eyebrow">${n >= 10 ? 'Review' : fmt(todayIso())}</div><h1 class="display">Day ${Math.min(n, 10)}</h1><div class="sub">${mini(n)}</div></div>`;
+  if (n >= 10) h += `<div class="actions" style="margin:-8px 0 20px"><button class="btn primary" data-a="go-chat">Open the review</button></div>`;
+  return h + daysView(cur, { live: true, today: n });
 }
 
-function dayView(span, d) {
-  const occ = span.occurrences.filter(o => o.day === d);
-  let h = `<div class="head fade"><div class="eyebrow">${d === dayNum(span) ? 'Today' : d === 10 ? 'Review day' : fmt(dayDate(span, d))}</div>
-    <h1 class="display">Day ${d}</h1><p class="sub">${d === dayNum(span) ? fmt(dayDate(span, d)) : occ.length ? `${occ.filter(o => o.done).length} of ${occ.length} done` : 'Nothing planned'}</p></div>`;
-  h += itemsView(span, d);
-  h += notesField(span, d, 'Notes', 'Anything worth keeping.');
-  return h;
+// One day in a sheet: its sessions with names, and notes.
+function daySheet(sh) {
+  const span = S.current;
+  return `${itemsView(span, sh.day)}${notesField(span, sh.day, 'Notes', 'Anything worth keeping.')}`;
 }
 
 /* Goals */
@@ -937,10 +1062,10 @@ function goalsTab() {
   }
   const live = isLive(span);
   const want = span.intentions.reduce((n, g) => n + g.target, 0);
-  let h = `<div class="head fade"><div class="eyebrow">${t === 'next' ? 'Next deka · ' : live ? 'This deka · ' : ''}${range(span.start)}</div>
-    <h1 class="display">${live ? `${completion(span)}<small>%</small>` : 'Goals'}</h1>
+  let h = `<div class="head fade"><div class="eyebrow">${t === 'next' ? 'Next deka, ' : ''}${range(span.start)}</div>
+    <h1 class="display">Goals</h1>
     <p class="sub">${live ? `${span.occurrences.filter(o => o.done).length} of ${want} done` : `${span.intentions.length} goals, ${want} sessions`}</p></div>`;
-  h += rows(span, { live, editable: true, target: t });
+  h += goalRows(span, { live, editable: true, target: t });
   h += `<div class="actions" style="margin-top:14px"><button class="link" data-a="add-int" data-t="${t}">Add a goal</button></div>`;
   return h;
 }
@@ -953,7 +1078,7 @@ function pastView() {
     return `<li><button class="sum" data-a="open-past" data-id="${esc(sp.id)}" aria-expanded="${open}">
       <span><span class="ttl">Deka ${S.spans.length - i}</span><span class="when">${range(sp.start)}</span></span>
       <span class="pct">${completion(sp)}<small style="font-size:.5em">%</small></span></button>
-      ${open ? `<div class="more fade">${sp.reflection ? `<p>${nb(sp.reflection)}</p>` : ''}${sp.review ? `<p class="read">${nb(sp.review)}</p>` : ''}${tiles(sp)}${rows(sp)}
+      ${open ? `<div class="more fade">${sp.reflection ? `<p>${nb(sp.reflection)}</p>` : ''}${sp.review ? `<p class="read">${nb(sp.review)}</p>` : ''}${stripCompact(occSessions(sp), { sort: byGoal(sp) })}${goalRows(sp, { live: true })}
         <div class="actions">${sp.chat && sp.chat.length ? `<button class="btn" data-a="open-thread" data-id="${esc(sp.id)}">Read the chat</button>` : '<p class="quiet" style="padding:0">No chat for this&nbsp;deka.</p>'}</div></div>` : ''}</li>`;
   }).join('') + '</ul>';
   return h;
@@ -1041,13 +1166,15 @@ function renderSheet() {
     return;
   }
   let body = '';
-  if (sh.kind === 'more') {
+  if (sh.kind === 'day') {
+    body = daySheet(sh);
+  } else if (sh.kind === 'more') {
     body = `<ul class="menu"><li><button data-a="go-past">Past dekas${I.chev}</button></li><li><button data-a="go-settings">Settings${I.chev}</button></li></ul>`;
   } else {
     body = intentionSheet(sh);
   }
-  const title = sh.kind === 'more' ? 'More' : sh.kind === 'new' ? 'New&nbsp;goal' : 'Edit';
-  const shellKey = `${sh.kind}|${sh.iid || ''}`;
+  const title = sh.kind === 'day' ? `Day ${sh.day}<span class="sheet-sub">${sh.day === dayNum(S.current) ? 'Today' : fmt(dayDate(S.current, sh.day))}</span>` : sh.kind === 'more' ? 'More' : sh.kind === 'new' ? 'New&nbsp;goal' : 'Edit';
+  const shellKey = `${sh.kind}|${sh.iid || sh.day || ''}`;
   const body0 = $('sheetBody');
   if (body0 && $sheet.dataset.key === shellKey) {
     // Same sheet: swap the contents in place so it does not slide in again, and keep focus.
@@ -1086,8 +1213,8 @@ function intentionSheet(sh) {
     const o = isNew ? null : findOcc(span, sh.iid, d);
     const sel = sh.sel === d;
     const state = sel ? 'selected, tap a free day to move it' : on ? (o && o.done ? 'planned, done' : o && o.missed ? 'missed' : 'planned') : 'free';
-    pick += `<li><button class="${sel ? 'sel' : ''}" data-a="pick" data-day="${d}" aria-label="Day ${d}, ${date}, ${state}" aria-pressed="${on}">
-      <span class="pn" aria-hidden="true">${d}</span><span class="pd" aria-hidden="true">${parse(dayDate(span, d)).getDate()}</span>
+    pick += `<li><button class="${sel ? 'sel' : ''}" data-a="pick" data-day="${d}" aria-pressed="${on}">
+      <span class="sr">Day </span><span class="pn">${d}</span><span class="sr">, ${fmt(dayDate(span, d)).split(' ')[0]} </span><span class="pd">${parse(dayDate(span, d)).getDate()}</span><span class="sr">, ${state}</span>
       <span class="dot${on ? '' : ' empty'}${o && o.done ? ' done' : ''}${o && o.missed ? ' missed' : ''}${it.type === 'abstain' ? ' sq' : ''}" aria-hidden="true"></span></button></li>`;
   }
   pick += '</ol>';
@@ -1096,8 +1223,10 @@ function intentionSheet(sh) {
   const hint = sh.sel ? 'Tap a free day to move it.' : placed < target ? `${placed} of ${target} placed. Tap a day to add&nbsp;one.` : 'Tap a day to add it. Tap a dot to move&nbsp;it.';
   const floor = isNew ? 1 : Math.max(1, doneOf(span, sh.iid));
   return `<form class="form" data-form="sheet" autocomplete="off">
-    <label class="sr" for="intName">Name</label>
-    <input class="input" id="intName" value="${esc(it.name)}" placeholder="Name it" maxlength="40" enterkeyhint="done">
+    <div class="icon-row">${sIcon(it)}<div style="flex:1;min-width:0"><label class="sr" for="intName">Name</label>
+    <input class="input" id="intName" value="${esc(it.name)}" placeholder="Name it" maxlength="40" enterkeyhint="done"></div></div>
+    <div><button type="button" class="link" data-a="icon-open" aria-expanded="${Boolean(sh.icons)}" style="padding-left:0">${sh.icons ? 'Done choosing' : 'Change icon'}</button>
+    ${sh.icons ? `<div class="icons" role="group" aria-label="Icons">${Object.keys(GOAL_ICONS).map(k => `<button type="button" data-a="icon-pick" data-v="${k}" aria-pressed="${iconOf(it) === k}" aria-label="${esc(iconLabel(k))}">${sIcon({ icon: k, category: GOAL_ICONS[k][0], type: it.type })}</button>`).join('')}</div>` : ''}</div>
     <div class="seg" role="group" aria-label="Type">${types.map(([v, l]) => `<button type="button" data-a="sheet-type" data-v="${v}" aria-pressed="${it.type === v}">${l}</button>`).join('')}</div>
     <div class="stepper"><span class="label" style="margin:0" id="timesLabel">Times</span><div class="ctl">
       <button type="button" class="icon-btn" data-a="sheet-count" data-v="-1" aria-label="Fewer" ${target <= floor ? 'disabled' : ''}>&minus;</button>
@@ -1115,6 +1244,7 @@ function intentionSheet(sh) {
 /* Render */
 
 function render() {
+  const flip = ui.tab === 'days' && !ui.sub && !ui.locked ? capture() : null;
   const intro = !ui.locked && !S.seen;
   document.body.classList.toggle('no-tabs', ui.locked || intro);
   renderBar();
@@ -1137,7 +1267,60 @@ function render() {
   }
   renderDock();
   renderSheet();
+  if (flip) glide(flip);
+  play();
   saveSoon();
+}
+
+/* Motion: transform and opacity only, and none with reduced motion. */
+
+const calm = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const EASE = 'cubic-bezier(.16, 1, .3, 1)';
+// Where every session sits before a redraw, so a moved one can glide from its old day.
+function capture() {
+  const at = new Map();
+  for (const el of $main.querySelectorAll('[data-flip]')) at.set(el.dataset.flip.split('@')[0] + '|' + el.dataset.flip, el.getBoundingClientRect());
+  return at;
+}
+function glide(before) {
+  if (calm() || !before.size) return;
+  const gone = new Map();
+  for (const [k, r] of before) { const id = k.split('|')[0]; if (!$main.querySelector(`[data-flip="${CSS.escape(k.split('|')[1])}"]`)) gone.set(id, [...(gone.get(id) || []), r]); }
+  for (const el of $main.querySelectorAll('[data-flip]')) {
+    const id = el.dataset.flip.split('@')[0];
+    let r = before.get(`${id}|${el.dataset.flip}`);
+    if (!r) { const was = gone.get(id); if (!was || !was.length) continue; r = was.shift(); }
+    const now = el.getBoundingClientRect();
+    const dx = r.left - now.left, dy = r.top - now.top;
+    if (Math.abs(dx) + Math.abs(dy) > 2) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 520, easing: EASE });
+  }
+}
+// Plan cards that just arrived: sessions drop into their days one by one, like the dots of the
+// mark, and on a changed plan the moved ones glide from their old day. Then any check off burst.
+function play() {
+  for (const id of [...ui.enter]) {
+    const card = document.querySelector(`[data-card="${CSS.escape(id)}"]`);
+    if (!card) continue;
+    ui.enter.delete(id);
+    if (calm()) continue;
+    const cols = card.querySelectorAll('.strip10 .col');
+    const w = cols.length > 1 ? cols[1].getBoundingClientRect().left - cols[0].getBoundingClientRect().left : 0;
+    const base = card.dataset.base === '1';
+    for (const el of card.querySelectorAll('.strip10 .s')) {
+      const from = Number(el.dataset.from || 0), to = Number(el.dataset.day);
+      if (base && from) el.animate([{ transform: `translateX(${(from - to) * w}px)` }, { transform: 'none' }], { duration: 620, delay: 150, easing: EASE, fill: 'backwards' });
+      else if (!base || el.classList.contains('changed')) el.classList.add('enter');
+    }
+  }
+  if (ui.burst) {
+    const key = ui.burst; ui.burst = null;
+    const el = $main.querySelector(`[data-flip="${CSS.escape(key)}"]`) || document.querySelector('#sheet .item.pop .s');
+    if (!el || calm()) return;
+    el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+    const dots = Array.from({ length: 8 }, (_, i) => { const a = i / 8 * Math.PI * 2, r = 30 + (i % 2) * 8; return `<i style="--x:${(Math.cos(a) * r).toFixed(1)}px;--y:${(Math.sin(a) * r).toFixed(1)}px"></i>`; }).join('');
+    el.insertAdjacentHTML('beforeend', `<span class="burst" aria-hidden="true">${dots}</span>`);
+    setTimeout(() => el.querySelector('.burst')?.remove(), 700);
+  }
 }
 
 // Tabs keep their own scroll position. The chat opens at its newest message.
@@ -1195,7 +1378,8 @@ function buildRequest(span, text, event) {
     for (const c of m.cards || []) {
       if (c.type === 'goals') t += `\n[Goals updated: ${c.lines.join('; ')}]`;
       if (c.type === 'log') t += `\n[Logged day ${c.day}]`;
-      if (c.type === 'proposal') t += `\n[Proposed a plan: ${c.changes.join('; ')}. ${c.status === 'open' ? 'Waiting for them to confirm' : c.status}]`;
+      if (c.type === 'proposal') t += `\n[Proposed a plan: ${c.summary || (c.changes || []).join('; ')}. ${c.status === 'open' ? 'Waiting for them to confirm' : c.status}]`;
+      if (c.type === 'status') t += '\n[Showed where we are]';
     }
     return { role: m.role === 'user' ? 'user' : 'assistant', text: t };
   };
@@ -1206,7 +1390,7 @@ function buildRequest(span, text, event) {
     today: `${WEEKDAYS[new Date().getDay()]} ${todayIso()}`,
     current_day: p === 'live' ? dayNum(span) : null,
     days: dayMap(target.start),
-    goals: target.intentions.map(({ id, name, type, tag, target: n }) => ({ id, name, type, tag: tag || '', target: n })),
+    goals: target.intentions.map(g => ({ id: g.id, name: g.name, type: g.type, tag: g.tag || '', target: g.target, ...Object.fromEntries(IDENTITY.filter(k => g[k]).map(k => [k, g[k]])) })),
     schedule: target.occurrences.map(o => ({ goal_id: o.intention_id, day: o.day, status: occStatus(o), detail: o.detail || '' })),
     notes: target === span ? span.notes : {},
     summary: span.summary || '',
@@ -1339,8 +1523,15 @@ function onEvent(turn, ev, data) {
     applyLog(turn.span, data);
     msg.cards.push({ type: 'log', span: turn.span.id, day: data.day, entries: data.entries.map(e => ({ goal_id: e.goal_id, status: e.status })) });
   } else if (ev === 'proposal') {
-    for (const m of turn.span.chat) for (const c of m.cards || []) if (c.type === 'proposal' && c.status === 'open') c.status = 'replaced';
-    msg.cards.push({ type: 'proposal', id: uid(), target: turn.target, occurrences: data.occurrences, changes: data.changes, changed_days: data.changed_days, status: 'open' });
+    // What the plan was before: the open card when tweaking one, otherwise the plan in place.
+    let before = null;
+    for (const m of turn.span.chat) for (const c of m.cards || []) if (c.type === 'proposal' && c.status === 'open') { before = c.occurrences; c.status = 'replaced'; }
+    if (!before) before = target.occurrences.filter(o => !o.done && !o.missed).map(o => ({ goal_id: o.intention_id, day: o.day }));
+    const card = { type: 'proposal', id: uid(), target: turn.target, occurrences: data.occurrences, summary: data.summary || '', changes: data.changes || [], changed_days: data.changed_days, status: 'open', moved: before.length ? movedFrom(before, data.occurrences) : null };
+    msg.cards.push(card);
+    ui.enter.add(card.id);
+  } else if (ev === 'status') {
+    if (!msg.cards.some(c => c.type === 'status')) msg.cards.push(statusCard(turn.span));
   }
   if (!refreshChat()) render(); else renderDock();
   if (ui.pinned) toBottom(true);
@@ -1361,7 +1552,10 @@ function finishTurn() {
     // stays open for one more answer. That answer closes it either way.
     const open = !event.followup && event.days.some(d => span.occurrences.some(o => o.day === d && !o.done && !o.missed));
     if (open) msg.checkin = { days: event.days, answered: false, followup: true };
-    else span.checked = [...new Set([...span.checked, ...event.days])];
+    else {
+      span.checked = [...new Set([...span.checked, ...event.days])];
+      if (!msg.cards.some(c => c.type === 'status')) msg.cards.push(statusCard(span));
+    }
   }
   if (!msg.error && event && event.kind === 'review') span.review = msg.text;
   const el = $(`m-${msg.id}`);
@@ -1383,17 +1577,36 @@ function finishTurn() {
 
 /* Applying what Deka did */
 
+// How a goal looks and plans, as Deka sets it.
+const IDENTITY = ['icon', 'category', 'energy', 'social', 'fun', 'time_of_day', 'weekend'];
+const identity = g => Object.fromEntries(IDENTITY.filter(k => g[k] != null).map(k => [k, g[k]]));
+
+// For each session on a new plan that was not on the plan before it: the day it moved from, or 0 when added.
+function movedFrom(before, next) {
+  const had = new Set(before.map(o => `${o.goal_id}@${o.day}`));
+  const now = new Set(next.map(o => `${o.goal_id}@${o.day}`));
+  const left = before.filter(o => !now.has(`${o.goal_id}@${o.day}`));
+  const out = {};
+  for (const o of next) {
+    const key = `${o.goal_id}@${o.day}`;
+    if (had.has(key)) continue;
+    const i = left.findIndex(x => x.goal_id === o.goal_id);
+    out[key] = i >= 0 ? left.splice(i, 1)[0].day : 0;
+  }
+  return out;
+}
+
 function applyGoals(span, changes) {
   const lines = [];
   for (const c of changes) {
     if (c.op === 'add') {
-      if (!span.intentions.some(g => g.id === c.id)) span.intentions.push({ id: c.id, name: c.name, type: c.type, tag: c.tag || '', target: c.target });
+      if (!span.intentions.some(g => g.id === c.id)) span.intentions.push({ id: c.id, name: c.name, type: c.type, tag: c.tag || '', target: c.target, ...identity(c) });
       lines.push(`Added ${c.name}, ${c.target} ${c.target === 1 ? 'time' : 'times'}`);
     } else if (c.op === 'edit') {
       const g = span.intentions.find(x => x.id === c.id);
       if (!g) continue;
       const was = g.target;
-      Object.assign(g, { name: c.name, type: c.type, tag: c.tag || '', target: c.target });
+      Object.assign(g, { name: c.name, type: c.type, tag: c.tag || '', target: c.target, ...identity(c) });
       lines.push(was !== c.target ? `${c.name} now ${c.target} ${c.target === 1 ? 'time' : 'times'}` : `Updated ${c.name}`);
     } else if (c.op === 'remove') {
       span.intentions = span.intentions.filter(g => g.id !== c.id);
@@ -1445,14 +1658,18 @@ function confirmProposal(msg, card) {
     render(); toast('Next deka started.');
     return;
   }
+  // Where we are, right under the confirmed plan. Undo takes it away again.
+  const status = () => { const st = statusCard(span); msg.cards.push(st); return () => { msg.cards = msg.cards.filter(c => c !== st); }; };
   if (span.status !== 'live') {
     if (span.start < todayIso()) span.start = todayIso();
     span.status = 'live';
-    render(); toast('Deka started.', () => { Object.assign(span, { occurrences: before.o, status: before.status, start: before.start }); card.status = 'open'; render(); });
+    const drop = status();
+    render(); toast('Deka started.', () => { Object.assign(span, { occurrences: before.o, status: before.status, start: before.start }); card.status = 'open'; drop(); render(); });
     return;
   }
+  const drop = status();
   render();
-  toast('Schedule updated.', () => { span.occurrences = before.o; card.status = 'open'; render(); });
+  toast('Schedule updated.', () => { span.occurrences = before.o; card.status = 'open'; drop(); render(); });
 }
 
 function closeCurrent() {
@@ -1639,7 +1856,9 @@ function addFromSheet() {
   const before = clone({ i: span.intentions, o: span.occurrences });
   let id = slug(name);
   while (span.intentions.some(it => it.id === id)) id += '_' + uid().slice(0, 2);
-  span.intentions.push({ id, name, type: sh.draft.type, tag: '', target: sh.draft.days.length });
+  const icon = GOAL_ICONS[sh.draft.icon] ? sh.draft.icon : guessIcon(name, sh.draft.type);
+  const [category, energy, social, fun, time_of_day, weekend] = GOAL_ICONS[icon];
+  span.intentions.push({ id, name, type: sh.draft.type, tag: '', target: sh.draft.days.length, icon, category, energy, social, fun, time_of_day, weekend });
   for (const d of sh.draft.days) span.occurrences.push({ intention_id: id, day: d, done: false, detail: '' });
   ui.sheet = null;
   render();
@@ -1655,7 +1874,7 @@ function toggle(iid, day) {
   o.done = !o.done;
   if (o.done) {
     o.missed = false;
-    ui.pop = `${iid}@${day}`;
+    ui.pop = ui.burst = `${iid}@${day}`;
     if (navigator.vibrate) navigator.vibrate(8);
   }
   render();
@@ -1699,7 +1918,33 @@ document.addEventListener('click', e => {
     case 'delete-int': deleteIntention(); break;
     case 'toast-undo': { const f = ui.toastUndo; hideToast(); if (f) f(); break; }
     case 'toggle': toggle(el.dataset.iid, Number(el.dataset.day)); break;
-    case 'open-day': openSub('day', { day: Number(el.dataset.day) }); break;
+    case 'open-day': ui.sheet = { kind: 'day', day: Number(el.dataset.day) }; renderSheet(); focusSheet(); break;
+    case 'card-day': {
+      // The day under the tap, or today (or day 1) from the keyboard. Tapping the open day closes it.
+      const base = `${el.dataset.m}:${el.dataset.c}:`;
+      const col = e.target.closest('[data-day]');
+      const span = chatSpan();
+      const day = col ? Math.min(9, Number(col.dataset.day)) : Math.min(9, Math.max(1, isLive(span) ? dayNum(span) : 1));
+      ui.cardOpen = ui.cardOpen === base + day || (!col && ui.cardOpen && ui.cardOpen.startsWith(base)) ? null : base + day;
+      if (!refreshChat()) render();
+      break;
+    }
+    case 'card-step': {
+      const base = `${el.dataset.m}:${el.dataset.c}:`;
+      const day = Number((ui.cardOpen || '').slice(base.length)) || 1;
+      ui.cardOpen = base + Math.min(9, Math.max(1, day + Number(el.dataset.v)));
+      if (!refreshChat()) render();
+      document.querySelector(`[data-a="card-step"][data-m="${el.dataset.m}"][data-v="${el.dataset.v}"]:not([disabled])`)?.focus();
+      break;
+    }
+    case 'icon-open': ui.sheet.icons = !ui.sheet.icons; renderSheet(); break;
+    case 'icon-pick': {
+      const sh = ui.sheet, k = el.dataset.v;
+      const it = sh.kind === 'new' ? sh.draft : spanFor(sh.target).intentions.find(x => x.id === sh.iid);
+      if (sh.kind !== 'new') markEdited(sh);
+      if (it) { it.icon = k; it.category = GOAL_ICONS[k][0]; }
+      render(); break;
+    }
     case 'confirm': {
       const span = chatSpan();
       const msg = span.chat.find(m => m.id === el.dataset.m);
@@ -1858,22 +2103,22 @@ document.addEventListener('pointerup', e => {
   if (dy > 80) closeSheet(); else el.style.transform = '';
 });
 
-/* Desktop only: drag a dot along its row to move it. Touch uses the sheet. */
+/* Desktop only: drag a session to another day on the Days tab. Touch uses the goal sheet. */
 let drag = null, suppressClick = false;
 document.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'mouse') return;
-  const dot = e.target.closest('.strip .dot');
-  if (!dot || !dot.closest('button.row-btn')) return;
-  drag = { dot, iid: dot.dataset.iid, day: Number(dot.dataset.day), x: e.clientX, moved: false, over: null, strip: dot.closest('.strip'), target: dot.closest('button').dataset.t };
+  const s = e.target.closest('.days .s[data-a=toggle]');
+  if (!s) return;
+  drag = { el: s, iid: s.dataset.iid, day: Number(s.dataset.day), x: e.clientX, y: e.clientY, moved: false, over: null };
 });
 document.addEventListener('pointermove', e => {
   if (!drag) return;
-  if (!drag.moved && Math.abs(e.clientX - drag.x) < 6) return;
+  if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
   drag.moved = true;
-  drag.dot.classList.add('dragging');
-  drag.dot.style.transform = `translate(${e.clientX - drag.x}px, 0) scale(1.35)`;
+  drag.el.classList.add('dragging');
+  drag.el.style.transform = `translate(${e.clientX - drag.x}px, ${e.clientY - drag.y}px) scale(1.12)`;
   let over = null;
-  for (const c of drag.strip.children) { const r = c.getBoundingClientRect(); if (e.clientX >= r.left && e.clientX < r.right) over = c; }
+  for (const row of document.querySelectorAll('.days .day')) { const r = row.getBoundingClientRect(); if (e.clientY >= r.top && e.clientY < r.bottom) over = row; }
   if (drag.over && drag.over !== over) drag.over.classList.remove('drop');
   drag.over = over;
   if (over) over.classList.add('drop');
@@ -1884,9 +2129,16 @@ document.addEventListener('pointerup', () => {
   if (!d.moved) return;
   suppressClick = true;
   setTimeout(() => { suppressClick = false; }, 0);
-  const span = spanFor(d.target);
+  const span = S.current;
   const to = d.over ? Number(d.over.dataset.day) : d.day;
-  if (to !== d.day && to <= 9 && !findOcc(span, d.iid, to)) { const o = findOcc(span, d.iid, d.day); if (o) o.day = to; }
+  const o = findOcc(span, d.iid, d.day);
+  if (o && !o.done && !o.missed && to !== d.day && to >= openFrom(span) && to <= 9 && !findOcc(span, d.iid, to)) {
+    const before = clone(span.occurrences);
+    o.day = to;
+    render();
+    toast(`${nameOf(span, d.iid)} moved to day ${to}.`, () => { span.occurrences = before; render(); });
+    return;
+  }
   render();
 });
 

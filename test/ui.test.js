@@ -157,7 +157,7 @@ test.describe('Deka app', { skip }, () => {
     assert.equal(st.current.occurrences.some(o => o.day === 4), false);
     assert.match(await page.js("[...document.querySelectorAll('.card .state')].pop().textContent"), /Confirmed/);
     await click('[data-tab=days]');
-    assert.ok(await page.js("document.querySelectorAll('.tile.flash').length") > 0, 'changed days flash');
+    assert.ok(await page.js("document.querySelectorAll('.day.flash').length") > 0, 'changed days flash');
   });
 
   test('check in after the set time asks about a skipped day too, logs both, and proposes the rest', async () => {
@@ -202,11 +202,12 @@ test.describe('Deka app', { skip }, () => {
     await page.waitFor("document.querySelectorAll('.msg.deka').length === 3");
     assert.equal(await lastDeka(), "Did yesterday's run happen, and how did today go?");
     await click('[data-tab=days]');
-    assert.equal(await page.js("document.querySelectorAll('.tile[data-day=\"3\"] .tdots i.unconfirmed').length"), 1, 'the day 3 run is outlined, not missed');
-    assert.equal(await page.js("document.querySelectorAll('.tile .tdots i.missed').length"), 0);
-    assert.match(await page.js("document.querySelector('.tile[data-day=\"3\"]').getAttribute('aria-label')"), /1 not confirmed/);
-    await click('.tile[data-day="3"]');
-    assert.match(await page.js("document.querySelector('.item.unconfirmed')?.textContent || ''"), /Run[\s\S]*Not confirmed/);
+    assert.equal(await page.js("document.querySelectorAll('.day[data-day=\"3\"] .s.unsure').length"), 1, 'the day 3 run is outlined, not missed');
+    assert.equal(await page.js("document.querySelectorAll('.days .s.missed').length"), 0);
+    assert.match(await page.js("document.querySelector('.day[data-day=\"3\"] .dl').textContent"), /1 not confirmed/);
+    await click('.day[data-day="3"] .dl');
+    assert.match(await page.js("document.querySelector('#sheet .item.unconfirmed')?.textContent || ''"), /Run[\s\S]*Not confirmed/);
+    await click('#sheet [data-a=sheet-close]');
     await click('[data-tab=chat]');
     await say('yes the run happened, and today I did the run and the gym'); await idle();
     const cur = (await stored()).current;
@@ -249,7 +250,7 @@ test.describe('Deka app', { skip }, () => {
       assert.match(await page.js("document.querySelector('.msg.user .msg-state').textContent"), /Waiting for connection/);
       assert.equal((await stored()).current.chat.at(-1).status, 'waiting');
       // Everything but Deka keeps working offline.
-      await click('[data-tab=days]'); await click('[data-a=toggle]');
+      await click('[data-tab=days]'); await click('[data-a=toggle][data-iid=run][data-day="4"]');
       assert.equal((await stored()).current.occurrences.find(o => o.intention_id === 'run' && o.day === 4).done, true);
       await click('[data-tab=chat]');
     } finally {
@@ -356,6 +357,25 @@ test.describe('Deka app', { skip }, () => {
       }
       return bad;
     })()`;
+    // No line of copy may end with a single word on its own.
+    const orphans = `(() => {
+      const bad = [];
+      for (const el of document.querySelectorAll('main p, main h1, main h2, .say .t, .summary, .dayopen li > span, #sheet p, .toast span, .lede')) {
+        if (!el.getClientRects().length) continue;
+        const tops = [];
+        const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+          if (n.parentElement.closest('.sr')) continue;
+          for (const m of n.textContent.matchAll(/\\S+/g)) {
+            const r = document.createRange(); r.setStart(n, m.index); r.setEnd(n, m.index + m[0].length);
+            const rect = r.getClientRects()[0]; if (rect) tops.push(Math.round(rect.top));
+          }
+        }
+        const lines = [...new Set(tops)];
+        if (lines.length > 1 && tops.filter(t => t === lines[lines.length - 1]).length === 1) bad.push(el.textContent.trim().slice(0, 40));
+      }
+      return bad;
+    })()`;
     for (const w of [375, 390, 430]) {
       await page.size(w);
       await seed(liveState(4));
@@ -363,6 +383,7 @@ test.describe('Deka app', { skip }, () => {
       for (const tab of ['chat', 'days', 'goals']) {
         await click(`[data-tab=${tab}]`);
         assert.deepEqual(await page.js(audit), [], `${w}px ${tab}`);
+        assert.deepEqual(await page.js(orphans), [], `${w}px ${tab} orphans`);
       }
       await click('.row-btn[data-iid=run]');
       assert.deepEqual(await page.js(audit), [], `${w}px sheet`);

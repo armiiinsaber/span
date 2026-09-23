@@ -13,22 +13,27 @@ server.js           Express app, default export: passcode gate, rate limits, POS
 vercel.json         Function max duration and static headers
 lib/chat.js         Deka's system prompt, the context each turn sends, the streamed tool loop
 lib/tools.js        The tools and the checks every call must pass
+lib/score.js        The plan quality check that runs on every proposed schedule
+lib/icons.js        The goal icons Deka may choose, with their category and planning tags
 lib/validate.js     Text cleaning shared by the tools
 lib/mock.js         Dev only stand in for Claude that streams and calls tools (DEKA_MOCK=1)
 public/index.html   The whole app: inline CSS and JS, served as a static file
 public/sw.js        Offline shell for the installed PWA
 public/brand/       Every icon and iOS splash screen, built from brand/ (see Logo)
-public/fonts/       Melomaniac Serif and Inter, self hosted as subset WOFF2
+public/fonts/       Figtree for all text and Melomaniac Serif for the wordmark, self hosted as subset WOFF2
 brand/              The Deka mark: the source PNG and the traced SVGs
-scripts/            trace_mark.py (PNG to SVG), brand.js (SVG to icons and splash screens), real-runs.js (Deka against the real API)
+scripts/            trace_mark.py (PNG to SVG), brand.js (SVG to icons and splash screens), icons.js (the icon sprite),
+                    real-runs.js (Deka against the real API), audit.mjs (Lighthouse on every screen)
 test/               node:test suites; ui.test.js drives headless Chrome; real-runs/ holds the latest real API transcripts
 ```
 
-The app has three tabs:
+Everything in the app speaks one visual language: a ten day strip where every session is its goal's icon. Each goal has a Phosphor icon and a category (body, people, fun, work, mind, rest) with one soft tint. A planned session is the icon in its tint, a done one fills with chartreuse, a missed one fades, and one nobody confirmed keeps a dashed outline. The strip comes in three sizes: compact on plan cards in the chat, full on the Days tab, and mini (ten dots, filled as days pass) wherever it says where you are.
 
-- **Deka**, the chat. You add goals in plain language, one at a time or as a long list. Deka turns them into short goals with a type (do, see or abstain) and a target, and asks one short question only when something is unclear. When the goals look complete, when you ask, or when something changes, Deka proposes a schedule as a card with Confirm and Tweak. Nothing changes until you tap Confirm.
-- **Days**, today's checklist at the top and the ten day tiles below. Tap a tile to open that day.
-- **Goals**, every goal with its target and progress. Tap one to rename it, change its count, move a day by tapping the dot and then the new day, or delete it. On desktop, dots can also be dragged along their row.
+The app has three tabs, shown as icons: the Deka mark, a grid of ten dots, and a target.
+
+- **Deka**, the chat. You add goals in plain language, one at a time or as a long list. Deka turns them into short goals with a type (do, see or abstain) and a target, and asks one short question only when something is unclear. When the goals look complete, when you ask, or when something changes, Deka proposes a schedule as a card: the whole plan on the compact strip, changed sessions ringed, one short line under it, and Confirm and Tweak. Tap the strip to see a day with names. Nothing changes until you tap Confirm. After a check in, a confirmed change, or when you ask how it is going, a where we are card shows the day and every goal with its progress.
+- **Days**, the full strip: one row per day with big icons, today highlighted. Tap an icon to check it off, tap a day to open it in a sheet with names and notes. On desktop, drag an icon to another day.
+- **Goals**, every goal as its icon, name and a progress ring. Tap one to rename it, pick another icon, change its count, move a day by tapping it and then the new day, or delete it.
 
 Past dekas and Settings sit behind the icon in the header. Each deka has its own chat thread; past threads stay readable in Past dekas.
 
@@ -46,15 +51,18 @@ All data lives in localStorage on the device, including the chat threads, the su
 
 Each message is one request to `POST /api/chat`, answered as server sent events (`text`, `goals`, `log`, `proposal`, `summary`, `error`, `done`). The server is stateless: the app sends the goals, the schedule with what is done or missed, today's date, the date and weekday of every day, the last 30 messages and a summary of older ones. While a proposal card waits for Confirm, the app also sends every session on it, so a tweak adjusts that card instead of starting over. When older messages drop out of that window, Deka writes the summary itself with `save_summary`.
 
-Claude replies in text and calls three tools:
+Claude replies in text and calls these tools:
 
 | Tool | What it does | Checked on the server |
 |---|---|---|
-| `update_goals` | Adds, edits or removes goals | Unique ids, a type, targets 1 to 9, never below what is already done |
+| `update_goals` | Adds, edits or removes goals, each with an icon, a category and planning tags (energy, social, fun, time of day, weekend) | Unique ids, a type, targets 1 to 9, never below what is already done, an icon and every tag from their allowed lists |
 | `log_day` | Marks sessions done or missed on a day | Only days that have started, known goals |
-| `propose_schedule` | A full schedule for what is left, with short change lines for the card | Days 1 to 9, counts match targets, no goal twice on a day, done and missed sessions never move, nothing on a passed day |
+| `propose_schedule` | A full schedule for what is left, with one short summary line for the card | Days 1 to 9, counts match targets, no goal twice on a day, done and missed sessions never move, nothing on a passed day |
+| `show_status` | Shows the where we are card when you ask how it is going | Nothing to check |
 
 Deka writes its reply first and then calls its tools, so words appear while the plan is built. Once the reply is written and every call passes its checks, the turn ends without another request. A call that fails its checks goes back to Claude once with the errors. If the second try fails too, the turn ends with a plain message and a Try again link, and nothing reaches the app. The app checks a proposal again when you tap Confirm, in case the plan changed by hand since.
+
+Every valid proposal also goes through a plan quality check (`lib/score.js`). It flags fun nights on the same or back to back days, weekend plans on a weekday while a Friday or Saturday is open, a sober night on a night out or the night before one, two hard workouts on one day when the counts do not force it, heavy days back to back, and any day far above the average load, and it keeps a fun night light. If a proposal adds flags the plan before it did not have, Claude gets the flags back for one try at a better plan, and the version with fewer flags reaches the app.
 
 ### Data from before the rename
 
@@ -89,7 +97,11 @@ npm test
 
 With no key, `DEKA_MOCK=1 DEKA_PASSCODE=test npm run dev` runs the whole app against a scripted stand in, so you can work on the UI without spending credit.
 
-`node --env-file=.env.local scripts/real-runs.js --runs 2 --out test/real-runs` plays nine scenarios against the real API through the real server and tool loop (planning, tweaks, check ins, the Day 10 review, a long chat that needs a summary, a check in question left unanswered), checks each turn, and writes the transcripts with timing and cost. It costs about $0.45 a run. Set `CLAUDE_MODEL` and `CLAUDE_EFFORT` to try other setups, and `--only 9` to run one scenario. See `test/real-runs/README.md` for the latest results.
+After changing `lib/icons.js`, run `node scripts/icons.js` to rebuild the icon sprite in `public/index.html`, and bump `CACHE` in `public/sw.js`.
+
+`node scripts/audit.mjs out.json` runs Lighthouse on every screen at 375, 390 and 430 px in light and dark, against the scripted stand in. It needs Lighthouse and puppeteer-core installed somewhere; point `LIGHTHOUSE_DIR` at that `node_modules` folder.
+
+`node --env-file=.env.local scripts/real-runs.js --runs 2 --out test/real-runs` plays ten scenarios against the real API through the real server and tool loop (planning, tweaks, check ins, the Day 10 review, a long chat that needs a summary, a check in question left unanswered, two fun nights to spread), checks each turn, and writes the transcripts with timing and cost. It costs about $0.45 a run. Set `CLAUDE_MODEL` and `CLAUDE_EFFORT` to try other setups, and `--only 10` to run one scenario. See `test/real-runs/README.md` for the latest results.
 
 To try the app on your phone, open your machine's LAN address on the same Wi-Fi. Mic input needs HTTPS or localhost, so over plain LAN use the keyboard's own dictation.
 
