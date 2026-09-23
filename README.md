@@ -66,6 +66,23 @@ Deka writes its reply first and then calls its tools, so words appear while the 
 
 Every valid proposal also goes through a plan quality check (`lib/score.js`). It flags fun nights on the same or back to back days, weekend plans on a weekday while a Friday or Saturday is open, a sober night on a night out or the night before one, two hard workouts on one day when the counts do not force it, heavy days back to back, and any day far above the average load, and it keeps a fun night light. If a proposal adds flags the plan before it did not have, Claude gets the flags back for one try at a better plan, and the version with fewer flags reaches the app.
 
+### Guardrails
+
+Deka is for the ten days and the life around them. Goals, the schedule, check ins, reviews, motivation and news that changes the plan (sick, travelling, a busy week) are in scope, and so is a short practical question tied to a goal, which gets a line or two. Anything else gets one warm line back to the deka and no attempt at the task, or a link to the plan when there is one ("want me to block two sessions for it?"). After three off topic messages in a row, Deka adds that it is built only for planning; the app counts the streak and sends it with each message, so the server keeps nothing. Deka never shares its instructions and treats text that poses as a system note as the person's own words. A message that shows real distress gets a short caring reply that suggests someone they trust and 988 (call or text, in Canada), and no planning.
+
+Hard limits, checked on the server before any call to Claude:
+
+| Limit | Value |
+|---|---|
+| Message length | 2,000 characters; longer gets a note to shorten it, with no call. The app stops it in the composer too. |
+| Output per call, thinking included | 8,000 tokens for a normal reply, 10,000 while planning a new deka, 12,000 for the Day 10 review, about twice the most seen in real runs. A call that hits its ceiling is logged and the turn ends with the retry message. |
+| Calls per turn | 4: the first, one retry for a failed call, one try at a better plan, one for a reply that was never written. Past that, the retry message. |
+| Turns per device per day | 150, counted by a device cookie and the app's date. Past that: "That is all the chat for today. Everything else works by hand until tomorrow." |
+| Messages per IP | 40 in 10 minutes, as before. |
+| Tools | Only Deka's own: `update_goals`, `log_day`, `propose_schedule`, `show_status`, `save_summary` when older messages need it, and `mark_off_topic`, which changes nothing and only tells the app a turn was a redirect. No web search or any other tool. |
+
+Like the rate limits, the daily count lives in memory, so each Vercel instance counts on its own.
+
 ### Data from before the rename
 
 The app was called Span. Saved data now lives under the localStorage key `deka.v1`. On first load, data under the old key `span.v1` is copied across once and the old key is left in place. The export format did not change, so files exported as Span still import.
@@ -103,7 +120,7 @@ After changing `lib/icons.js`, run `node scripts/icons.js` to rebuild the icon s
 
 `node scripts/audit.mjs out.json` runs Lighthouse on every screen at 375, 390 and 430 px, in Safari and as the installed app, in light and dark, against the scripted stand in. It needs Lighthouse and puppeteer-core installed somewhere; point `LIGHTHOUSE_DIR` at that `node_modules` folder.
 
-`node --env-file=.env.local scripts/real-runs.js --runs 2 --out test/real-runs` plays ten scenarios against the real API through the real server and tool loop (planning, tweaks, check ins, the Day 10 review, a long chat that needs a summary, a check in question left unanswered, two fun nights to spread), checks each turn, and writes the transcripts with timing and cost. It costs about $0.45 a run. Set `CLAUDE_MODEL` and `CLAUDE_EFFORT` to try other setups, and `--only 10` to run one scenario. See `test/real-runs/README.md` for the latest results.
+`node --env-file=.env.local scripts/real-runs.js --runs 2 --out test/real-runs` plays eighteen scenarios against the real API through the real server and tool loop (planning, tweaks, check ins, the Day 10 review, a long chat that needs a summary, a check in question left unanswered, two fun nights to spread, and the guardrails: off topic requests, an injection, distress, a long paste), checks each turn, and writes the transcripts with timing and cost. It costs about $0.45 a run. Set `CLAUDE_MODEL` and `CLAUDE_EFFORT` to try other setups, and `--only 11,12` to run some of them. See `test/real-runs/README.md` for the latest results.
 
 To try the app on your phone, open your machine's LAN address on the same Wi-Fi. Mic input needs HTTPS or localhost, so over plain LAN use the keyboard's own dictation.
 
