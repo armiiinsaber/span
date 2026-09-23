@@ -15,7 +15,15 @@ const mock = require('../lib/mock');
 // Every request the app makes to Claude, as the server built it.
 const sent = [];
 const spy = { messages: { stream: params => { sent.push(params); return mock.messages.stream(params); } } };
-const lastContext = () => JSON.parse(sent.at(-1).messages.at(-1).content.match(/<deka>\n(.*)\n<\/deka>/)[1]);
+// The context of the newest turn. Later rounds add tool results after it, in the same list.
+const lastContext = () => {
+  for (const m of [...sent.at(-1).messages].reverse()) {
+    const t = typeof m.content === 'string' ? m.content : m.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+    const hit = m.role === 'user' && t.match(/<deka>\n(.*)\n<\/deka>/);
+    if (hit) return JSON.parse(hit[1]);
+  }
+  return null;
+};
 
 const CHROME = process.env.CHROME_PATH || [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -410,11 +418,11 @@ test.describe('Deka app', { skip }, () => {
     assert.match(await page.js("document.querySelector('.toast').textContent"), /Run done\.\s*Undo/);
     await click('.toast [data-a=toast-undo]');
     assert.equal(await page.js(`${first}.classList.contains('done')`), false);
-    const y = await page.js('(window.scrollTo(0, 400), window.scrollY)');
+    const y = await page.js("(document.getElementById('scroller').scrollTo(0, 400), document.getElementById('scroller').scrollTop)");
     assert.ok(y > 100);
     await click('[data-tab=goals]');
     await click('[data-tab=days]');
-    assert.equal(await page.js('window.scrollY'), y);
+    assert.equal(await page.js("document.getElementById('scroller').scrollTop"), y);
   });
 
   test('tap a dot, then a day, moves it in the goal sheet', async () => {
@@ -537,33 +545,39 @@ test.describe('Deka app', { skip }, () => {
   });
 
   test('the top edge covers only the status bar, never the header, and shows only after scrolling', async () => {
+   for (const theme of ['light', 'dark']) {
     const st = liveState(4);
+    st.settings.theme = theme;
     for (let i = 0; i < 12; i++) st.current.chat.push({ id: `m${i}`, role: i % 2 ? 'deka' : 'user', text: 'A line of chat to scroll past.', ts: i, cards: [] });
     await seed(st);
     const check = () => page.js(`(() => {
       const edge = document.getElementById('topEdge'), bar = document.querySelector('.bar'), inner = document.querySelector('.bar-in');
       const e = edge.getBoundingClientRect(), b = inner.getBoundingClientRect(), cs = getComputedStyle(bar), ci = getComputedStyle(inner);
+      const paper = getComputedStyle(document.body).backgroundColor;
       return { edgeBottom: e.bottom, headerTop: b.top, soft: getComputedStyle(edge, '::after').opacity, on: edge.classList.contains('on'),
+        flat: getComputedStyle(edge).backgroundColor === paper && cs.backgroundColor === paper && bar.getBoundingClientRect().top <= 0,
         sharp: cs.filter === 'none' && ci.filter === 'none' && cs.opacity === '1' && ci.opacity === '1' && (cs.backdropFilter || 'none') === 'none' && cs.maskImage === 'none' };
     })()`);
     for (const screen of ['chat', 'days', 'goals', 'past', 'profile']) {
       if (screen === 'past' || screen === 'profile') { await click('[data-tab=chat]'); await click('[data-a=more]'); await click(`[data-a=go-${screen}]`); }
       else await click(`[data-tab=${screen}]`);
-      await page.js('window.scrollTo(0, 0)');
+      await page.js("document.getElementById('scroller').scrollTo(0, 0)");
       // The soft edge fades out over 200 ms after the page is back at the top.
       await page.waitFor("getComputedStyle(document.getElementById('topEdge'), '::after').opacity === '0'", 2000).catch(() => {});
       const top = await check();
-      assert.ok(top.edgeBottom <= top.headerTop, `${screen}: the edge ends above the header`);
+      assert.ok(top.edgeBottom <= top.headerTop, `${theme} ${screen}: the edge ends above the header`);
       assert.equal(top.soft, '0', `${screen}: no fade at the top of the page`);
       assert.equal(top.sharp, true, `${screen}: the header is sharp`);
+      assert.equal(top.flat, true, `${theme} ${screen}: the strip and the header are the page color, with nothing between`);
       if (screen === 'chat' || screen === 'days') {
-        await page.js('window.scrollTo(0, 300)'); await sleep(260);
+        await page.js("document.getElementById('scroller').scrollTo(0, 300)"); await sleep(260);
         const mid = await check();
         assert.equal(mid.on, true, `${screen}: the soft edge shows once scrolled`);
         assert.equal(mid.sharp, true, `${screen}: the header stays sharp while it scrolls away`);
       }
       if (screen === 'past' || screen === 'profile') await click('[data-a=back]');
     }
+   }
   });
 
   test('the living mark moves while Deka thinks and settles when done', async () => {
@@ -658,5 +672,204 @@ test.describe('Deka app', { skip }, () => {
       assert.deepEqual(await page.js(audit), [], `${w}px sheet`);
     }
     await page.size(390);
+  });
+  // Copies land here instead of the real clipboard.
+  const clip = () => page.js("(() => { window.__copied = []; navigator.clipboard.writeText = t => { window.__copied.push(t); return Promise.resolve(); }; })()");
+  const pick = (id, files) => page.js(`(async () => { const dt = new DataTransfer(); for (const f of await Promise.all([${files.join(',')}])) dt.items.add(f); const i = document.getElementById('${id}'); i.files = dt.files; i.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  const png = (w, h, name = 'list.png') => `new Promise(r => { const c = document.createElement('canvas'); c.width = ${w}; c.height = ${h}; const g = c.getContext('2d'); g.fillStyle = '#c84'; g.fillRect(0, 0, ${w}, ${h}); c.toBlob(b => r(new File([b], '${name}', { type: 'image/png' })), 'image/png'); })`;
+  const PDF = '%PDF-1.4\\n1 0 obj<</Type /Catalog /Pages 2 0 R>>endobj 2 0 obj<</Type /Pages /Kids [3 0 R 4 0 R] /Count 2>>endobj 3 0 obj<</Type /Page /Parent 2 0 R>>endobj 4 0 obj<</Type /Page /Parent 2 0 R>>endobj\\n%%EOF';
+  const pdf = (name, pad = 0) => `Promise.resolve(new File(['${PDF}', new Uint8Array(${pad})], '${name}', { type: 'application/pdf' }))`;
+
+  test('a finished reply has Copy, the two ratings and Retry, and Copy copies only the words', async () => {
+    await seed(liveState(4));
+    await clip();
+    await say('plan it');
+    assert.equal(await page.js("document.querySelectorAll('.msg.deka .acts').length"), 0, 'no actions while it streams');
+    await idle(); await sleep(1300);
+    const acts = await page.js("[...document.querySelector('.msg.deka .acts').querySelectorAll('button')].map(b => [b.dataset.a, b.getAttribute('aria-label'), Math.round(b.getBoundingClientRect().width)])");
+    assert.deepEqual(acts, [['copy', 'Copy', 44], ['rate', 'Good reply', 44], ['rate', 'Bad reply', 44], ['regen', 'Retry', 44]]);
+    await click('.msg.deka [data-a=copy]');
+    await page.waitFor("window.__copied.length === 1");
+    assert.equal(await page.js('window.__copied[0]'), await lastDeka(), 'the reply text, without the card');
+    assert.equal(await text('.msg.deka .act-note'), 'Copied');
+    assert.equal(await page.js("document.querySelector('.msg.deka [data-a=copy]').getAttribute('aria-label')"), 'Copied');
+    await page.waitFor("!document.querySelector('.msg.deka .act-note').textContent", 3000);
+    // A second reply takes Retry; the first keeps the rest.
+    await say('keep day 5 free'); await idle(); await sleep(1300);
+    assert.deepEqual(await page.js("[...document.querySelectorAll('.msg.deka')].map(m => m.querySelectorAll('[data-a=regen]').length)"), [0, 1]);
+  });
+
+  test('your own message: a long press opens a small menu with Copy', async () => {
+    await seed(liveState(4));
+    await clip();
+    await say('plan it'); await idle(); await sleep(1300);
+    await page.js("document.querySelector('.msg.user .bubble').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 300, clientY: 300 }))");
+    await sleep(600);
+    assert.equal(await page.js("document.querySelector('.ctx [role=menuitem]').textContent.trim()"), 'Copy');
+    assert.equal(await page.js("document.querySelector('.bubble.held') !== null"), true);
+    await page.js("document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))");
+    await click('.ctx [data-a=copy-user]');
+    await page.waitFor('window.__copied.length === 1');
+    assert.equal(await page.js('window.__copied[0]'), 'plan it');
+    assert.equal(await page.js("document.querySelector('.ctx')"), null, 'the menu closes');
+    assert.match(await text('.toast'), /Copied/);
+  });
+
+  test('thumbs toggle one at a time; thumbs down asks what went wrong, saves it, exports it and logs it', async () => {
+    const logs = [];
+    const log = console.log;
+    console.log = (...a) => { if (String(a[0]).startsWith('[feedback]')) logs.push(JSON.parse(String(a[0]).slice(11))); else log(...a); };
+    try {
+      await seed(liveState(4));
+      await say('plan it'); await idle(); await sleep(1300);
+      const pressed = () => page.js("[...document.querySelectorAll('.msg.deka [data-a=rate]')].map(b => b.getAttribute('aria-pressed'))");
+      await click('.msg.deka [data-a=rate][data-v=up]');
+      assert.deepEqual(await pressed(), ['true', 'false']);
+      await page.waitFor('true'); await sleep(200);
+      assert.equal(logs.at(-1).rating, 'up');
+      await click('.msg.deka [data-a=rate][data-v=up]');
+      assert.deepEqual(await pressed(), ['false', 'false'], 'a second tap clears it');
+      await click('.msg.deka [data-a=rate][data-v=down]');
+      assert.deepEqual(await pressed(), ['false', 'true']);
+      await page.waitFor("document.getElementById('fbText')");
+      assert.equal(await page.js("document.getElementById('fbText').placeholder"), 'What went wrong?');
+      assert.equal(await text('#sheet [type=submit]'), 'Send');
+      await page.js("(() => { const t = document.getElementById('fbText'); t.value = 'Put the gym on my rest day'; document.querySelector('[data-form=feedback]').requestSubmit(); })()");
+      await page.waitFor("!document.getElementById('sheet')");
+      await sleep(200);
+      const reply = await lastDeka();
+      const last = logs.at(-1);
+      assert.equal(last.rating, 'down');
+      assert.equal(last.reason, 'Put the gym on my rest day');
+      assert.equal(last.message, reply);
+      assert.ok(!Number.isNaN(Date.parse(last.ts)));
+      const saved = (await stored()).current.chat.find(m => m.role === 'deka' && m.feedback);
+      assert.deepEqual([saved.feedback.rating, saved.feedback.reason], ['down', 'Put the gym on my rest day']);
+      // Export carries it.
+      const exported = await page.js(`new Promise(r => { URL.createObjectURL = b => { b.text().then(r); return 'blob:x'; }; HTMLAnchorElement.prototype.click = () => {}; document.querySelector('[data-a=more]').click(); setTimeout(() => { document.querySelector('[data-a=go-profile]').click(); document.querySelector('[data-a=export]').click(); }, 50); })`);
+      assert.match(exported, /"reason": "Put the gym on my rest day"/);
+      assert.equal(sent.filter(p => JSON.stringify(p.messages).includes('rest day')).length, 0, 'feedback never goes to Claude');
+    } finally { console.log = log; }
+  });
+
+  test('Retry undoes what the reply changed, then asks again the same way', async () => {
+    await fresh(); await click('[data-a=intro-start]');
+    await say('at least six runs and gym four times'); await idle(); await sleep(1300);
+    assert.deepEqual((await stored()).current.intentions.map(g => [g.id, g.target]), [['run', 6], ['gym', 4]]);
+    const before = sent.length;
+    await click('.msg.deka [data-a=regen]');
+    await page.waitFor(`${sent.length} > ${before}`.replace(/.*/, 'true'));
+    await idle(); await sleep(1300);
+    assert.equal(sent.length, before + 1, 'one more request');
+    assert.deepEqual(lastContext().goals, [], 'the retry starts from before the goals were saved');
+    assert.match(sent.at(-1).messages.at(-1).content, /Person: at least six runs and gym four times/);
+    const st = await stored();
+    assert.deepEqual(st.current.intentions.map(g => [g.id, g.target]), [['run', 6], ['gym', 4]], 'saved once, not twice');
+    assert.deepEqual(st.current.chat.map(m => m.role), ['user', 'deka'], 'the old reply is gone');
+    // A trim answered in words, then Retry: the trim is open again and the counts are back.
+    await say('also eight date nights, eight sober nights and gym nine times'); await idle(); await sleep(1300);
+    await say('sounds good'); await idle(); await sleep(1300);
+    const lowered = (await stored()).current.intentions.find(g => g.id === 'date_night').target;
+    assert.ok(lowered < 8);
+    await click('.msg.deka:last-child [data-a=regen]');
+    await idle(); await sleep(1300);
+    assert.deepEqual(lastContext().open_trim.trims.map(t => [t.goal_id, t.requested]), [['date_night', 8], ['sober', 8], ['gym', 9]], 'the retry sees the trim still open');
+    assert.equal(lastContext().goals.find(g => g.id === 'date_night').target, 8, 'at the counts asked for');
+    assert.equal(await page.js("[...document.querySelectorAll('.goals-card')].filter(c => /Trim applied/.test(c.textContent)).length"), 1, 'answered once, by the retry');
+  });
+
+  test('attachments: the plus menu, thumbnails, limits, sending with no text, and the full screen photo', async () => {
+    await seed(liveState(4));
+    await click('#dock [data-a=attach]');
+    assert.deepEqual(await page.js("[...document.querySelectorAll('.ctx [role=menuitem]')].map(b => b.textContent.trim())"), ['Photos', 'Camera', 'Files']);
+    await click('.ctx-catch');
+    // A big photo comes out at 1568 px on the long edge, as JPEG.
+    await pick('pickPhotos', [png(3000, 2000)]);
+    await page.waitFor("document.querySelector('#tray img')?.naturalWidth > 0");
+    assert.deepEqual(await page.js("(() => { const i = document.querySelector('#tray img'); return [i.naturalWidth, i.naturalHeight, i.draggable]; })()"), [1568, 1045, false]);
+    assert.equal(await page.js("document.querySelector('#dock .send').disabled"), false, 'can send with no text');
+    // A PDF over 3 MB is turned away with one sentence.
+    await pick('pickFiles', [pdf('huge.pdf', 3.2e6)]);
+    await page.waitFor("!document.getElementById('attNote').hidden");
+    assert.equal(await text('#attNote'), 'That PDF is over 3 MB.');
+    // Two PDFs that fit alone but not together.
+    await pick('pickFiles', [pdf('one.pdf', 2.2e6), pdf('two.pdf', 2.2e6)]);
+    await page.waitFor("document.querySelectorAll('#tray .att').length === 2");
+    await sleep(200);
+    assert.equal(await text('#attNote'), 'That is too large. A message can carry up to 4 MB.');
+    // Remove one; five at most.
+    await click('#tray .att:nth-child(2) [data-a=att-rm]');
+    assert.equal(await page.js("document.querySelectorAll('#tray .att').length"), 1);
+    await pick('pickFiles', [pdf('syllabus.pdf'), png(40, 40, 'a.png'), png(40, 40, 'b.png'), png(40, 40, 'c.png'), png(40, 40, 'd.png')]);
+    await page.waitFor("document.querySelectorAll('#tray .att').length === 5");
+    await sleep(200);
+    assert.equal(await text('#attNote'), 'Up to 5 attachments per message.');
+    const rm = await page.js("[...document.querySelectorAll('#tray [data-a=att-rm]')].map(b => [Math.round(b.getBoundingClientRect().width), b.getAttribute('aria-label')])");
+    assert.deepEqual(rm[0], [44, 'Remove photo']);
+    assert.deepEqual(rm[1], [44, 'Remove syllabus.pdf']);
+    await click('#tray .att:nth-child(5) [data-a=att-rm]');
+    await click('#tray .att:nth-child(4) [data-a=att-rm]');
+    await click('#tray .att:nth-child(3) [data-a=att-rm]');
+    // Sent with no text: the photo and the PDF go as an image block and a document block.
+    await click('#dock .send');
+    await idle();
+    const blocks = sent.at(-1).messages.at(-1).content;
+    assert.deepEqual(blocks.filter(b => b.type !== 'text').map(b => [b.type, b.source.media_type]), [['image', 'image/jpeg'], ['document', 'application/pdf']]);
+    assert.match(blocks.at(-1).text, /Person sent the attachments above with no message/);
+    assert.match(await lastDeka(), /Got 1 photo and 1 PDF/);
+    assert.equal(await page.js("document.querySelectorAll('.msg.user .bubble.only .sent button').length"), 2);
+    assert.equal(await page.js("document.getElementById('tray').hidden"), true, 'the tray empties');
+    // Stored in IndexedDB, not localStorage.
+    const st = await stored();
+    const meta = st.current.chat.find(m => m.attachments).attachments;
+    assert.deepEqual(meta.map(a => [a.kind, a.name, a.pages || 0]), [['image', 'list.png', 0], ['pdf', 'syllabus.pdf', 2]]);
+    assert.ok(JSON.stringify(st).length < 20000, 'no file data in localStorage');
+    assert.equal(await page.js("new Promise(r => { const q = indexedDB.open('deka'); q.onsuccess = () => { const g = q.result.transaction('files').objectStore('files').count(); g.onsuccess = () => r(g.result); }; })"), 2);
+    // Tap the photo: full screen. Tap the PDF: its name and page count.
+    await click('.msg.user .sent button:first-child');
+    await page.waitFor("document.querySelector('.viewer img')");
+    assert.equal(await page.js("getComputedStyle(document.querySelector('.viewer img')).webkitUserDrag || 'auto'"), 'auto');
+    await click('.viewer .icon-btn');
+    await click('.msg.user .sent button:last-child');
+    assert.match(await text('.toast'), /syllabus\.pdf, 2 pages\./);
+    // Later turns only mention the files.
+    await say('thanks'); await idle();
+    assert.match(sent.at(-1).messages.map(m => typeof m.content === 'string' ? m.content : '').join('\n'), /\[Attached a photo, a PDF, syllabus\.pdf\]/);
+    // Export and import bring them back.
+    const exported = await page.js(`new Promise(r => { URL.createObjectURL = b => { b.text().then(r); return 'blob:x'; }; HTMLAnchorElement.prototype.click = () => {}; document.querySelector('[data-a=more]').click(); setTimeout(() => { document.querySelector('[data-a=go-profile]').click(); document.querySelector('[data-a=export]').click(); }, 50); })`);
+    const d = JSON.parse(exported);
+    assert.equal(Object.keys(d.attachments).length, 2);
+  });
+
+  test('feels like an app: only words worth copying select, nothing zooms on a double tap, only the content scrolls', async () => {
+    const st = liveState(4);
+    for (let i = 0; i < 12; i++) st.current.chat.push({ id: `m${i}`, role: i % 2 ? 'deka' : 'user', text: 'A line of chat to scroll past.', ts: i, cards: [] });
+    await seed(st);
+    await say('plan it'); await idle(); await sleep(1300);
+    const sel = q => page.js(`[...document.querySelectorAll(${JSON.stringify(q)})].map(el => getComputedStyle(el).userSelect || getComputedStyle(el).webkitUserSelect)`);
+    const none = async (q, tab) => { if (tab) await click(`[data-tab=${tab}]`); const v = await sel(q); assert.ok(v.length, `${q} is on the page`); assert.ok(v.every(x => x === 'none'), `${q}: ${v.join(', ')}`); };
+    await none('header, .brand, .mark, nav.tabs, nav.tabs button, .card, .card .eyebrow, .strip10 .dn, .acts button');
+    await none('.head .eyebrow, .head h1, .goal .gn b, .goal .gn span, .actions .link', 'goals');
+    await none('.head h1, .day .dn, .day .dd, .day .s', 'days');
+    await click('[data-tab=chat]');
+    for (const q of ['.say', '.bubble .bt', '#msg']) assert.deepEqual([...new Set(await sel(q))], ['text'], q);
+    await click('.day .dl'.replace('.day .dl', '[data-tab=days]'));
+    await click('.day[data-day="4"] .dl');
+    assert.deepEqual(await sel('#sheet textarea'), ['text'], 'notes');
+    await click('#sheet [data-a=sheet-close]');
+    await click('[data-tab=chat]');
+    const app = await page.js(`(() => {
+      const cs = el => getComputedStyle(el);
+      const sc = document.getElementById('scroller');
+      return { touch: cs(document.documentElement).touchAction, bodyTouch: cs(document.body).touchAction, scTouch: cs(sc).touchAction,
+        bodyOver: cs(document.body).overscrollBehaviorY, htmlOver: cs(document.documentElement).overscrollBehaviorY, scOver: cs(sc).overscrollBehaviorY,
+        body: cs(document.body).position, scrolls: sc.scrollHeight > sc.clientHeight, page: document.documentElement.scrollHeight <= innerHeight,
+        cursor: cs(document.querySelector('.card')).cursor, tap: cs(document.body).webkitTapHighlightColor,
+        viewport: document.querySelector('meta[name=viewport]').content,
+        drag: [...document.querySelectorAll('img')].every(i => !i.draggable || i.closest('.viewer')) };
+    })()`);
+    assert.deepEqual(app, { touch: 'manipulation', bodyTouch: 'manipulation', scTouch: 'manipulation', bodyOver: 'none', htmlOver: 'none', scOver: 'contain',
+      body: 'fixed', scrolls: true, page: true, cursor: 'default', tap: 'rgba(0, 0, 0, 0)', viewport: 'width=device-width, initial-scale=1, viewport-fit=cover', drag: true });
+    assert.doesNotMatch(app.viewport, /user-scalable|maximum-scale/, 'pinch zoom stays');
   });
 });

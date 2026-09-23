@@ -14,7 +14,12 @@ const ASSETS = path.join(ROOT, 'node_modules', '@phosphor-icons', 'core', 'asset
 const PAGE = path.join(ROOT, 'public', 'index.html');
 
 // Icons the app itself uses, beyond the goal icons.
-const EXTRA = { ui_target: 'target', ui_profile: 'user-circle' };
+// A name with a weight, like thumbs-up:fill, takes that weight.
+const EXTRA = {
+  ui_target: 'target', ui_profile: 'user-circle', ui_copy: 'copy', ui_check: 'check', ui_up: 'thumbs-up', ui_up_on: 'thumbs-up:fill',
+  ui_down: 'thumbs-down', ui_down_on: 'thumbs-down:fill', ui_retry: 'arrow-clockwise', ui_plus: 'plus', ui_photos: 'images',
+  ui_camera: 'camera', ui_file: 'file', ui_pdf: 'file-pdf', ui_x: 'x',
+};
 
 const body = (name, weight = 'regular') => {
   const file = weight === 'regular' ? `${name}.svg` : `${name}-${weight}.svg`;
@@ -22,7 +27,7 @@ const body = (name, weight = 'regular') => {
   return svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '').replace(/<rect width="256" height="256" fill="none"\/>/g, '').trim();
 };
 const symbols = Object.entries({ ...Object.fromEntries(Object.entries(ICONS).map(([k, v]) => [k, v[0]])), ...EXTRA })
-  .map(([key, name]) => `<symbol id="i-${key}" viewBox="0 0 256 256">${body(name)}</symbol>`).join('') +
+  .map(([key, name]) => `<symbol id="i-${key}" viewBox="0 0 256 256">${body(...name.split(':'))}</symbol>`).join('') +
   Object.entries(ICONS).map(([key, [name]]) => `<symbol id="ib-${key}" viewBox="0 0 256 256">${body(name, 'bold')}</symbol>`).join('');
 
 const sprite = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">${symbols}</svg>`;
