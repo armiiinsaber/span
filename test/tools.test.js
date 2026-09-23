@@ -101,3 +101,20 @@ test('suggest_trim lowers nothing itself and checks each goal, count and floor',
   const lw = live(5, [{ goal_id: 'run', day: 1, status: 'done' }, { goal_id: 'run', day: 2, status: 'done' }]);
   assert.match(errs(runTool('suggest_trim', { trims: [{ goal_id: 'run', requested: 3, suggested: 1 }], reason: '' }, lw)), /from 2 to 2/, 'never below what is done');
 });
+
+test('resolve_trim answers only the open trim, the way the buttons do', () => {
+  const trim = { trims: [{ goal_id: 'run', requested: 3, suggested: 2 }] };
+  const none = working({ phase: 'planning', goals: goals(), schedule: [] });
+  assert.match(errs(runTool('resolve_trim', { choice: 'use' }, none)), /no open trim/);
+  const w = working({ phase: 'planning', goals: goals(), schedule: [], open_trim: trim });
+  const used = runTool('resolve_trim', { choice: 'use' }, w);
+  assert.equal(used.ok, true, errs(used));
+  assert.deepEqual(used.event, { type: 'trim_resolved', choice: 'use', trims: trim.trims });
+  assert.equal(w.goals.find(g => g.id === 'run').target, 2, 'a proposal in the same turn is judged on the new count');
+  assert.match(errs(runTool('resolve_trim', { choice: 'keep' }, w)), /no open trim/, 'answered once');
+  const k = working({ phase: 'planning', goals: goals(), schedule: [], open_trim: trim });
+  assert.equal(runTool('resolve_trim', { choice: 'keep' }, k).event.choice, 'keep');
+  assert.equal(k.goals.find(g => g.id === 'run').target, 3);
+  const moved = working({ phase: 'planning', goals: goals().map(g => g.id === 'run' ? { ...g, target: 5 } : g), schedule: [], open_trim: trim });
+  assert.match(errs(runTool('resolve_trim', { choice: 'use' }, moved)), /at 5 now/);
+});
