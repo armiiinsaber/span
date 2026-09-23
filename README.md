@@ -16,8 +16,13 @@ lib/validate.js     Server checks on every plan Claude returns
 lib/mock.js         Dev only stand in for Claude (DEKA_MOCK=1)
 public/index.html   The whole app: inline CSS and JS, served as a static file
 public/sw.js        Offline shell for the installed PWA
-test/               node:test suites
+public/brand/       Every icon and iOS splash screen (see Logo and icons)
+public/fonts/       Melomaniac Serif and Inter, self hosted as subset WOFF2
+scripts/brand.js    Draws the placeholder icons and splash screens
+test/               node:test suites; ui.test.js drives headless Chrome
 ```
+
+The app is three tabs: Today, Deka (the 10 day grid) and Plan (talk to Claude). Past dekas and Settings sit behind the icon in the header. Tapping an intention opens a sheet to rename it, change its count, move a day by tapping the dot and then the new day, or delete it. On desktop, dots can also be dragged along their row.
 
 All plan data lives in localStorage on the device. Export and import it as JSON under Settings. The server stores nothing.
 
@@ -49,6 +54,8 @@ vercel env pull .env      # optional, pulls the project's env vars
 vercel dev                # http://localhost:3000
 npm test
 ```
+
+`npm test` includes browser tests of the mobile flows in `test/ui.test.js`. They need Chrome (or set `CHROME_PATH`) and Node 22 or newer, and skip themselves otherwise.
 
 `vercel dev` runs the app the way Vercel does: files in `public/` are served as static files and `server.js` runs as the function. Without the CLI, `npm run dev` serves the same thing with plain Node.
 
@@ -88,6 +95,21 @@ CNAME  www    <the project CNAME Vercel shows, like d1d4fc829fe7bc7c.vercel-dns-
 ```
 
 The www value is unique to each project, and Vercel may show a newer A value on the card; when the card differs from the above, use the card. Remove any other A, AAAA or CNAME records on `@` and `www` first, such as a registrar's parking page. Vercel issues the certificates once DNS resolves.
+
+## Logo and icons
+
+Every icon and splash reference points into `public/brand/`, and the page lists them in one marked block in `public/index.html` (between `<!-- Brand:` and `<!-- End brand -->`). The files are placeholders drawn by `scripts/brand.js`:
+
+```
+public/brand/icon.svg                 browser tab icon
+public/brand/icon-180.png             iPhone home screen (apple-touch-icon)
+public/brand/icon-192.png             manifest icon
+public/brand/icon-512.png             manifest icon
+public/brand/icon-maskable-512.png    manifest icon, safe zone padded for Android masks
+public/brand/splash-<w>x<h>.png       iOS launch screens, one per iPhone size (10 files)
+```
+
+To use the real logo, replace those files with the same names and sizes, then bump `CACHE` in `public/sw.js` so installed copies fetch them. Nothing else changes. If you change the list of splash sizes, edit `SPLASH` in `scripts/brand.js` and run `node scripts/brand.js`; it rewrites the brand block in `index.html`. The wordmark in the header is set in type (`.mark` in `index.html`), not an image.
 
 ## Install on iPhone
 
