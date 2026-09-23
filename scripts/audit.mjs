@@ -1,4 +1,6 @@
-// Lighthouse on every screen of the app, at three phone widths, in light and dark.
+// Lighthouse on every screen of the app, at three phone widths, in light and dark, in Safari and
+// as the installed home screen app. Chrome cannot emulate the standalone display mode, so the two
+// modes differ by navigator.standalone, the one thing the app reads to tell them apart.
 // One navigation of a live deka gives the performance and accessibility scores of the
 // launch; snapshots after tapping through the app give accessibility for each screen.
 // Runs the real server with the scripted stand in for Claude, so it costs nothing.
@@ -27,7 +29,8 @@ const { ICONS } = require(path.join(ROOT, 'lib', 'icons'));
 const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const WIDTHS = [375, 390, 430];
 const HEIGHTS = { 375: 812, 390: 844, 430: 932 };
-const MODES = ['light', 'dark'];
+const THEMES = ['light', 'dark'];
+const MODES = ['safari', 'standalone'];
 const OUT = process.argv[2] || '';
 
 // A live deka on day 4: some done, one missed, one not confirmed, and a chat with a plan card and a status card.
@@ -58,31 +61,41 @@ function state() {
     current: { id: 'c1', start: iso(start), status: 'live', notes: { 4: 'Slept well.' }, log: [], chat, summary: '', summarizedUpTo: 0, checked: [1, 2], checkin: {}, intentions, occurrences } };
 }
 
-const server = createApp({ client: mock }).listen(0);
-await new Promise(r => server.once('listening', r));
-const base = `http://127.0.0.1:${server.address().port}/`;
+// A fresh server for each run: the login limit (10 tries in 15 minutes) lives in its memory.
+let server = null, base = '';
+async function serve() {
+  if (server) server.close();
+  server = createApp({ client: mock }).listen(0);
+  await new Promise(r => server.once('listening', r));
+  base = `http://127.0.0.1:${server.address().port}/`;
+}
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-first-run'] });
 const results = [];
 
 try {
   for (const width of WIDTHS) {
-    for (const mode of MODES) {
+    for (const mode of MODES) for (const theme of THEMES) {
+      await serve();
       const page = await browser.newPage();
-      await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: mode }]);
+      await page.evaluateOnNewDocument(standalone => { Object.defineProperty(navigator, 'standalone', { value: standalone, configurable: true }); }, mode === 'standalone');
+      await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: theme }]);
       await page.goto(base);
       await page.evaluate(async s => {
         await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: 'audit' }) });
-        localStorage.setItem('deka.v1', JSON.stringify(s));
+        // Stop the running page from saving its own state over the seed before the audit reloads it.
+        const set = Storage.prototype.setItem;
+        Storage.prototype.setItem = function () {};
+        set.call(localStorage, 'deka.v1', JSON.stringify(s));
       }, state());
       const config = { extends: 'lighthouse:default', settings: {
         formFactor: 'mobile', disableStorageReset: true, onlyCategories: ['performance', 'accessibility'],
         screenEmulation: { mobile: true, width, height: HEIGHTS[width], deviceScaleFactor: 3, disabled: false },
       } };
       const flow = await startFlow(page, { config, flags: { disableStorageReset: true } });
-      const tap = async sel => { await page.evaluate(q => document.querySelector(q).click(), sel); await new Promise(r => setTimeout(r, 450)); };
+      const tap = async sel => { await page.waitForSelector(sel, { timeout: 3000 }).catch(() => {}); const ok = await page.evaluate(q => { const el = document.querySelector(q); if (el) el.click(); return Boolean(el); }, sel); if (!ok) throw new Error(`nothing to tap at ${sel} (${width}px ${mode} ${theme})`); await new Promise(r => setTimeout(r, 450)); };
       const snap = name => flow.snapshot({ name });
       await flow.navigate(base, { name: 'launch' });
-      await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: mode }]);
+      await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: theme }]);
       await snap('chat');
       await tap('[data-tab=days]'); await snap('days');
       await tap('.day[data-day="4"] .dl'); await snap('day sheet'); await tap('#sheet [data-a=sheet-close]');
@@ -99,16 +112,16 @@ try {
         // Performance is only measured on a navigation; a snapshot has no load to time.
         const cat = k => lhr.categories[k] && (k !== 'performance' || lhr.gatherMode === 'navigation') ? Math.round(lhr.categories[k].score * 100) : null;
         const failing = Object.values(lhr.audits).filter(a => a.scoreDisplayMode === 'binary' && a.score === 0 && (lhr.categories.accessibility?.auditRefs || []).some(r => r.id === a.id)).map(a => a.id);
-        results.push({ width, mode, step: step.name, performance: cat('performance'), accessibility: cat('accessibility'), failing });
+        results.push({ width, mode, theme, step: step.name, performance: cat('performance'), accessibility: cat('accessibility'), failing });
       }
       await page.close();
-      const mine = results.filter(r => r.width === width && r.mode === mode);
-      console.log(`${width}px ${mode}: ${mine.map(r => `${r.step} ${r.performance != null ? `perf ${r.performance} ` : ''}a11y ${r.accessibility}${r.failing.length ? ` (${r.failing.join(', ')})` : ''}`).join(' | ')}`);
+      const mine = results.filter(r => r.width === width && r.mode === mode && r.theme === theme);
+      console.log(`${width}px ${mode} ${theme}: ${mine.map(r => `${r.step} ${r.performance != null ? `perf ${r.performance} ` : ''}a11y ${r.accessibility}${r.failing.length ? ` (${r.failing.join(', ')})` : ''}`).join(' | ')}`);
     }
   }
 } finally {
   await browser.close();
-  server.close();
+  if (server) server.close();
 }
 if (OUT) fs.writeFileSync(OUT, `${JSON.stringify(results, null, 1)}\n`);
 const perf = results.filter(r => r.performance != null).map(r => r.performance);

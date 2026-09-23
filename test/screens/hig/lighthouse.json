@@ -1,0 +1,1190 @@
+[
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "light",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "light",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "light",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "light",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "light",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "light",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "light",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "light",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "light",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "light",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "light",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "light",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "light",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "light",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "light",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "light",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "light",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "light",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "light",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "light",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "light",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "light",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "light",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "light",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "light",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "light",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "light",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "light",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "light",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "light",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "light",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "light",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "light",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "safari",
+  "theme": "dark",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "light",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "standalone",
+  "theme": "dark",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ }
+]
