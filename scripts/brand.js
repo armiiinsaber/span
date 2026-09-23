@@ -5,6 +5,7 @@
 //   brand/deka-mark-small.svg  ->  public/brand/icon.svg (favicon, ink on transparent)
 //   brand/deka-icon.svg        ->  public/brand/icon-180.png, icon-192.png, icon-512.png, icon-maskable-512.png
 //   brand/deka-mark-ink.svg    ->  public/brand/splash-<w>x<h>.png (ivory ground, small ink mark)
+//                                  public/brand/splash-dark-<w>x<h>.png (warm near black, ivory mark)
 //
 // It also rewrites the brand block in public/index.html. After changing a mark, run
 // `node scripts/brand.js`, then bump CACHE in public/sw.js. The marks themselves come
@@ -17,6 +18,7 @@ const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'brand');
 const OUT = path.join(ROOT, 'public', 'brand');
 const PAPER = '#F5F3EC';
+const NIGHT = '#14130F';
 
 // iOS splash sizes in CSS pixels with the pixel ratio, for the media queries.
 const SPLASH = [
@@ -129,13 +131,20 @@ function build() {
   const fit = (0.40 * 0.94) / reach;
   fs.writeFileSync(path.join(OUT, 'icon-maskable-512.png'), paint(512, 512, icon.background, icon.dots, { x: 256, y: 256, scale: (512 / icon.side) * Math.min(1, fit), side: icon.side }));
 
-  // Splash screens: ivory with the ink mark centred, 96 CSS pixels tall.
-  const links = [];
+  // Splash screens: the app's own ground with the mark centred, 96 CSS pixels tall. The dark ones
+  // come first; where the color scheme query is not understood they are skipped and ivory is used.
+  const dark = [], links = [];
+  const ivoryDots = ink.dots.map(d => ({ ...d, fill: PAPER }));
   for (const [cw, ch, dpr] of SPLASH) {
-    const w = cw * dpr, h = ch * dpr, name = `splash-${w}x${h}.png`;
-    fs.writeFileSync(path.join(OUT, name), paint(w, h, PAPER, ink.dots, { x: w / 2, y: h / 2, scale: (96 * dpr) / ink.side, side: ink.side }));
-    links.push(`<link rel="apple-touch-startup-image" href="/brand/${name}" media="(device-width: ${cw}px) and (device-height: ${ch}px) and (-webkit-device-pixel-ratio: ${dpr}) and (orientation: portrait)">`);
+    const w = cw * dpr, h = ch * dpr, name = `splash-${w}x${h}.png`, night = `splash-dark-${w}x${h}.png`;
+    const at = { x: w / 2, y: h / 2, scale: (96 * dpr) / ink.side, side: ink.side };
+    const media = `(device-width: ${cw}px) and (device-height: ${ch}px) and (-webkit-device-pixel-ratio: ${dpr}) and (orientation: portrait)`;
+    fs.writeFileSync(path.join(OUT, name), paint(w, h, PAPER, ink.dots, at));
+    fs.writeFileSync(path.join(OUT, night), paint(w, h, NIGHT, ivoryDots, at));
+    dark.push(`<link rel="apple-touch-startup-image" href="/brand/${night}" media="${media} and (prefers-color-scheme: dark)">`);
+    links.push(`<link rel="apple-touch-startup-image" href="/brand/${name}" media="${media}">`);
   }
+  links.unshift(...dark);
 
   // Keep every icon and splash reference in one block in index.html.
   const page = path.join(ROOT, 'public', 'index.html');
