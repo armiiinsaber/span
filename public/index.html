@@ -1019,19 +1019,28 @@ function loadOf(span, trims = []) {
   const cut = trims.filter(t => counted.some(g => g.id === t.goal_id)).reduce((n, t) => n + t.requested - t.suggested, 0);
   return { req: left / days, sug: trims.length ? (left - cut) / days : null };
 }
+// The newest trim card in a chat is the only one that can still be answered.
+function latestTrim(span) {
+  for (const m of [...(span.chat || [])].reverse()) for (const c of [...(m.cards || [])].reverse()) if (c.type === 'goals' && c.trim) return c;
+  return null;
+}
 function goalsCard(msg, card, i, readonly) {
-  const trims = new Map(((card.trim && card.trim.trims) || []).map(t => [t.goal_id, t]));
-  const kept = card.trim && card.trim.choice === 'keep';
+  const choice = card.trim && card.trim.choice;
+  const open = card.trim && !choice && !readonly && latestTrim(chatSpan()) === card;
+  // Settled: a used trim shows only the new counts, a kept one only the originals.
+  const trims = new Map(((card.trim && !choice && card.trim.trims) || []).map(t => [t.goal_id, t]));
+  const used = new Map(((choice === 'use' && card.trim.trims) || []).map(t => [t.goal_id, t]));
   const rows = card.rows.slice().sort((a, b) => CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category));
   const lis = rows.map((r, k) => {
-    const t = !kept && trims.get(r.id);
+    const t = trims.get(r.id);
     const gap = k > 0 && rows[k - 1].category !== r.category ? ' gap' : '';
     if (r.op === 'remove') return `<li class="gr removed${gap}" style="--i:${k}">${sIcon(r)}<span class="gname">${nb(r.name)}</span><span class="gc"><span></span><span class="num">Removed</span></span></li>`;
-    const count = t ? t.requested : r.target;
+    const tr = card.trim && card.trim.trims.find(x => x.goal_id === r.id);
+    const count = t ? t.requested : used.has(r.id) ? used.get(r.id).suggested : tr ? tr.requested : r.target;
     const keep = t ? t.suggested : count;
     const dots = count >= 9 && !t ? '<span class="daily">Daily</span>'
       : Array.from({ length: count }, (_, d) => `<i${d >= keep ? ' class="cut"' : ''}></i>`).join('');
-    const was = t ? t.requested : r.was;
+    const was = t ? t.requested : choice ? null : r.was;
     const num = count >= 9 && !t ? '' : was != null && was !== keep ? `<span class="was">${was}</span>&thinsp;→&thinsp;${keep}` : `${keep}`;
     const said = count >= 9 && !t ? 'daily' : was != null && was !== keep ? `${was}, suggested ${keep}` : `${keep}`;
     return `<li class="gr c-${r.category}${gap}" style="--i:${k}">${sIcon(r)}<span class="gname">${nb(r.name)}</span>
@@ -1039,20 +1048,39 @@ function goalsCard(msg, card, i, readonly) {
   }).join('');
   let meter = '';
   if (card.load) {
-    const { req } = card.load;
-    const sug = kept ? null : card.load.sug;
+    const req = choice === 'use' && card.load.sug != null ? card.load.sug : card.load.req;
+    const sug = choice ? null : card.load.sug;
     const pct = n => Math.min(100, (n / 6) * 100).toFixed(1);
     const label = sug != null && loadWord(sug) !== loadWord(req) ? `${loadWord(req)} <span aria-hidden="true">→</span><span class="sr"> to</span> ${loadWord(sug)}` : loadWord(sug != null ? sug : req);
     meter = `<div class="meter"><div class="mt"><span class="ml">${label}</span><span class="mv">${perDay(req)}${sug != null ? `&thinsp;→&thinsp;${perDay(sug)}` : ''} a&nbsp;day</span></div>
       <div class="bar${sug != null ? ' trimmed' : ''}" aria-hidden="true"><i class="req" style="width:${pct(req)}%"></i>${sug != null ? `<i class="sug" style="width:${pct(sug)}%"></i>` : ''}<b style="left:${pct(COMFY)}%"></b><em style="left:${pct(COMFY)}%">Comfortable</em></div></div>`;
   }
   let actions = '';
-  if (card.trim && !readonly) {
-    actions = card.trim.choice
-      ? `<div class="state">${card.trim.choice === 'use' ? `${I.tick}Suggestion used` : 'Kept yours'}</div>`
-      : `<div class="row"><button class="btn primary" data-a="trim-use" data-m="${msg.id}" data-c="${i}">Use suggestion</button><button class="btn" data-a="trim-keep" data-m="${msg.id}" data-c="${i}">Keep mine</button></div>`;
+  if (choice) actions = `<div class="state">${choice === 'use' ? 'Trim applied' : 'Kept your numbers'}</div>`;
+  else if (open) actions = `<div class="row"><button class="btn primary" data-a="trim-use" data-m="${msg.id}" data-c="${i}">Use suggestion</button><button class="btn" data-a="trim-keep" data-m="${msg.id}" data-c="${i}">Keep mine</button></div>`;
+  const inactive = card.trim && !choice && !open && !readonly;
+  return `<div class="card goals-card${card.fresh ? ' fresh' : ''}${inactive ? ' quiet' : ''}">${meter}<ul class="gt" aria-label="Goals">${lis}</ul>${actions}</div>`;
+}
+// Answer a trim card, from a tap or from Deka when they answer in words: use lowers each target and
+// drops planned sessions past it, latest first; keep leaves the counts. Undo puts it all back.
+function resolveTrim(card, choice) {
+  const goals = spanFor(card.target) || chatSpan();
+  const before = clone({ i: goals.intentions, o: goals.occurrences });
+  if (choice === 'use') {
+    for (const t of card.trim.trims) {
+      const g = goals.intentions.find(x => x.id === t.goal_id);
+      if (!g || g.target !== t.requested) continue;
+      g.target = t.suggested;
+      const need = g.target - doneOf(goals, g.id);
+      while (plannedOf(goals, g.id) > need) {
+        const last = occOf(goals, g.id).filter(o => !o.done && !o.missed).sort((x, y) => y.day - x.day)[0];
+        goals.occurrences = goals.occurrences.filter(o => o !== last);
+      }
+    }
   }
-  return `<div class="card goals-card${card.fresh ? ' fresh' : ''}">${meter}<ul class="gt" aria-label="Goals">${lis}</ul>${actions}</div>`;
+  card.trim.choice = choice;
+  if (!refreshChat()) render();
+  toast(choice === 'use' ? 'Trim applied.' : 'Kept your numbers.', () => { goals.intentions = before.i; goals.occurrences = before.o; card.trim.choice = null; render(); });
 }
 const rowOf = (g, extra = {}) => ({ id: g.id, name: g.name, type: g.type, icon: iconOf(g), category: catOf(g), target: g.target, was: null, op: 'add', ...extra });
 
@@ -1651,7 +1679,7 @@ function buildRequest(span, text, event) {
       if (c.type === 'goals' && c.lines.length) t += `\n[Goals updated: ${c.lines.join('; ')}]`;
       if (c.type === 'goals' && c.trim) {
         const name = id => (c.rows.find(r => r.id === id) || { name: id }).name;
-        t += `\n[Suggested a trim: ${c.trim.trims.map(x => `${name(x.goal_id)} ${x.requested} to ${x.suggested}`).join(', ')}. ${c.trim.choice === 'use' ? 'They used the suggestion' : c.trim.choice === 'keep' ? 'They kept their counts' : 'Waiting for them to choose'}]`;
+        t += `\n[Suggested a trim: ${c.trim.trims.map(x => `${name(x.goal_id)} ${x.requested} to ${x.suggested}`).join(', ')}. ${c.trim.choice === 'use' ? 'They used the suggestion' : c.trim.choice === 'keep' ? 'They kept their counts' : c === latestTrim(span) ? 'Waiting for them to choose' : 'Never chosen, now replaced'}]`;
       }
       if (c.type === 'log') t += `\n[Logged day ${c.day}]`;
       if (c.type === 'proposal') t += `\n[Proposed a plan: ${c.summary || (c.changes || []).join('; ')}. ${c.status === 'open' ? 'Waiting for them to confirm' : c.status}]`;
@@ -1676,6 +1704,8 @@ function buildRequest(span, text, event) {
     event: event || null,
     // Redirects in a row, so Deka can say once that it is built only for planning.
     off_topic_streak: span.offStreak || 0,
+    // The newest trim still waiting for an answer, which Deka can answer when they reply in words.
+    ...(() => { const c = latestTrim(span); return c && !c.trim.choice ? { open_trim: { trims: c.trim.trims } } : {}; })(),
   };
   if (older.length) body.to_summarize = older;
   // The card still waiting for Confirm, with every session on it, so a tweak adjusts that card.
@@ -1826,6 +1856,9 @@ function onEvent(turn, ev, data) {
     }
     card.trim = { trims: data.trims, reason: data.reason || '', choice: null };
     card.load = loadOf(target, data.trims);
+  } else if (ev === 'trim_resolved') {
+    const card = latestTrim(turn.span);
+    if (card && !card.trim.choice) resolveTrim(card, data.choice);
   } else if (ev === 'status') {
     if (!msg.cards.some(c => c.type === 'status')) msg.cards.push(statusCard(turn.span));
   }
@@ -2257,24 +2290,10 @@ document.addEventListener('click', e => {
       const span = chatSpan();
       const msg = span.chat.find(m => m.id === el.dataset.m);
       const card = msg && msg.cards[Number(el.dataset.c)];
-      if (!card || !card.trim || card.trim.choice || ui.turn) break;
-      if (a === 'trim-keep') { card.trim.choice = 'keep'; sendMessage('Keep mine'); break; }
-      // Lower each target, and drop planned sessions past it, latest first. Undo puts it all back.
-      const goals = spanFor(card.target) || span;
-      const before = clone({ i: goals.intentions, o: goals.occurrences });
-      for (const t of card.trim.trims) {
-        const g = goals.intentions.find(x => x.id === t.goal_id);
-        if (!g || g.target !== t.requested) continue;
-        g.target = t.suggested;
-        const need = g.target - doneOf(goals, g.id);
-        while (plannedOf(goals, g.id) > need) {
-          const last = occOf(goals, g.id).filter(o => !o.done && !o.missed).sort((x, y) => y.day - x.day)[0];
-          goals.occurrences = goals.occurrences.filter(o => o !== last);
-        }
-      }
-      card.trim.choice = 'use';
-      sendMessage('Use the suggestion');
-      toast('Suggestion used.', () => { goals.intentions = before.i; goals.occurrences = before.o; card.trim.choice = null; render(); });
+      if (!card || !card.trim || card.trim.choice || ui.turn || latestTrim(span) !== card) break;
+      const use = a === 'trim-use';
+      resolveTrim(card, use ? 'use' : 'keep');
+      sendMessage(use ? 'Use the suggestion' : 'Keep mine');
       break;
     }
     case 'log-flip': {

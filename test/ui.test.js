@@ -164,11 +164,55 @@ test.describe('Deka app', { skip }, () => {
     await idle();
     let cur = (await stored()).current;
     assert.equal(cur.intentions.find(g => g.id === 'run').target, 6, 'eight runs became six');
-    assert.match(await text('.goals-card .state'), /Suggestion used/);
+    assert.match(await text('.goals-card .state'), /Trim applied/);
     assert.equal(cur.chat.filter(m => m.role === 'user').at(-1).text, 'Use the suggestion');
     await click('.toast [data-a=toast-undo]');
     cur = (await stored()).current;
     assert.equal(cur.intentions.find(g => g.id === 'run').target, 8, 'Undo restores the counts');
+  });
+
+  // A trim card from the stand in: eight runs, gym and Rentletter trimmed to six, music and mom to five and four.
+  const trimmed = async () => {
+    await fresh(); await click('[data-a=intro-start]');
+    await say('eight runs, gym eight times, rentletter eight nights, make music eight nights, see mom five times');
+    await idle();
+  };
+  const cardState = () => page.js(`(() => { const c = [...document.querySelectorAll('.goals-card')].pop(); return {
+    buttons: c.querySelectorAll('[data-a=trim-use], [data-a=trim-keep]').length, cut: c.querySelectorAll('.dots i.cut').length,
+    arrows: [...c.querySelectorAll('.num')].filter(n => /→/.test(n.textContent)).length, state: (c.querySelector('.state') || {}).textContent || '',
+    runDots: c.querySelectorAll('.gr.c-body .dots')[0].children.length, meterArrow: /→/.test(c.querySelector('.meter').textContent) }; })()`);
+
+  test('accepting a trim by text applies it through the same path as the button, and the card settles', async () => {
+    await trimmed();
+    await say('your trim sounds good'); await idle();
+    const sent0 = sent.at(-1).tools.map(t => t.name);
+    assert.ok(sent0.includes('resolve_trim'), 'Deka can answer the open trim');
+    assert.deepEqual(await cardState(), { buttons: 0, cut: 0, arrows: 0, state: 'Trim applied', runDots: 6, meterArrow: false });
+    const cur = (await stored()).current;
+    assert.equal(cur.intentions.find(g => g.id === 'run').target, 6);
+    assert.equal(await page.js("document.querySelectorAll('.card [data-a=confirm]').length"), 1, 'and Deka plans in the same turn');
+    assert.equal(sent.at(-1).messages.at(-1).content.includes('"open_trim"'), true, 'the open trim went with the message');
+  });
+
+  test('turning a trim down by text keeps the numbers, and the card settles', async () => {
+    await trimmed();
+    await say('keep my numbers'); await idle();
+    assert.deepEqual(await cardState(), { buttons: 0, cut: 0, arrows: 0, state: 'Kept your numbers', runDots: 8, meterArrow: false });
+    assert.equal((await stored()).current.intentions.find(g => g.id === 'run').target, 8);
+  });
+
+  test('only the newest trim card can be answered; an older one goes quiet with no buttons', async () => {
+    await trimmed();
+    await say('also eight date nights and six sober nights'); await idle();
+    const cards = await page.js(`[...document.querySelectorAll('.goals-card')].map(c => ({ buttons: c.querySelectorAll('[data-a=trim-use]').length, quiet: c.classList.contains('quiet'), trim: c.querySelectorAll('.dots i.cut').length > 0 }))`);
+    const withTrim = cards.filter(c => c.trim);
+    assert.equal(withTrim.length, 2, 'two trim cards');
+    assert.deepEqual(withTrim.map(c => c.buttons), [0, 1], 'only the newest has buttons');
+    assert.equal(withTrim[0].quiet, true);
+    // Tapping the old card, if it had buttons, would do nothing; the newest answers as usual.
+    await click('[data-a=trim-use]'); await idle();
+    const states = await page.js(`[...document.querySelectorAll('.goals-card .state')].map(s => s.textContent)`);
+    assert.deepEqual(states, ['Trim applied']);
   });
 
   test('the goals card lines up at every width in both themes, with no orphan words', async () => {
