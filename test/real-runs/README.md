@@ -1,5 +1,27 @@
 # Real runs
 
+## Latest: scenarios 1 to 9 on the default setup (Opus 5.5, low effort)
+
+In `latest/`, run on 2026-09-23 after the open check in, light date night and no carryover changes. Scenario 9 is a check in where Deka asks about two sessions and gets no answer, then the next evening's check in.
+
+| Scenario | Run 1 | Run 2 |
+|---|---|---|
+| 1 full dump | pass | pass |
+| 2 book and trim | pass | pass |
+| 3 tweaks | pass | pass |
+| 4 add coffee | pass | pass |
+| 5 check in day 2 | pass | pass |
+| 6 skipped check in | pass | pass |
+| 7 day 10 review | fail | pass |
+| 8 long chat | pass | pass |
+| 9 unanswered check in | pass | pass |
+
+Run 1, scenario 7 failed only on the first try: Deka tried to remove the finished book from the next deka, which starts empty, so both calls were rejected; the retry went through and the review itself is fine. Median first word 7.5 s, median total 13.3 s, $0.046 a turn, $0.64 a run.
+
+## Earlier: the setup comparison
+
+The folders `a-opus-medium/`, `b-opus-low/`, `c-sonnet-default/` and `d-sonnet-low/` hold the comparison that picked the default, run with the prompt as it was then (scenarios 1 to 8).
+
 Deka against the real Claude API, through the real server and tool loop, on 2026-09-23. Each run plays eight scenarios; each setup ran twice, and the new default four times. The deka starts on Wednesday 2026-09-23, so day 3 is a Friday and days 4 and 5 are the only weekend. Scenario 8 starts from a deka on day 5 whose chat already holds 43 messages, with the key decisions (no runs on Tuesdays, day 4 free, mom on weekends only, the trim) only in the oldest ones, so they must survive in the summary.
 
 Made with `node --env-file=.env.local scripts/real-runs.js --runs 2 --out <folder>`, with `CLAUDE_MODEL` and `CLAUDE_EFFORT` set per setup. Transcripts are in one folder per setup, one file per scenario.
