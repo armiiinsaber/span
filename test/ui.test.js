@@ -62,7 +62,7 @@ function liveState(day = 4, extra = {}) {
   const occ = [];
   for (const [id, days] of [['run', [1, 3, 4, 6, 8]], ['gym', [2, 4, 7]], ['sober', [5, 9]]]) for (const d of days) occ.push({ intention_id: id, day: d, done: false, detail: '' });
   return {
-    v: 1, seen: true, next: null, spans: [], settings: { checkin: '23:59' },
+    v: 1, seen: true, next: null, spans: [], settings: { checkin: '23:59', theme: 'system' },
     current: {
       id: 'c1', start: daysAgo(day - 1), status: 'live', notes: {}, log: [], chat: [], summary: '', summarizedUpTo: 0, checked: [], checkin: {},
       note: '', question: '', reflection: '', review: '',
@@ -81,7 +81,8 @@ const seed = async (state, key = 'deka.v1') => {
   })()`);
   await page.go();
 };
-const fresh = () => seed(null);
+// A new device that has already answered the theme question.
+const fresh = () => seed({ v: 1, current: null, next: null, spans: [], settings: { theme: 'system' } });
 const text = sel => page.js(`(document.querySelector(${JSON.stringify(sel)})?.textContent || '').replace(/\u00a0/g, ' ')`);
 const stored = () => page.js("JSON.parse(localStorage.getItem('deka.v1'))");
 const lastDeka = () => page.js("[...document.querySelectorAll('.msg.deka .t')].pop()?.textContent || ''");
@@ -269,6 +270,8 @@ test.describe('Deka app', { skip }, () => {
     for (const k of ['chat', 'summary', 'summarizedUpTo', 'checked', 'checkin']) delete old.current[k];
     old.current.log = [{ role: 'user', text: 'six runs please' }, { role: 'claude', text: 'Done. Six runs.' }];
     await seed(old, 'span.v1');
+    assert.match(await page.js("document.querySelector('h1').textContent"), /Light or/, 'old data has no theme choice yet');
+    await click('[data-a=theme][data-v=system]');
     assert.match(await page.js("document.querySelector('.chat').textContent"), /six runs please[\s\S]*Done\. Six runs\./);
     const s = await stored();
     assert.equal(s.settings.checkin, '20:00');
@@ -343,6 +346,94 @@ test.describe('Deka app', { skip }, () => {
     await page.js("(() => { const t = document.getElementById('msg'); t.value = 'short'; t.dispatchEvent(new Event('input', { bubbles: true })); })()");
     assert.equal(await page.js("document.getElementById('tooLong').hidden"), true);
     await page.js("document.getElementById('msg').value = ''");
+  });
+
+  test('right after the passcode, one screen asks light or dark, once per device, applied before paint', async () => {
+    const st = liveState(4);
+    delete st.settings.theme;
+    await seed(st);
+    await page.js("fetch('/api/logout', { method: 'POST' })");
+    await page.go();
+    await page.js("(() => { document.getElementById('pass').value = 'uitest'; document.querySelector('[data-form=login]').requestSubmit(); })()");
+    await page.waitFor("document.querySelector('.choose')");
+    assert.match(await page.js("document.querySelector('h1').textContent"), /Light or/);
+    assert.equal(await page.js("document.querySelectorAll('.choice').length"), 2);
+    assert.equal(await page.js("getComputedStyle(document.getElementById('tabs')).display"), 'none');
+    await click('[data-a=theme][data-v=dark]');
+    await page.waitFor("!document.querySelector('.choose')");
+    // The crossfade applies the theme on the next frame.
+    await page.waitFor("document.documentElement.dataset.theme === 'dark'", 1000);
+    assert.equal(await page.js("localStorage.getItem('deka.theme')"), 'dark');
+    assert.equal((await stored()).settings.theme, 'dark', 'saved with the data, so export carries it');
+    assert.equal(await page.js("getComputedStyle(document.body).backgroundColor"), 'rgb(20, 19, 15)');
+    assert.equal(await page.js("document.querySelector('meta[name=theme-color]').content"), '#14130F');
+    // Before paint: the theme is on the root before the body exists.
+    const { result } = await page.S('Page.addScriptToEvaluateOnNewDocument', { source: `new MutationObserver((l, o) => { if (document.body) { window.__atBody = document.documentElement.dataset.theme || 'none'; o.disconnect(); } }).observe(document, { childList: true, subtree: true });` });
+    await page.go();
+    await page.S('Page.removeScriptToEvaluateOnNewDocument', { identifier: result.identifier });
+    assert.equal(await page.js('window.__atBody'), 'dark');
+    assert.equal(await page.js("document.querySelector('.choose')"), null, 'asked only once');
+  });
+
+  test('Profile switches the theme at once, and Match iPhone follows the system again', async () => {
+    await seed(liveState(4));
+    await click('[data-a=more]'); await click('[data-a=go-profile]');
+    assert.match(await page.js("document.querySelector('h1').textContent"), /Profile/);
+    const bg = () => page.js("getComputedStyle(document.body).backgroundColor");
+    await click('[data-a=theme][data-v=dark]');
+    await page.waitFor("document.documentElement.dataset.theme === 'dark'", 1000);
+    await page.waitFor(`getComputedStyle(document.body).backgroundColor === 'rgb(20, 19, 15)'`, 2000);
+    assert.equal(await page.js("document.querySelector('[data-a=theme][data-v=dark]').getAttribute('aria-pressed')"), 'true');
+    await click('[data-a=theme][data-v=system]');
+    await page.waitFor("!document.documentElement.hasAttribute('data-theme')", 1000);
+    await page.S('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
+    await page.waitFor(`getComputedStyle(document.body).backgroundColor === 'rgb(20, 19, 15)'`, 2000);
+    await click('[data-a=theme][data-v=light]');
+    await page.waitFor(`getComputedStyle(document.body).backgroundColor === 'rgb(245, 243, 236)'`, 2000);
+    assert.ok(await bg());
+    await page.S('Emulation.setEmulatedMedia', { features: [] });
+    // An imported file brings its theme with it.
+    const file = liveState(4); file.settings.theme = 'dark';
+    await page.js(`window.confirm = () => true; (() => { const f = new File([${JSON.stringify(JSON.stringify(file))}], 'deka.json', { type: 'application/json' }); const dt = new DataTransfer(); dt.items.add(f); const i = document.getElementById('importFile'); i.files = dt.files; i.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    await page.waitFor("document.documentElement.dataset.theme === 'dark'", 4000);
+  });
+
+  test('with Reduce Motion the theme switches at once, with no crossfade', async () => {
+    await seed(liveState(4));
+    await page.S('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    await click('[data-a=more]'); await click('[data-a=go-profile]');
+    assert.equal(await page.js("(() => { document.querySelector('[data-a=theme][data-v=dark]').click(); return document.documentElement.dataset.theme; })()"), 'dark');
+    await page.S('Emulation.setEmulatedMedia', { features: [] });
+  });
+
+  test('the top edge covers only the status bar, never the header, and shows only after scrolling', async () => {
+    const st = liveState(4);
+    for (let i = 0; i < 12; i++) st.current.chat.push({ id: `m${i}`, role: i % 2 ? 'deka' : 'user', text: 'A line of chat to scroll past.', ts: i, cards: [] });
+    await seed(st);
+    const check = () => page.js(`(() => {
+      const edge = document.getElementById('topEdge'), bar = document.querySelector('.bar'), inner = document.querySelector('.bar-in');
+      const e = edge.getBoundingClientRect(), b = inner.getBoundingClientRect(), cs = getComputedStyle(bar), ci = getComputedStyle(inner);
+      return { edgeBottom: e.bottom, headerTop: b.top, soft: getComputedStyle(edge, '::after').opacity, on: edge.classList.contains('on'),
+        sharp: cs.filter === 'none' && ci.filter === 'none' && cs.opacity === '1' && ci.opacity === '1' && (cs.backdropFilter || 'none') === 'none' && cs.maskImage === 'none' };
+    })()`);
+    for (const screen of ['chat', 'days', 'goals', 'past', 'profile']) {
+      if (screen === 'past' || screen === 'profile') { await click('[data-tab=chat]'); await click('[data-a=more]'); await click(`[data-a=go-${screen}]`); }
+      else await click(`[data-tab=${screen}]`);
+      await page.js('window.scrollTo(0, 0)');
+      // The soft edge fades out over 200 ms after the page is back at the top.
+      await page.waitFor("getComputedStyle(document.getElementById('topEdge'), '::after').opacity === '0'", 2000).catch(() => {});
+      const top = await check();
+      assert.ok(top.edgeBottom <= top.headerTop, `${screen}: the edge ends above the header`);
+      assert.equal(top.soft, '0', `${screen}: no fade at the top of the page`);
+      assert.equal(top.sharp, true, `${screen}: the header is sharp`);
+      if (screen === 'chat' || screen === 'days') {
+        await page.js('window.scrollTo(0, 300)'); await sleep(260);
+        const mid = await check();
+        assert.equal(mid.on, true, `${screen}: the soft edge shows once scrolled`);
+        assert.equal(mid.sharp, true, `${screen}: the header stays sharp while it scrolls away`);
+      }
+      if (screen === 'past' || screen === 'profile') await click('[data-a=back]');
+    }
   });
 
   test('the living mark moves while Deka thinks and settles when done', async () => {

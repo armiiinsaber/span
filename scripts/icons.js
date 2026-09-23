@@ -14,7 +14,7 @@ const ASSETS = path.join(ROOT, 'node_modules', '@phosphor-icons', 'core', 'asset
 const PAGE = path.join(ROOT, 'public', 'index.html');
 
 // Icons the app itself uses, beyond the goal icons.
-const EXTRA = { ui_target: 'target' };
+const EXTRA = { ui_target: 'target', ui_profile: 'user-circle' };
 
 const body = (name, weight = 'regular') => {
   const file = weight === 'regular' ? `${name}.svg` : `${name}-${weight}.svg`;
