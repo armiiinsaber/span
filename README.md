@@ -1,32 +1,60 @@
 # Deka
 
-A planner built on 10 day cycles called dekas instead of weeks, with Claude as the planner.
+A planner built on 10 day cycles called dekas instead of weeks, with a chat at its heart. You talk to Deka (powered by Claude) about what the next 10 days hold, it keeps your goals and schedule in shape, and you live it one day at a time.
 
-Days are Day 1 to Day 10. Days 1 to 9 are for living the plan. Day 10 is review. You tell Claude what the next 10 days hold, it proposes a plan, you refine it by talking or by hand, then you live it one day at a time.
+Days are Day 1 to Day 10. Days 1 to 9 are for living the plan. Day 10 is the review, which happens in the chat.
 
 Live at dekaapp.com. Design follows DESIGN.md in the melomaniacstudios repo.
 
 ## How it is built
 
 ```
-server.js           Express app, default export: passcode gate, rate limits, POST /api/plan
+server.js           Express app, default export: passcode gate, rate limits, POST /api/chat
 vercel.json         Function max duration and static headers
-lib/planner.js      System prompt, the set_plan tool, one retry on invalid output
-lib/validate.js     Server checks on every plan Claude returns
-lib/mock.js         Dev only stand in for Claude (DEKA_MOCK=1)
+lib/chat.js         Deka's system prompt, the context each turn sends, the streamed tool loop
+lib/tools.js        The tools and the checks every call must pass
+lib/validate.js     Text cleaning shared by the tools
+lib/mock.js         Dev only stand in for Claude that streams and calls tools (DEKA_MOCK=1)
 public/index.html   The whole app: inline CSS and JS, served as a static file
 public/sw.js        Offline shell for the installed PWA
-public/brand/       Every icon and iOS splash screen (see Logo and icons)
+public/brand/       Every icon and iOS splash screen, built from brand/ (see Logo)
 public/fonts/       Melomaniac Serif and Inter, self hosted as subset WOFF2
-scripts/brand.js    Draws the placeholder icons and splash screens
+brand/              The Deka mark: the source PNG and the traced SVGs
+scripts/            trace_mark.py (PNG to SVG) and brand.js (SVG to icons and splash screens)
 test/               node:test suites; ui.test.js drives headless Chrome
 ```
 
-The app is three tabs: Today, Deka (the 10 day grid) and Plan (talk to Claude). Past dekas and Settings sit behind the icon in the header. Tapping an intention opens a sheet to rename it, change its count, move a day by tapping the dot and then the new day, or delete it. On desktop, dots can also be dragged along their row.
+The app has three tabs:
 
-All plan data lives in localStorage on the device. Export and import it as JSON under Settings. The server stores nothing.
+- **Deka**, the chat. You add goals in plain language, one at a time or as a long list. Deka turns them into short goals with a type (do, see or abstain) and a target, and asks one short question only when something is unclear. When the goals look complete, when you ask, or when something changes, Deka proposes a schedule as a card with Confirm and Tweak. Nothing changes until you tap Confirm.
+- **Days**, today's checklist at the top and the ten day tiles below. Tap a tile to open that day.
+- **Goals**, every goal with its target and progress. Tap one to rename it, change its count, move a day by tapping the dot and then the new day, or delete it. On desktop, dots can also be dragged along their row.
 
-Claude answers through the `set_plan` tool. The server checks that days are 1 to 9, that each intention's occurrences match its target, and that nothing lands twice on one day. On rebalance it also checks that completed work stays put and nothing is placed in the past. If a plan fails, the errors go back to Claude once as a tool result. If the second try fails too, the app shows a plain retry message. Everything still works by hand when the API is down.
+Past dekas and Settings sit behind the icon in the header. Each deka has its own chat thread; past threads stay readable in Past dekas.
+
+**Check in.** Settings holds a daily check in time, 8:00 pm by default. The first time the app opens after that time, Deka has already asked "How did today go?". Your answer is logged on the day (tap a result on the card to correct it), and Deka proposes how the rest of the deka fits. A skipped day is asked about the next evening.
+
+**Review.** On Day 10 Deka opens the review in the chat: what held, what slipped, one pattern. It then drafts the next deka's goals and schedule. Confirming it starts the next deka with a fresh thread.
+
+**The mark.** The ten dots of the logo are the app's only loading indicator. While Deka thinks, and while a reply streams in, a wave runs through the dots from Day 1 to Day 10. With reduced motion, the mark stays still and gently pulses instead.
+
+**Offline.** Everything except talking to Deka works offline. Messages sent offline show as waiting and send when the connection returns.
+
+All data lives in localStorage on the device, including the chat threads, the summaries and the check in time. Export and import it as JSON under Settings. The server stores nothing.
+
+### How Deka works
+
+Each message is one request to `POST /api/chat`, answered as server sent events (`text`, `goals`, `log`, `proposal`, `summary`, `error`, `done`). The server is stateless: the app sends the goals, the schedule with what is done or missed, today's date, the date and weekday of every day, the last 30 messages and a summary of older ones. When older messages drop out of that window, Deka writes the summary itself with `save_summary`.
+
+Claude replies in text and calls three tools:
+
+| Tool | What it does | Checked on the server |
+|---|---|---|
+| `update_goals` | Adds, edits or removes goals | Unique ids, a type, targets 1 to 9, never below what is already done |
+| `log_day` | Marks sessions done or missed on a day | Only days that have started, known goals |
+| `propose_schedule` | A full schedule for what is left, with short change lines for the card | Days 1 to 9, counts match targets, no goal twice on a day, done and missed sessions never move, nothing on a passed day |
+
+A call that fails its checks goes back to Claude once with the errors. If the second try fails too, the turn ends with a plain message and a Try again link, and nothing reaches the app. The app checks a proposal again when you tap Confirm, in case the plan changed by hand since.
 
 ### Data from before the rename
 
@@ -41,7 +69,7 @@ Set these in the Vercel project under Settings, Environment Variables, for Produ
 | `ANTHROPIC_API_KEY` | yes | Server only. Never sent to the browser. |
 | `DEKA_PASSCODE` | yes | The one passcode. Needed to log in and for every `/api` call. Changing it signs every device out. Falls back to `SPAN_PASSCODE` when unset. |
 | `CLAUDE_MODEL` | no | Defaults to `claude-opus-5-5`. |
-| `CLAUDE_EFFORT` | no | `low`, `medium` (default), `high`. Higher is slower and costs more. |
+| `CLAUDE_EFFORT` | no | `low`, `medium` (default), `high`. Higher plans more carefully but replies start later and cost more. |
 | `DEKA_MOCK` | no | Local only. `1` plans with a scripted stand in when there is no key. Ignored in production. |
 
 ## Local dev
@@ -73,7 +101,7 @@ Vercel detects Express from `server.js`. Its default export is the app, and the 
 
 The session is an HttpOnly cookie, `SameSite=Lax`, `Secure` over HTTPS, and host only, so it belongs to dekaapp.com alone. Because www redirects to the apex, every login happens on dekaapp.com.
 
-The rate limits (30 plan calls per 10 minutes, 10 login tries per 15 minutes, per IP) live in memory. Vercel runs several instances that do not share memory, so these limits are soft: each instance counts on its own and a new instance starts at zero. The passcode is the real protection; keep it long. For a hard limit, add Vercel Firewall rate limiting on `/api/plan`.
+The rate limits (40 chat messages per 10 minutes, 10 login tries per 15 minutes, per IP) live in memory. Vercel runs several instances that do not share memory, so these limits are soft: each instance counts on its own and a new instance starts at zero. The passcode is the real protection; keep it long. For a hard limit, add Vercel Firewall rate limiting on `/api/chat`.
 
 ## Deploy on Vercel
 
@@ -96,20 +124,31 @@ CNAME  www    <the project CNAME Vercel shows, like d1d4fc829fe7bc7c.vercel-dns-
 
 The www value is unique to each project, and Vercel may show a newer A value on the card; when the card differs from the above, use the card. Remove any other A, AAAA or CNAME records on `@` and `www` first, such as a registrar's parking page. Vercel issues the certificates once DNS resolves.
 
-## Logo and icons
+## Logo
 
-Every icon and splash reference points into `public/brand/`, and the page lists them in one marked block in `public/index.html` (between `<!-- Brand:` and `<!-- End brand -->`). The files are placeholders drawn by `scripts/brand.js`:
+The mark is ten dots on a spiral, one per day of a deka, growing from Day 1 to Day 10. The source image is `brand/deka-mark.png`.
 
 ```
-public/brand/icon.svg                 browser tab icon
-public/brand/icon-180.png             iPhone home screen (apple-touch-icon)
+brand/deka-mark.svg         traced master: ten circles, ids day1 to day10, centred in a square viewBox
+brand/deka-mark-ink.svg     near black ink on transparent, for use on ivory
+brand/deka-icon.svg         app icon: ink ground, ivory dots, Day 10 in chartreuse
+brand/deka-mark-small.svg   favicon version: the small dots enlarged so every dot reads at 16 and 32 px
+```
+
+`python3 scripts/trace_mark.py` measures the ten circles in the PNG (centre and radius to a fraction of a pixel) and writes the four SVGs. It needs Python 3 with numpy, scipy and pillow. `node scripts/brand.js` then builds everything in `public/brand/` from the SVGs and rewrites the one marked brand block in `public/index.html`:
+
+```
+public/brand/icon.svg                 favicon, from deka-mark-small.svg
+public/brand/icon-180.png             iPhone home screen, from deka-icon.svg
 public/brand/icon-192.png             manifest icon
 public/brand/icon-512.png             manifest icon
-public/brand/icon-maskable-512.png    manifest icon, safe zone padded for Android masks
-public/brand/splash-<w>x<h>.png       iOS launch screens, one per iPhone size (10 files)
+public/brand/icon-maskable-512.png    manifest icon, mark inside the maskable safe zone
+public/brand/splash-<w>x<h>.png       iOS launch screens: ivory, small ink mark (10 files)
 ```
 
-To use the real logo, replace those files with the same names and sizes, then bump `CACHE` in `public/sw.js` so installed copies fetch them. Nothing else changes. If you change the list of splash sizes, edit `SPLASH` in `scripts/brand.js` and run `node scripts/brand.js`; it rewrites the brand block in `index.html`. The wordmark in the header is set in type (`.mark` in `index.html`), not an image.
+After changing the mark, run both scripts and bump `CACHE` in `public/sw.js`. Inside the app the mark is drawn inline from the same ten circles, so the header, login, first run and every waiting state use the same shape.
+
+iOS may keep showing the old home screen icon until the app is removed from the home screen and added again.
 
 ## Install on iPhone
 
