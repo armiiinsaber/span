@@ -86,3 +86,18 @@ test('log_day marks, moves a later session forward, and refuses the future', () 
   assert.match(errs(runTool('log_day', { day: 3, entries: [{ goal_id: 'ghost', status: 'done' }] }, w)), /No goal/);
   assert.match(errs(runTool('log_day', { day: 1, entries: [{ goal_id: 'run', status: 'done' }] }, planning())), /while a deka is running/);
 });
+
+test('suggest_trim lowers nothing itself and checks each goal, count and floor', () => {
+  const w = planning();
+  const ok = runTool('suggest_trim', { trims: [{ goal_id: 'run', requested: 3, suggested: 2 }], reason: 'time alone \u2014 every other day' }, w);
+  assert.equal(ok.ok, true, errs(ok));
+  assert.deepEqual(ok.event, { type: 'trim', trims: [{ goal_id: 'run', requested: 3, suggested: 2 }], reason: 'time alone, every other day' });
+  assert.equal(w.goals.find(g => g.id === 'run').target, 3, 'the target is unchanged until they choose');
+  assert.match(errs(runTool('suggest_trim', { trims: [], reason: '' }, w)), /at least one/);
+  assert.match(errs(runTool('suggest_trim', { trims: [{ goal_id: 'ghost', requested: 1, suggested: 1 }], reason: '' }, w)), /No goal/);
+  assert.match(errs(runTool('suggest_trim', { trims: [{ goal_id: 'run', requested: 5, suggested: 2 }], reason: '' }, w)), /requested must be 3/);
+  assert.match(errs(runTool('suggest_trim', { trims: [{ goal_id: 'run', requested: 3, suggested: 3 }], reason: '' }, w)), /from 1 to 2/);
+  assert.match(errs(runTool('suggest_trim', { trims: [{ goal_id: 'run', requested: 3, suggested: 2 }, { goal_id: 'run', requested: 3, suggested: 1 }], reason: '' }, w)), /listed twice/);
+  const lw = live(5, [{ goal_id: 'run', day: 1, status: 'done' }, { goal_id: 'run', day: 2, status: 'done' }]);
+  assert.match(errs(runTool('suggest_trim', { trims: [{ goal_id: 'run', requested: 3, suggested: 1 }], reason: '' }, lw)), /from 2 to 2/, 'never below what is done');
+});

@@ -51,7 +51,7 @@ test('a malformed proposal goes back once with errors, and only the fixed one re
   assert.equal(retry.is_error, true);
   assert.match(retry.content, /twice on day 3/);
   assert.equal(client.calls[0].tool_choice.type, 'auto');
-  assert.deepEqual(client.calls[0].tools.map(t => t.name), ['update_goals', 'log_day', 'propose_schedule', 'mark_off_topic']);
+  assert.deepEqual(client.calls[0].tools.map(t => t.name), ['update_goals', 'log_day', 'propose_schedule', 'suggest_trim', 'mark_off_topic']);
 });
 
 test('two invalid calls end the turn with an error and nothing applied', async () => {
@@ -72,7 +72,7 @@ test('goals then a proposal in one turn are judged together', async () => {
 test('review turns cannot log days, and older messages ask for a summary', async () => {
   const client = scripted([{ text: 'Ok.' }]);
   await collect(client, body({ phase: 'review', event: { kind: 'review' }, message: null, to_summarize: [{ role: 'user', text: 'old' }] }));
-  assert.deepEqual(client.calls[0].tools.map(t => t.name), ['update_goals', 'propose_schedule', 'show_status', 'mark_off_topic', 'save_summary']);
+  assert.deepEqual(client.calls[0].tools.map(t => t.name), ['update_goals', 'propose_schedule', 'suggest_trim', 'show_status', 'mark_off_topic', 'save_summary']);
   assert.match(client.calls[0].messages.at(-1).content, /Event: review/);
 });
 
@@ -103,11 +103,11 @@ test('calls made before any reply get a follow up request for the reply', async 
   assert.equal(ev.filter(e => e[0] === 'text').map(e => e[1].delta).join(''), 'Runs on days 2 and 5.');
 });
 
-test('text from a retry round joins the first with one space', async () => {
-  const client = scripted([{ text: 'Here it is.', tools: [twoRuns([3, 3])] }, { text: 'Fixed.', tools: [twoRuns([3, 7])] }]);
+test('once a reply is written, a retry round adds no text, so nothing repeats', async () => {
+  const client = scripted([{ text: 'Here it is.', tools: [twoRuns([3, 3])] }, { text: 'Here it is again.', tools: [twoRuns([3, 7])] }]);
   const ev = await collect(client, body());
   assert.equal(client.calls.length, 2);
-  assert.equal(ev.filter(e => e[0] === 'text').map(e => e[1].delta).join(''), 'Here it is. Fixed.');
+  assert.equal(ev.filter(e => e[0] === 'text').map(e => e[1].delta).join(''), 'Here it is.');
 });
 
 test('an open card reaches Claude with every session', () => {
