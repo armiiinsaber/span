@@ -8,12 +8,11 @@ process.env.ANTHROPIC_API_KEY = KEY;
 process.env.DEKA_PASSCODE = 'letmein';
 const { createApp } = require('../server');
 
-const valid = {
-  intentions: [{ id: 'gym', name: 'Gym', type: 'do', tag: '', target: 1 }],
-  occurrences: [{ intention_id: 'gym', day: 4, detail: '' }],
-  question: '', note: 'One gym day.', review: '',
-};
-const client = { messages: { create: async () => ({ stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't', name: 'set_plan', input: valid }] }) } };
+// A stand in that streams one short reply.
+const client = { messages: { stream() {
+  let onText = () => {};
+  return { on(e, cb) { if (e === 'text') onText = cb; return this; }, abort() {}, async finalMessage() { onText('One gym '); onText('day.'); return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'One gym day.' }] }; } };
+} } };
 const days = Array.from({ length: 10 }, (_, i) => ({ day: i + 1, date: `2026-09-${22 + i}`, weekday: 'X' }));
 
 let server, base;
@@ -27,7 +26,7 @@ test.after(() => server.close());
 const post = (p, body, cookie) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(body) });
 
 test('api is locked without a session', async () => {
-  const r = await post('/api/plan', { mode: 'plan', days });
+  const r = await post('/api/chat', { phase: 'planning', days, message: 'hi' });
   assert.equal(r.status, 401);
   assert.equal((await fetch(base + '/api/session')).status, 401);
 });
@@ -61,10 +60,11 @@ test('the module default export is the app, for Vercel', () => {
 test('plan works with a session and never echoes the key', async () => {
   const login = await post('/api/login', { passcode: 'letmein' });
   const cookie = login.headers.get('set-cookie').split(';')[0];
-  const r = await post('/api/plan', { mode: 'plan', days, message: 'gym once', plan: { intentions: [], occurrences: [] } }, cookie);
+  const r = await post('/api/chat', { phase: 'planning', days, message: 'gym once', goals: [], schedule: [] }, cookie);
   const text = await r.text();
   assert.equal(r.status, 200, text);
-  assert.equal(JSON.parse(text).plan.occurrences[0].day, 4);
+  assert.match(r.headers.get('content-type'), /text\/event-stream/);
+  assert.match(text, /event: text\ndata: \{"delta":"One gym"\}[\s\S]*"delta":" day\."[\s\S]*event: done/);
   assert.ok(!text.includes(KEY));
   assert.ok(!r.headers.get('set-cookie')?.includes(KEY));
 });
@@ -82,12 +82,12 @@ test('no served file contains the key or reads it', async () => {
   assert.ok(!root.includes(KEY));
 });
 
-test('rate limit kicks in on /api/plan', async () => {
+test('rate limit kicks in on /api/chat', async () => {
   const login = await post('/api/login', { passcode: 'letmein' });
   const cookie = login.headers.get('set-cookie').split(';')[0];
   let limited = false;
-  for (let i = 0; i < 35; i++) {
-    const r = await post('/api/plan', { mode: 'plan', days, message: 'x', plan: { intentions: [], occurrences: [] } }, cookie);
+  for (let i = 0; i < 45; i++) {
+    const r = await post('/api/chat', { phase: 'planning', days, message: 'x' }, cookie);
     if (r.status === 429) { limited = true; break; }
   }
   assert.ok(limited);

@@ -6,7 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
-const { plan, PlanError, MODEL } = require('./lib/planner');
+const { runChat, MODEL } = require('./lib/chat');
 
 const PORT = process.env.PORT || 3000;
 // SPAN_PASSCODE is the name from before the rename, read only when DEKA_PASSCODE is unset.
@@ -93,29 +93,37 @@ function createApp({ client } = {}) {
 
   app.get('/api/session', (req, res) => res.json({ ok: true, model: MODEL, ai: Boolean(client) }));
 
-  app.post('/api/plan', limiter({ windowMs: 10 * 60 * 1000, max: 30 }), async (req, res) => {
+  // One chat turn, streamed back as server sent events: text, goals, log, proposal, summary, error, done.
+  app.post('/api/chat', limiter({ windowMs: 10 * 60 * 1000, max: 40 }), async (req, res) => {
     const body = req.body || {};
-    if (!['plan', 'refine', 'rebalance', 'review'].includes(body.mode)) {
-      return res.status(400).json({ error: 'Unknown mode.' });
-    }
-    if (!Array.isArray(body.days) || body.days.length !== 10) {
-      return res.status(400).json({ error: 'Need the 10 day mapping.' });
-    }
-    if (typeof body.message === 'string' && body.message.length > 4000) {
-      return res.status(400).json({ error: 'That message is too long.' });
-    }
+    if (!['planning', 'live', 'review'].includes(body.phase)) return res.status(400).json({ error: 'Unknown phase.' });
+    if (!Array.isArray(body.days) || body.days.length !== 10) return res.status(400).json({ error: 'Need the 10 day mapping.' });
+    if (body.message != null && (typeof body.message !== 'string' || body.message.length > 4000)) return res.status(400).json({ error: 'That message is too long.' });
+    if (!body.message && !body.event) return res.status(400).json({ error: 'Nothing to say.' });
     if (!client) return res.status(503).json({ error: 'Claude is not set up on the server.' });
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.flushHeaders?.();
+    const send = (event, data) => { if (!res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
+    const ping = setInterval(() => { if (!res.writableEnded) res.write(': ping\n\n'); }, 15000);
+    const abort = new AbortController();
+    res.on('close', () => { if (!res.writableFinished) abort.abort(); });
     try {
-      const result = await plan(client, body, msg => console.log(`[plan] ${msg}`));
-      res.json({ ok: true, plan: result });
+      await runChat(client, body, send, { signal: abort.signal, log: msg => console.log(`[chat] ${msg}`) });
     } catch (err) {
-      if (err instanceof PlanError) {
-        console.warn(`[plan] ${err.message} ${err.details.join(' | ')}`);
-        return res.status(502).json({ error: err.message });
+      if (!abort.signal.aborted) {
+        console.error('[chat] API error', err.status || '', err.message);
+        send('error', { message: err.status === 429 ? 'Deka is busy. Try again soon.' : 'Deka did not answer.' });
       }
-      console.error('[plan] API error', err.status || '', err.message);
-      const status = err.status === 429 ? 429 : 502;
-      res.status(status).json({ error: status === 429 ? 'Claude is busy. Try again soon.' : 'Could not reach Claude.' });
+    } finally {
+      clearInterval(ping);
+      send('done', {});
+      res.end();
     }
   });
 
