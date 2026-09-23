@@ -49,6 +49,9 @@ const dayMap = start => Array.from({ length: 10 }, (_, i) => ({ day: i + 1, date
 
 /* The app state, ported from public/index.html */
 
+const IDENTITY = ['icon', 'category', 'energy', 'social', 'fun', 'time_of_day', 'weekend'];
+const identity = g => Object.fromEntries(IDENTITY.filter(k => g[k] != null).map(k => [k, g[k]]));
+
 let uidN = 0;
 const uid = () => `u${++uidN}`;
 const newSpan = start => ({ id: uid(), start, status: 'planning', intentions: [], occurrences: [], notes: {}, chat: [], summary: '', summarizedUpTo: 0, checked: [], checkin: {}, reflection: '', review: '' });
@@ -80,7 +83,8 @@ class App {
       for (const c of m.cards || []) {
         if (c.type === 'goals') t += `\n[Goals updated: ${c.lines.join('; ')}]`;
         if (c.type === 'log') t += `\n[Logged day ${c.day}]`;
-        if (c.type === 'proposal') t += `\n[Proposed a plan: ${c.changes.join('; ')}. ${c.status === 'open' ? 'Waiting for them to confirm' : c.status}]`;
+        if (c.type === 'proposal') t += `\n[Proposed a plan: ${c.summary || (c.changes || []).join('; ')}. ${c.status === 'open' ? 'Waiting for them to confirm' : c.status}]`;
+        if (c.type === 'status') t += '\n[Showed where we are]';
       }
       return { role: m.role === 'user' ? 'user' : 'assistant', text: t };
     };
@@ -91,7 +95,7 @@ class App {
       today: `${weekday(this.today)} ${this.today}`,
       current_day: p === 'live' ? this.dayNum(span) : null,
       days: dayMap(target.start),
-      goals: target.intentions.map(({ id, name, type, tag, target: n }) => ({ id, name, type, tag: tag || '', target: n })),
+      goals: target.intentions.map(g => ({ id: g.id, name: g.name, type: g.type, tag: g.tag || '', target: g.target, ...identity(g) })),
       schedule: target.occurrences.map(o => ({ goal_id: o.intention_id, day: o.day, status: occStatus(o), detail: o.detail || '' })),
       notes: target === span ? span.notes : {},
       summary: span.summary || '',
@@ -120,13 +124,13 @@ class App {
     const lines = [];
     for (const c of changes) {
       if (c.op === 'add') {
-        if (!span.intentions.some(g => g.id === c.id)) span.intentions.push({ id: c.id, name: c.name, type: c.type, tag: c.tag || '', target: c.target });
+        if (!span.intentions.some(g => g.id === c.id)) span.intentions.push({ id: c.id, name: c.name, type: c.type, tag: c.tag || '', target: c.target, ...identity(c) });
         lines.push(`Added ${c.name}, ${c.target} ${c.target === 1 ? 'time' : 'times'}`);
       } else if (c.op === 'edit') {
         const g = span.intentions.find(x => x.id === c.id);
         if (!g) continue;
         const was = g.target;
-        Object.assign(g, { name: c.name, type: c.type, tag: c.tag || '', target: c.target });
+        Object.assign(g, { name: c.name, type: c.type, tag: c.tag || '', target: c.target, ...identity(c) });
         lines.push(was !== c.target ? `${c.name} now ${c.target} ${c.target === 1 ? 'time' : 'times'}` : `Updated ${c.name}`);
       } else if (c.op === 'remove') {
         span.intentions = span.intentions.filter(g => g.id !== c.id);
@@ -235,7 +239,8 @@ function recordingClient(sink) {
         sink.calls.push(rec);
         // A call that failed its checks comes back to Claude as an error result in the next request.
         const back = params.messages[params.messages.length - 1];
-        if (Array.isArray(back.content)) for (const b of back.content) if (b.type === 'tool_result' && b.is_error) sink.invalid.push(b.content);
+        // A plan check note asks for a better plan; it is not a failed call.
+        if (Array.isArray(back.content)) for (const b of back.content) if (b.type === 'tool_result' && b.is_error) (/^Valid, but it can be better/.test(b.content) ? sink.improved : sink.invalid).push(b.content);
         const s = real.messages.stream(params);
         s.on('text', d => { if (rec.firstText == null) rec.firstText = Date.now(); rec.raw += d; });
         const final = s.finalMessage.bind(s);
@@ -261,7 +266,7 @@ async function turn(ctx, text, event, ask) {
   const msg = { id: uid(), role: 'deka', text: '', cards: [], pending: true };
   span.chat.push(msg);
   const { body, target, summarizeTo } = app.buildRequest(span, text, event);
-  const sink = { calls: [], invalid: [] };
+  const sink = { calls: [], invalid: [], improved: [] };
   ctx.sink.current = sink;
   const events = [];
   const t0 = Date.now();
@@ -282,12 +287,13 @@ async function turn(ctx, text, event, ask) {
       events.push([ev, d]);
       if (ev === 'text') { if (firstWord == null && d.delta.trim()) firstWord = Date.now(); msg.text += d.delta; }
       else if (ev === 'error') msg.error = d.message;
+      else if (ev === 'status') msg.cards.push({ type: 'status' });
       else if (ev === 'summary') { span.summary = d.summary; span.summarizedUpTo = Math.max(0, summarizeTo); msg.cards.push({ type: 'summary', summary: d.summary }); }
       else if (ev === 'goals') msg.cards.push({ type: 'goals', lines: app.applyGoals(target === 'next' ? app.S.next : span, d.changes), changes: d.changes });
       else if (ev === 'log') { app.applyLog(span, d); msg.cards.push({ type: 'log', day: d.day, entries: d.entries }); }
       else if (ev === 'proposal') {
         for (const m of span.chat) for (const c of m.cards || []) if (c.type === 'proposal' && c.status === 'open') c.status = 'replaced';
-        msg.cards.push({ type: 'proposal', target, occurrences: d.occurrences, changes: d.changes, changed_days: d.changed_days, status: 'open' });
+        msg.cards.push({ type: 'proposal', target, occurrences: d.occurrences, summary: d.summary || '', changes: d.changes || [], changed_days: d.changed_days, status: 'open', flags: d.flags || [], score: d.score || null });
       }
     }
   }
@@ -327,6 +333,8 @@ async function turn(ctx, text, event, ask) {
     rounds: sink.calls.length,
     calls: sink.calls.map(c => ({ ms: (c.ended || t1) - c.started, firstTextMs: c.firstText ? c.firstText - c.started : null, text: c.raw.length, tools: c.tools.map(x => x.name), thinking: c.thinking, out: (c.usage || {}).output_tokens, stop: c.stop })),
     invalid: sink.invalid,
+    improved: sink.improved.length,
+    score: msg.cards.filter(c => c.type === 'proposal').map(c => c.score),
     rawDashes: DASH.test(raw),
     toolDashes: toolStrings.some(s => DASH.test(s)),
     rawText: raw,
@@ -341,7 +349,8 @@ async function turn(ctx, text, event, ask) {
 /* Checks */
 
 const words = s => (s.match(/\S+/g) || []).length;
-function turnChecks(t, { maxWords = 70 } = {}) {
+// Replies are about 30 words at most, the Day 10 review about 70. The checks allow a little over.
+function turnChecks(t, { maxWords = 40 } = {}) {
   const f = [];
   if (t.error) f.push(`error event: ${t.error}`);
   if (t.invalid.length) f.push(`tool call failed validation: ${t.invalid.join(' | ')}`);
@@ -439,7 +448,7 @@ async function run(n) {
   try {
     await scenario('1 full dump', async f => {
       const t = await say('In the next 10 days I want at least one date night, see my mom at least five times, at least six runs, gym at least eight times, make music at least four nights, work on Rentletter at least eight nights, three sober nights with no drinking or smoking, and finish my book.');
-      f.push(...turnChecks(t, { maxWords: 90 }));
+      f.push(...turnChecks(t));
       const s = span();
       const want = [[/date/i, 1, 'see'], [/mom/i, 5, 'see'], [/\brun/i, 6, 'do'], [/gym/i, 8, 'do'], [/music/i, 4, 'do'], [/rentletter/i, 8, 'do'], [/sober/i, 3, 'abstain'], [/book|read/i, null, 'do']];
       const trimmedNow = t.cards.some(c => c.type === 'goals' && c.changes.some(ch => ch.op === 'edit'));
@@ -489,7 +498,9 @@ async function run(n) {
       if (ca && base2) {
         const extra = extraMoves(base2, ca, { days: [4] });
         notes.push(`day 4: moved beyond day 4 itself: ${extra.join(', ') || 'nothing'}`);
-        if (extra.length > 3) f.push(`day 4: rebuilt the card, ${extra.length} other sessions moved`);
+        // Moving the date night can move up to five others: evening work off it, the sober night off the
+        // night before it, and one or two to rebalance. More than that is a rebuild.
+        if (extra.length > 5) f.push(`day 4: rebuilt the card, ${extra.length} other sessions moved`);
       }
       if (!ca) f.push('day 4: no new proposal');
       else f.push(...planChecks(app, span(), cardOcc(span(), ca), { freeDays: [4] }).map(x => `day 4: ${x}`));
@@ -579,9 +590,9 @@ async function run(n) {
         for (const g of no) if (st(second, g) !== 'missed') f.push(`answer: ${g} not logged missed`);
         card = lastProposal(t2);
         if (!card) f.push('answer: no proposal once the day was complete');
-        else if (!/run/i.test(t2.reply + card.changes.join(' '))) f.push('answer: does not say where the run went');
+        else if (!/run/i.test(t2.reply + card.summary)) notes.push('answer: the run move shows only on the card');
       } else if (!card) f.push('no proposal after the check in');
-      else if (!/run/i.test(t.reply + card.changes.join(' '))) f.push('does not say where the run went');
+      else if (!/run/i.test(t.reply + card.summary)) notes.push('the run move shows only on the card');
       if (card) {
         f.push(...planChecks(app, span(), cardOcc(span(), card), { freeDays: [4], momWeekends: true, from: 2, closed: true }));
         if (!app.confirm()) f.push('the app would reject the card as stale');
@@ -627,7 +638,7 @@ async function run(n) {
       const ended = span().intentions.map(g => `${g.name} ${doneOf(span(), g.id)}/${g.target}`).join(', ');
       notes.push(`deka ended at: ${ended}`);
       const t = await say(null, { kind: 'review' });
-      f.push(...turnChecks(t, { maxWords: 130 }));
+      f.push(...turnChecks(t, { maxWords: 90 }));
       if (!/run|gym|workout|train/i.test(t.reply)) f.push('review does not name the slipped workouts');
       if (/amazing|incredible|crushed|proud of you|fantastic/i.test(t.reply)) f.push('gushing');
       if (/^[^.]*\b(below|here is|here's|written up)\b/i.test(t.reply)) f.push('opens with a preamble');
@@ -734,6 +745,38 @@ async function run(n) {
         if (!a9.confirm()) f.push('day 3: the app would reject the card as stale');
       }
     });
+
+    await scenario('10 fun nights', async (f, notes) => {
+      const a10 = new App(START);
+      ctx.app = a10;
+      const cur = () => a10.S.current;
+      let t = await say('In the next 10 days I want one date night, one boys night, three sober nights, gym four times, three runs, and work on Rentletter five nights. Plan it.');
+      f.push(...turnChecks(t));
+      if (!lastProposal(t)) { notes.push(`asked first: ${t.reply}`); t = await say('plan it'); f.push(...turnChecks(t).map(x => `plan: ${x}`)); }
+      const card = lastProposal(t);
+      if (!card) { f.push('no proposal'); return; }
+      const g = re => goalByWord(cur(), re);
+      const date = g(/date/i), boys = g(/boys/i), sober = g(/sober/i), gym = g(/gym/i), run = g(/\brun/i), work = g(/rentletter/i);
+      if (!date || !boys || !sober) { f.push('missing a goal'); return; }
+      for (const x of [date, boys]) if (x.fun !== 'yes' || x.social !== 'yes' || x.weekend !== 'yes' || x.time_of_day !== 'evening') f.push(`${x.name} is not tagged fun, social, evening and weekend leaning`);
+      if (sober.category !== 'rest') f.push(`sober night category is ${sober.category}`);
+      if (gym && gym.energy !== 'heavy') f.push('gym is not heavy');
+      const on = id => card.occurrences.filter(o => o.goal_id === id).map(o => o.day);
+      const [dd] = on(date.id), [bd] = on(boys.id);
+      const wd = d => weekday(addDays(cur().start, d - 1));
+      notes.push(`date night day ${dd} (${wd(dd)}), boys night day ${bd} (${wd(bd)}), sober ${on(sober.id).join(', ')}`);
+      if (Math.abs(dd - bd) < 2) f.push('the two fun nights are less than two days apart');
+      if (![dd, bd].some(d => ['Friday', 'Saturday'].includes(wd(d)))) f.push('neither fun night is on a Friday or Saturday');
+      for (const d of on(sober.id)) if (d === dd || d === bd) f.push(`sober night on a fun night, day ${d}`);
+      const heavy = [gym, run, work].filter(Boolean).map(x => x.id);
+      const load = d => card.occurrences.filter(o => o.day === d && heavy.includes(o.goal_id)).length;
+      for (let d = 1; d <= 9; d++) {
+        if (gym && run && on(gym.id).includes(d) && on(run.id).includes(d)) f.push(`gym and a run stacked on day ${d}`);
+        if (d < 9 && load(d) >= 2 && load(d + 1) >= 2) f.push(`heavy days back to back, days ${d} and ${d + 1}`);
+      }
+      f.push(...planChecks(a10, cur(), card.occurrences));
+      notes.push(`plan check: ${card.flags.length ? card.flags.join(' | ') : 'clean'}${card.score && card.score.retried ? `, ${card.score.first} before the retry` : ''}`);
+    });
   } finally {
     server.close();
   }
@@ -810,7 +853,7 @@ function transcript(r, s) {
       if (c.type === 'goals') out.push(`> Goals: ${c.lines.join('; ')}`);
       if (c.type === 'log') out.push(`> Logged day ${c.day}: ${c.entries.map(e => `${e.goal_id} ${e.status}${e.moved_from ? ` (from day ${e.moved_from})` : ''}`).join(', ')}`);
       if (c.type === 'proposal') {
-        out.push(`> Card: ${c.changes.join(' / ')}`);
+        out.push(`> Card: ${c.summary || (c.changes || []).join(' / ')}${c.flags && c.flags.length ? ` (plan check: ${c.flags.length} left${c.score && c.score.retried ? `, ${c.score.first} before the retry` : ''})` : c.score && c.score.retried ? ` (plan check: ${c.score.first} fixed on retry)` : ''}`);
         const m = byDay(c.occurrences);
         for (const [d, g] of m) out.push(`>   Day ${d}: ${g.join(', ') || '(free)'}`);
       }
@@ -823,10 +866,10 @@ function transcript(r, s) {
 }
 
 (async () => {
-  console.log(`Deka real runs: ${RUNS} x 9 scenarios on ${MODEL}`);
+  console.log(`Deka real runs: ${RUNS} x 10 scenarios on ${MODEL}`);
   const runs = await Promise.all(Array.from({ length: RUNS }, (_, i) => run(i + 1)));
   const rows = [];
-  for (const r of runs) for (const s of r.results) for (const t of s.turns) rows.push({ run: r.n, scenario: s.name, said: t.said.slice(0, 40), ttfw: t.ttfw, total: t.total, ...t.usage, cost: +t.cost.toFixed(4), rounds: t.rounds });
+  for (const r of runs) for (const s of r.results) for (const t of s.turns) rows.push({ run: r.n, scenario: s.name, said: t.said.slice(0, 40), ttfw: t.ttfw, total: t.total, ...t.usage, cost: +t.cost.toFixed(4), rounds: t.rounds, plan_check: t.score.filter(Boolean) });
   console.log('\nrun  scenario            ttfw   total  in     cached  out    cost    said');
   for (const x of rows) console.log(`${x.run}    ${x.scenario.padEnd(19)} ${String(x.ttfw).padEnd(6)} ${String(x.total).padEnd(6)} ${String(x.input).padEnd(6)} ${String(x.cacheRead).padEnd(7)} ${String(x.output).padEnd(6)} ${x.cost.toFixed(4)}  ${x.said}`);
   console.log(`\ntotal cost $${rows.reduce((a, x) => a + x.cost, 0).toFixed(3)}`);

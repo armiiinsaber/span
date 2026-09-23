@@ -1,0 +1,662 @@
+{
+ "model": "claude-opus-5-5",
+ "date": "2026-09-23",
+ "runs": [
+  {
+   "run": 1,
+   "scenarios": [
+    {
+     "name": "1 full dump",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "2 book and trim",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "3 tweaks",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "4 add coffee",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "5 check in day 2",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "6 skipped check in",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "7 day 10 review",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "8 long chat",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "9 unanswered check in",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "10 fun nights",
+     "pass": true,
+     "fails": []
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenarios": [
+    {
+     "name": "1 full dump",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "2 book and trim",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "3 tweaks",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "4 add coffee",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "5 check in day 2",
+     "pass": false,
+     "fails": [
+      "run and gym share 2 days; the counts force 1"
+     ]
+    },
+    {
+     "name": "6 skipped check in",
+     "pass": false,
+     "fails": [
+      "run and gym share 2 days; the counts force 1"
+     ]
+    },
+    {
+     "name": "7 day 10 review",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "8 long chat",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "9 unanswered check in",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "10 fun nights",
+     "pass": true,
+     "fails": []
+    }
+   ]
+  }
+ ],
+ "turns": [
+  {
+   "run": 1,
+   "scenario": "1 full dump",
+   "said": "In the next 10 days I want at least one ",
+   "ttfw": 7.741,
+   "total": 12.653,
+   "input": 507,
+   "output": 1455,
+   "cacheWrite": 5267,
+   "cacheRead": 0,
+   "cost": 0.0575,
+   "rounds": 1,
+   "plan_check": []
+  },
+  {
+   "run": 1,
+   "scenario": "2 book and trim",
+   "said": "About 120 pages left. Your trim sounds g",
+   "ttfw": 10.367,
+   "total": 30.049,
+   "input": 5086,
+   "output": 3566,
+   "cacheWrite": 0,
+   "cacheRead": 10534,
+   "cost": 0.0938,
+   "rounds": 2,
+   "plan_check": [
+    {
+     "first": 1,
+     "final": 0,
+     "retried": true
+    }
+   ]
+  },
+  {
+   "run": 1,
+   "scenario": "3 tweaks",
+   "said": "keep day 4 free",
+   "ttfw": 28.632,
+   "total": 35.117,
+   "input": 2265,
+   "output": 3820,
+   "cacheWrite": 0,
+   "cacheRead": 5267,
+   "cost": 0.0865,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 0,
+     "final": 0,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 1,
+   "scenario": "3 tweaks",
+   "said": "mom on weekends only",
+   "ttfw": 8.337,
+   "total": 14.298,
+   "input": 2367,
+   "output": 1783,
+   "cacheWrite": 0,
+   "cacheRead": 5267,
+   "cost": 0.0462,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 0,
+     "final": 0,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 1,
+   "scenario": "4 add coffee",
+   "said": "also add 2 coffee catch ups with friends",
+   "ttfw": 5.217,
+   "total": 10.897,
+   "input": 2548,
+   "output": 1387,
+   "cacheWrite": 0,
+   "cacheRead": 5380,
+   "cost": 0.039,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 0,
+     "final": 0,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 1,
+   "scenario": "5 check in day 2",
+   "said": "did the gym and rentletter, skipped the ",
+   "ttfw": 4.546,
+   "total": 5.906,
+   "input": 2839,
+   "output": 528,
+   "cacheWrite": 0,
+   "cacheRead": 5380,
+   "cost": 0.023,
+   "rounds": 1,
+   "plan_check": []
+  },
+  {
+   "run": 1,
+   "scenario": "5 check in day 2",
+   "said": "yes to the make music, no to the finish ",
+   "ttfw": 10.3,
+   "total": 15.332,
+   "input": 2932,
+   "output": 1824,
+   "cacheWrite": 0,
+   "cacheRead": 5380,
+   "cost": 0.0493,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 2,
+     "final": 2,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 1,
+   "scenario": "6 skipped check in",
+   "said": "sorry, forgot to check in yesterday. yes",
+   "ttfw": 6.008,
+   "total": 10.754,
+   "input": 3135,
+   "output": 1359,
+   "cacheWrite": 0,
+   "cacheRead": 5380,
+   "cost": 0.0408,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 0,
+     "final": 0,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 1,
+   "scenario": "7 day 10 review",
+   "said": "(Day 10: the app opens the review)",
+   "ttfw": 15.593,
+   "total": 39.39,
+   "input": 9065,
+   "output": 4674,
+   "cacheWrite": 5108,
+   "cacheRead": 5108,
+   "cost": 0.1563,
+   "rounds": 2,
+   "plan_check": [
+    {
+     "first": 2,
+     "final": 0,
+     "retried": true
+    }
+   ]
+  },
+  {
+   "run": 1,
+   "scenario": "8 long chat",
+   "said": "feeling strong, add one more run this de",
+   "ttfw": 9.515,
+   "total": 16.285,
+   "input": 2878,
+   "output": 1838,
+   "cacheWrite": 5520,
+   "cacheRead": 0,
+   "cost": 0.0759,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 0,
+     "final": 0,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 1,
+   "scenario": "8 long chat",
+   "said": "remind me why mom is only once this deka",
+   "ttfw": 2.899,
+   "total": 5.556,
+   "input": 2462,
+   "output": 495,
+   "cacheWrite": 0,
+   "cacheRead": 5520,
+   "cost": 0.0209,
+   "rounds": 1,
+   "plan_check": []
+  },
+  {
+   "run": 1,
+   "scenario": "8 long chat",
+   "said": "which day did I say I cannot run?",
+   "ttfw": 2.967,
+   "total": 5.227,
+   "input": 2538,
+   "output": 448,
+   "cacheWrite": 0,
+   "cacheRead": 5520,
+   "cost": 0.0202,
+   "rounds": 1,
+   "plan_check": []
+  },
+  {
+   "run": 1,
+   "scenario": "9 unanswered check in",
+   "said": "did the run and rentletter",
+   "ttfw": 3.244,
+   "total": 4.203,
+   "input": 2398,
+   "output": 382,
+   "cacheWrite": 0,
+   "cacheRead": 5380,
+   "cost": 0.0183,
+   "rounds": 1,
+   "plan_check": []
+  },
+  {
+   "run": 1,
+   "scenario": "9 unanswered check in",
+   "said": "music yes, the sober night didn't happen",
+   "ttfw": 7.375,
+   "total": 12.714,
+   "input": 2491,
+   "output": 1600,
+   "cacheWrite": 0,
+   "cacheRead": 5380,
+   "cost": 0.043,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 0,
+     "final": 0,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 1,
+   "scenario": "10 fun nights",
+   "said": "In the next 10 days I want one date nigh",
+   "ttfw": 13.729,
+   "total": 20.567,
+   "input": 476,
+   "output": 2439,
+   "cacheWrite": 0,
+   "cacheRead": 5267,
+   "cost": 0.0517,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 0,
+     "final": 0,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenario": "1 full dump",
+   "said": "In the next 10 days I want at least one ",
+   "ttfw": 8.774,
+   "total": 13.591,
+   "input": 507,
+   "output": 1471,
+   "cacheWrite": 5267,
+   "cacheRead": 0,
+   "cost": 0.0578,
+   "rounds": 1,
+   "plan_check": []
+  },
+  {
+   "run": 2,
+   "scenario": "2 book and trim",
+   "said": "About 120 pages left. Your trim sounds g",
+   "ttfw": 10.003,
+   "total": 26.687,
+   "input": 5164,
+   "output": 3257,
+   "cacheWrite": 0,
+   "cacheRead": 10534,
+   "cost": 0.0879,
+   "rounds": 2,
+   "plan_check": [
+    {
+     "first": 1,
+     "final": 0,
+     "retried": true
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenario": "3 tweaks",
+   "said": "keep day 4 free",
+   "ttfw": 16.077,
+   "total": 21.285,
+   "input": 2212,
+   "output": 2492,
+   "cacheWrite": 0,
+   "cacheRead": 5267,
+   "cost": 0.0597,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 0,
+     "final": 0,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenario": "3 tweaks",
+   "said": "mom on weekends only",
+   "ttfw": 7.333,
+   "total": 13.151,
+   "input": 2303,
+   "output": 1616,
+   "cacheWrite": 0,
+   "cacheRead": 5267,
+   "cost": 0.0426,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 0,
+     "final": 0,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenario": "4 add coffee",
+   "said": "also add 2 coffee catch ups with friends",
+   "ttfw": 5.72,
+   "total": 11.406,
+   "input": 2457,
+   "output": 1387,
+   "cacheWrite": 5380,
+   "cacheRead": 0,
+   "cost": 0.0645,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 0,
+     "final": 0,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenario": "5 check in day 2",
+   "said": "did the gym and rentletter, skipped the ",
+   "ttfw": 4.349,
+   "total": 5.455,
+   "input": 2749,
+   "output": 560,
+   "cacheWrite": 0,
+   "cacheRead": 5380,
+   "cost": 0.0233,
+   "rounds": 1,
+   "plan_check": []
+  },
+  {
+   "run": 2,
+   "scenario": "5 check in day 2",
+   "said": "yes to the finish book, no to the make m",
+   "ttfw": 13.964,
+   "total": 38.217,
+   "input": 8003,
+   "output": 4247,
+   "cacheWrite": 0,
+   "cacheRead": 10760,
+   "cost": 0.1191,
+   "rounds": 2,
+   "plan_check": [
+    {
+     "first": 6,
+     "final": 5,
+     "retried": true
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenario": "6 skipped check in",
+   "said": "sorry, forgot to check in yesterday. yes",
+   "ttfw": 7.064,
+   "total": 11.673,
+   "input": 3028,
+   "output": 1441,
+   "cacheWrite": 0,
+   "cacheRead": 5380,
+   "cost": 0.042,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 1,
+     "final": 1,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenario": "7 day 10 review",
+   "said": "(Day 10: the app opens the review)",
+   "ttfw": 20.372,
+   "total": 45.253,
+   "input": 9326,
+   "output": 5339,
+   "cacheWrite": 0,
+   "cacheRead": 10216,
+   "cost": 0.1461,
+   "rounds": 2,
+   "plan_check": [
+    {
+     "first": 2,
+     "final": 0,
+     "retried": true
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenario": "8 long chat",
+   "said": "feeling strong, add one more run this de",
+   "ttfw": 9.35,
+   "total": 16.549,
+   "input": 2878,
+   "output": 1842,
+   "cacheWrite": 0,
+   "cacheRead": 5520,
+   "cost": 0.0495,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 0,
+     "final": 0,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenario": "8 long chat",
+   "said": "remind me why mom is only once this deka",
+   "ttfw": 3.024,
+   "total": 5.675,
+   "input": 2478,
+   "output": 576,
+   "cacheWrite": 0,
+   "cacheRead": 5520,
+   "cost": 0.0225,
+   "rounds": 1,
+   "plan_check": []
+  },
+  {
+   "run": 2,
+   "scenario": "8 long chat",
+   "said": "which day did I say I cannot run?",
+   "ttfw": 3.053,
+   "total": 5.408,
+   "input": 2537,
+   "output": 445,
+   "cacheWrite": 0,
+   "cacheRead": 5520,
+   "cost": 0.0202,
+   "rounds": 1,
+   "plan_check": []
+  },
+  {
+   "run": 2,
+   "scenario": "9 unanswered check in",
+   "said": "did the run and rentletter",
+   "ttfw": 3.569,
+   "total": 4.399,
+   "input": 2398,
+   "output": 395,
+   "cacheWrite": 0,
+   "cacheRead": 5380,
+   "cost": 0.0186,
+   "rounds": 1,
+   "plan_check": []
+  },
+  {
+   "run": 2,
+   "scenario": "9 unanswered check in",
+   "said": "music yes, the sober night didn't happen",
+   "ttfw": 7.943,
+   "total": 13.325,
+   "input": 2493,
+   "output": 1617,
+   "cacheWrite": 0,
+   "cacheRead": 5380,
+   "cost": 0.0434,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 0,
+     "final": 0,
+     "retried": false
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenario": "10 fun nights",
+   "said": "In the next 10 days I want one date nigh",
+   "ttfw": 15.398,
+   "total": 22.247,
+   "input": 476,
+   "output": 2609,
+   "cacheWrite": 0,
+   "cacheRead": 5267,
+   "cost": 0.0551,
+   "rounds": 1,
+   "plan_check": [
+    {
+     "first": 0,
+     "final": 0,
+     "retried": false
+    }
+   ]
+  }
+ ]
+}

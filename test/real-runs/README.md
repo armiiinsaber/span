@@ -1,6 +1,27 @@
 # Real runs
 
-## Latest: scenarios 1 to 9 on the default setup (Opus 5.5, low effort)
+## Latest: the visual pass, scenarios 1 to 10 on Opus 5.5 at low effort
+
+In `visual/`, run on 2026-09-23 after goals gained icons and planning tags, proposals gained the plan quality check with one retry, and replies went down to about 30 words. Scenario 10 is new: a date night, a boys night, three sober nights, gym, runs and Rentletter.
+
+| Scenario | Run 1 | Run 2 |
+|---|---|---|
+| 1 full dump | pass | pass |
+| 2 book and trim | pass | pass |
+| 3 tweaks | pass | pass |
+| 4 add coffee | pass | pass |
+| 5 check in day 2 | pass | fail: run and gym share 2 days; the counts force 1 |
+| 6 skipped check in | pass | fail: run and gym share 2 days; the counts force 1 |
+| 7 day 10 review | pass | pass |
+| 8 long chat | pass | pass |
+| 9 unanswered check in | pass | pass |
+| 10 fun nights | pass | pass |
+
+Median first word 7.8 s, median total 13.2 s, $0.056 a turn, $0.84 a run. The plan check sent 5 proposals back for one improvement try.
+
+Check changes in this pass: replies may run to 40 words (about 30) and the review to 90 (about 70); a proposal's summary is one line, so "where the run went" is read from the card and noted, not failed; a check note from the plan check is counted as an improvement try, not a failed call; "keep day 4 free" may move up to five other sessions, because moving the date night now also moves evening work and the sober night before it.
+
+## Earlier: scenarios 1 to 9 on the default setup (Opus 5.5, low effort)
 
 In `latest/`, run on 2026-09-23 after the open check in, light date night and no carryover changes. Scenario 9 is a check in where Deka asks about two sessions and gets no answer, then the next evening's check in.
 

@@ -1,0 +1,530 @@
+[
+ {
+  "width": 375,
+  "mode": "light",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "light",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "light",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "light",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "light",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "light",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "light",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "light",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "light",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "light",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "light",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "dark",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "dark",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "dark",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "dark",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "dark",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "dark",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "dark",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "dark",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "dark",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "dark",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 375,
+  "mode": "dark",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "light",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "light",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "light",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "light",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "light",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "light",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "light",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "light",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "light",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "light",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "light",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "dark",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "dark",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "dark",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "dark",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "dark",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "dark",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "dark",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "dark",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "dark",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "dark",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 390,
+  "mode": "dark",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "light",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "light",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "light",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "light",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "light",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "light",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "light",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "light",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "light",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "light",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "light",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "dark",
+  "step": "launch",
+  "performance": 100,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "dark",
+  "step": "chat",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "dark",
+  "step": "days",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "dark",
+  "step": "day sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "dark",
+  "step": "goals",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "dark",
+  "step": "goal sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "dark",
+  "step": "more sheet",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "dark",
+  "step": "past",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "dark",
+  "step": "settings",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "dark",
+  "step": "intro",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ },
+ {
+  "width": 430,
+  "mode": "dark",
+  "step": "login",
+  "performance": null,
+  "accessibility": 100,
+  "failing": []
+ }
+]
