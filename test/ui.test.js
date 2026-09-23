@@ -345,6 +345,20 @@ test.describe('Deka app', { skip }, () => {
     assert.equal(r.tabs, 'none');
   });
 
+  test('the login screen says the home screen app signs in once too, only in Safari', async () => {
+    const at = async standalone => {
+      const { result } = await page.S('Page.addScriptToEvaluateOnNewDocument', { source: `Object.defineProperty(navigator, 'standalone', { value: ${standalone}, configurable: true })` });
+      await page.js("fetch('/api/logout', { method: 'POST' })");
+      await page.go();
+      const hint = await page.js("document.querySelector('.login .hint')?.textContent || ''");
+      await page.S('Page.removeScriptToEvaluateOnNewDocument', { identifier: result.identifier });
+      return hint;
+    };
+    assert.match(await at(false), /home screen app asks for this once/);
+    assert.equal(await at(true), '', 'not in the installed app');
+    assert.equal(await page.js("fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: 'uitest' }) }).then(r => r.status)"), 200);
+  });
+
   test('no horizontal scroll, 44px targets and 16px inputs at every width', async () => {
     const audit = `(() => {
       const bad = [];

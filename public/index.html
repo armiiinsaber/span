@@ -390,6 +390,7 @@ button.goal:active { background: rgba(20,19,16,.03); }
 }
 .input:focus { outline: none; border-bottom-width: 2px; padding-bottom: 9px; }
 .login .input { text-align: center; letter-spacing: .2em; }
+.login .hint { margin: 4px 0 0; font-size: .875rem; color: var(--ink-soft); }
 .intro .mk { margin-bottom: 26px; }
 .intro .display { margin: 14px 0 18px; }
 .intro .lede { margin-bottom: 36px; }
@@ -907,7 +908,8 @@ function loginView() {
     <form data-form="login" autocomplete="on"><label class="sr" for="pass">Passcode</label>
       <input class="input" id="pass" type="password" autocomplete="current-password" placeholder="Passcode" required>
       ${ui.loginError ? `<p role="alert" style="margin:0">${esc(ui.loginError)}</p>` : ''}
-      <button class="btn primary block" type="submit">Enter</button></form></div>`;
+      <button class="btn primary block" type="submit">Enter</button>
+      ${navigator.standalone === false ? '<p class="hint">The home screen app asks for this once&nbsp;too.</p>' : ''}</form></div>`;
 }
 
 /* Chat */
@@ -2200,6 +2202,8 @@ function importData(file) {
 /* Boot: draw from local data first, then check the session. */
 
 function boot() {
+  // Ask the browser to keep saved data even when space runs low or the site sits unused.
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
   maybeCheckin();
   render();
   if (ui.tab === 'chat') toBottom();

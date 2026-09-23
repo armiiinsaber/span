@@ -113,7 +113,7 @@ Vercel detects Express from `server.js`. Its default export is the app, and the 
 
 ### Login and rate limits
 
-The session is an HttpOnly cookie, `SameSite=Lax`, `Secure` over HTTPS, and host only, so it belongs to dekaapp.com alone. Because www redirects to the apex, every login happens on dekaapp.com.
+The session is an HttpOnly cookie, `SameSite=Lax`, `Secure` over HTTPS, and host only, so it belongs to dekaapp.com alone. It lasts 365 days and is renewed on every API call. Its value is derived from the passcode, so a new passcode makes every old session fail. Because www redirects to the apex, every login happens on dekaapp.com.
 
 The rate limits (40 chat messages per 10 minutes, 10 login tries per 15 minutes, per IP) live in memory. Vercel runs several instances that do not share memory, so these limits are soft: each instance counts on its own and a new instance starts at zero. The passcode is the real protection; keep it long. For a hard limit, add Vercel Firewall rate limiting on `/api/chat`.
 
@@ -166,4 +166,6 @@ iOS may keep showing the old home screen icon until the app is removed from the 
 
 ## Install on iPhone
 
-Open dekaapp.com in Safari, Share, Add to Home Screen. It opens full screen and keeps working offline. Plans made offline are by hand until you are back online. An installed copy from an older address is a separate app; add Deka again from dekaapp.com.
+Open dekaapp.com in Safari, Share, Add to Home Screen. It opens full screen and keeps working offline.
+
+**Sign in and saved data.** After the passcode, a device stays signed in for a year, and every use renews that year, so an active device never signs out. Changing `DEKA_PASSCODE` signs every device out. iOS keeps Safari and the home screen app apart, each with its own sign in and its own saved data, so each asks for the passcode once. The home screen app is the safe place for your data: Safari can clear storage for sites you have not opened in a while, while an installed app keeps it. The app also asks the browser to keep its storage where that is supported. Export a copy now and then under Settings. Plans made offline are by hand until you are back online. An installed copy from an older address is a separate app; add Deka again from dekaapp.com.
