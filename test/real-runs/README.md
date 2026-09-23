@@ -1,6 +1,10 @@
 # Real runs
 
-Deka against the real Claude API (claude-opus-5-5), through the real server and tool loop, on 2026-09-23. Made with `node --env-file=.env.local scripts/real-runs.js --runs 2 --out test/real-runs`. The deka starts on Wednesday 2026-09-23, so day 3 is a Friday and days 4 and 5 are the only weekend.
+Deka against the real Claude API, through the real server and tool loop, on 2026-09-23. Each run plays eight scenarios; each setup ran twice, and the new default four times. The deka starts on Wednesday 2026-09-23, so day 3 is a Friday and days 4 and 5 are the only weekend. Scenario 8 starts from a deka on day 5 whose chat already holds 43 messages, with the key decisions (no runs on Tuesdays, day 4 free, mom on weekends only, the trim) only in the oldest ones, so they must survive in the summary.
+
+Made with `node --env-file=.env.local scripts/real-runs.js --runs 2 --out <folder>`, with `CLAUDE_MODEL` and `CLAUDE_EFFORT` set per setup. Transcripts are in one folder per setup, one file per scenario.
+
+## Step 6: scenarios 1 to 8 on the settings at the time (Opus 5.5, medium)
 
 | Scenario | Run 1 | Run 2 |
 |---|---|---|
@@ -11,18 +15,49 @@ Deka against the real Claude API (claude-opus-5-5), through the real server and 
 | 5 check in day 2 | pass | pass |
 | 6 skipped check in | pass | pass |
 | 7 day 10 review | pass | pass |
+| 8 long chat | pass | pass |
 
-Each turn, per run: seconds to the first word, total seconds, and cost at list price.
+## Step 7: speed comparison
 
-| Scenario | Turn | Run 1 | Run 2 |
+Times are medians over every turn in the runs; cost is the average per turn at list price.
+
+| Setup | Passes | First word | Total | Cost per turn |
+|---|---|---|---|---|
+| A. Opus 5.5, medium effort (old default) | 16 of 16 | 7.1 s | 12.7 s | $0.042 |
+| B. Opus 5.5, low effort (new default) | 31 of 32 | 4.9 s | 10.8 s | $0.035 |
+| C. Sonnet 5, default effort (high) | 9 of 16 | 16.8 s | 20.9 s | $0.034 |
+| D. Sonnet 5, low effort | 1 of 16 | 4.7 s | 12.8 s | $0.027 |
+
+Passes per scenario, run by run:
+
+| Scenario | A | B | C | D |
+|---|---|---|---|---|
+| 1 full dump | pass, pass | pass, pass, pass, pass | fail, fail | fail, fail |
+| 2 book and trim | pass, pass | pass, pass, pass, pass | pass, pass | fail, fail |
+| 3 tweaks | pass, pass | pass, pass, pass, pass | pass, pass | fail, fail |
+| 4 add coffee | pass, pass | pass, pass, pass, pass | pass, pass | fail, fail |
+| 5 check in day 2 | pass, pass | pass, pass, pass, pass | pass, fail | fail, fail |
+| 6 skipped check in | pass, pass | pass, fail, pass, pass | pass, pass | pass, fail |
+| 7 day 10 review | pass, pass | pass, pass, pass, pass | fail, fail | fail, fail |
+| 8 long chat | pass, pass | pass, pass, pass, pass | fail, fail | fail, fail |
+
+B run 2, scenario 6 was failed by a wrong check: the date night was the session skipped on day 3, and days 5 to 9 have no Friday or Saturday left, so Deka moved it to Thursday, day 9, and said why. The check now asks for a Friday or Saturday only while one is still open; runs 3 and 4 used the corrected check.
+
+## Per turn, A against B
+
+First word / total / cost, median over the runs of each setup.
+
+| Scenario | Turn | A | B |
 |---|---|---|---|
-| 1 full dump | In the next 10 days I want at least one ... | 5.4 s / 9.5 s / $0.042 | 7.0 s / 11.0 s / $0.046 |
-| 2 book and trim | About 120 pages left. Your trim sounds g... | 13.1 s / 21.7 s / $0.069 | 11.7 s / 20.8 s / $0.068 |
-| 3 tweaks | keep day 4 free | 13.1 s / 23.8 s / $0.066 | 10.9 s / 18.7 s / $0.060 |
-| 3 tweaks | mom on weekends only | 18.6 s / 26.3 s / $0.084 | 19.9 s / 28.0 s / $0.083 |
-| 4 add coffee | also add 2 coffee catch ups with friends... | 5.9 s / 13.5 s / $0.058 | 4.1 s / 11.2 s / $0.054 |
-| 5 check in day 2 | did the gym and rentletter, skipped the ... | 13.8 s / 21.3 s / $0.083 | 9.6 s / 16.9 s / $0.069 |
-| 6 skipped check in | sorry, forgot to check in yesterday. yes... | 7.2 s / 14.4 s / $0.063 | 7.3 s / 14.5 s / $0.062 |
-| 7 day 10 review | (Day 10: the app opens the review) | 16.9 s / 26.6 s / $0.096 | 16.1 s / 25.7 s / $0.107 |
-
-Total: $0.56 for run 1, $0.55 for run 2.
+| 1 full dump | In the next 10 days I want at least one ... | 5.3 s / 7.9 s / $0.037 | 4.0 s / 6.8 s / $0.015 |
+| 2 book and trim | About 120 pages left. Your trim sounds g... | 9.9 s / 17.2 s / $0.047 | 6.5 s / 13.7 s / $0.040 |
+| 3 tweaks | keep day 4 free | 19.7 s / 26.1 s / $0.065 | 12.1 s / 18.9 s / $0.050 |
+| 3 tweaks | mom on weekends only | 6.7 s / 13.0 s / $0.041 | 3.9 s / 10.3 s / $0.035 |
+| 4 add coffee | also add 2 coffee catch ups with friends... | 6.1 s / 12.2 s / $0.039 | 5.0 s / 11.0 s / $0.037 |
+| 5 check in day 2 | did the gym and rentletter, skipped the ... | 4.0 s / 5.4 s / $0.022 | 3.6 s / 5.0 s / $0.020 |
+| 5 check in day 2 | their answer about the rest of the day | 7.3 s / 12.6 s / $0.042 | 7.2 s / 12.8 s / $0.043 |
+| 6 skipped check in | sorry, forgot to check in yesterday. yes... | 7.8 s / 13.0 s / $0.043 | 4.9 s / 10.2 s / $0.039 |
+| 7 day 10 review | (Day 10: the app opens the review) | 10.7 s / 19.4 s / $0.068 | 9.8 s / 18.1 s / $0.060 |
+| 8 long chat | feeling strong, add one more run this de... | 8.1 s / 15.5 s / $0.054 | 5.6 s / 13.1 s / $0.046 |
+| 8 long chat | remind me why mom is only once this deka... | 2.7 s / 5.5 s / $0.022 | 2.4 s / 5.0 s / $0.021 |
+| 8 long chat | which day did I say I cannot run? | 2.6 s / 5.1 s / $0.021 | 2.0 s / 4.5 s / $0.019 |
