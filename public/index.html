@@ -248,6 +248,7 @@ button.tile:active { background: var(--paper-deep); transform: scale(.97); }
 .tile .tdots i.done { background: var(--green); }
 .tile .tdots i.sq { border-radius: 1.5px; }
 .tile .tdots i.missed { border-color: var(--ink-faint); }
+.tile .tdots i.unconfirmed { border-style: dashed; border-color: var(--ink-faint); }
 .tile.today { border-color: var(--ink); }
 .tile.today .tn::after { content: ''; display: block; height: 3px; margin: 3px -3px 0; background: var(--green); }
 .tile.review { background: var(--paper-deep); border-color: transparent; }
@@ -272,6 +273,7 @@ button.row-btn:active { background: rgba(20,19,16,.03); }
 .dot { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--ink); transition: background .4s var(--ease); }
 .dot.done { background: var(--green); }
 .dot.missed { border-color: var(--ink-faint); }
+.dot.unconfirmed { border-style: dashed; border-color: var(--ink-faint); }
 .dot.sq { border-radius: 2.5px; }
 .strip .c.drop { background: var(--paper-deep); }
 .dot.dragging { transform: scale(1.35); }
@@ -281,6 +283,7 @@ button.row-btn:active { background: rgba(20,19,16,.03); }
 .legend i { width: 10px; height: 10px; border: 1.5px solid var(--ink); border-radius: 50%; display: inline-block; }
 .legend i.sq { border-radius: 2px; }
 .legend i.done { background: var(--green); }
+.legend i.unconfirmed { border-style: dashed; border-color: var(--ink-faint); }
 
 /* Checklist */
 .items { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--hairline); }
@@ -290,6 +293,7 @@ button.row-btn:active { background: rgba(20,19,16,.03); }
 .check svg { width: 15px; height: 15px; opacity: 0; transition: opacity .2s var(--ease); }
 .item.done .check { background: var(--green); }
 .item.done .check svg { opacity: 1; }
+.item.unconfirmed .check { border-style: dashed; border-color: var(--ink-faint); }
 .item.missed .nm { color: var(--ink-soft); text-decoration: line-through; text-decoration-color: var(--ink-faint); }
 .item.pop .check { animation: pop .45s var(--ease); }
 @keyframes pop { 0% { transform: scale(1); } 35% { transform: scale(1.22); } 100% { transform: scale(1); } }
@@ -556,6 +560,8 @@ const occOf = (span, iid) => span.occurrences.filter(o => o.intention_id === iid
 const findOcc = (span, iid, day) => span.occurrences.find(o => o.intention_id === iid && o.day === day);
 const nameOf = (span, iid) => (span.intentions.find(i => i.id === iid) || { name: iid }).name;
 const statusOf = o => o.done ? 'done' : o.missed ? 'missed' : 'planned';
+// A session on a day that has passed that nobody has marked done or missed yet.
+const unconfirmed = (span, o) => isLive(span) && !o.done && !o.missed && o.day < dayNum(span);
 const doneOf = (span, iid) => occOf(span, iid).filter(o => o.done).length;
 const plannedOf = (span, iid) => occOf(span, iid).filter(o => !o.done && !o.missed).length;
 // The free day with the lightest load, as far as possible from the goal's other days.
@@ -693,8 +699,8 @@ function dotsFor(span, day, live, today) {
     .sort((a, b) => (order.get(a.intention_id) ?? 99) - (order.get(b.intention_id) ?? 99))
     .map(o => {
       const it = span.intentions.find(x => x.id === o.intention_id) || {};
-      const missed = o.missed || (live && !o.done && day < today);
-      return `<i class="${o.done ? 'done' : ''}${it.type === 'abstain' ? ' sq' : ''}${missed ? ' missed' : ''}"></i>`;
+      const unsure = live && !o.done && !o.missed && day < today;
+      return `<i class="${o.done ? 'done' : ''}${it.type === 'abstain' ? ' sq' : ''}${o.missed ? ' missed' : ''}${unsure ? ' unconfirmed' : ''}"></i>`;
     }).join('');
 }
 
@@ -705,9 +711,10 @@ function tiles(span, { live = false } = {}) {
   for (let d = 1; d <= 10; d++) {
     const occ = span.occurrences.filter(o => o.day === d);
     const done = occ.filter(o => o.done).length;
+    const unsure = occ.filter(o => unconfirmed(span, o)).length;
     const date = fmt(dayDate(span, d));
     const cls = ['tile', d === today ? 'today' : '', d === 10 ? 'review' : '', live && d < today ? 'past' : '', flash.includes(d) ? 'flash' : ''].join(' ');
-    const label = d === 10 ? `Day 10, ${date}, review` : `Day ${d}, ${date}, ${live ? `${done} of ${occ.length} done` : `${occ.length} planned`}${d === today ? ', today' : ''}`;
+    const label = d === 10 ? `Day 10, ${date}, review` : `Day ${d}, ${date}, ${live ? `${done} of ${occ.length} done${unsure ? `, ${unsure} not confirmed` : ''}` : `${occ.length} planned`}${d === today ? ', today' : ''}`;
     const inner = `<span class="tn" aria-hidden="true">${d}</span><span class="td" aria-hidden="true">${parse(dayDate(span, d)).getDate()}</span>` +
       (d === 10 ? '<span class="rv" aria-hidden="true">Review</span>' : `<span class="tdots" aria-hidden="true">${dotsFor(span, d, live, today)}</span>`);
     h += live
@@ -727,7 +734,7 @@ function rows(span, { live = false, editable = false, target = 'current' } = {})
     let strip = '';
     for (let d = 1; d <= 10; d++) {
       const o = findOcc(span, it.id, d);
-      const dot = o ? `<span class="dot${o.done ? ' done' : ''}${it.type === 'abstain' ? ' sq' : ''}${o.missed || (live && !o.done && d < today) ? ' missed' : ''}" data-iid="${esc(it.id)}" data-day="${d}"></span>` : '';
+      const dot = o ? `<span class="dot${o.done ? ' done' : ''}${it.type === 'abstain' ? ' sq' : ''}${o.missed ? ' missed' : ''}${live && !o.done && !o.missed && d < today ? ' unconfirmed' : ''}" data-iid="${esc(it.id)}" data-day="${d}"></span>` : '';
       strip += `<span class="c${d === 10 ? ' rv' : ''}" data-day="${d}">${dot}</span>`;
     }
     const count = live ? `<b>${done}</b>&nbsp;of ${it.target}` : `${it.target}×`;
@@ -741,7 +748,7 @@ function rows(span, { live = false, editable = false, target = 'current' } = {})
       : `<li><div class="row-btn" role="img" aria-label="${esc(label)}">${inner}</div></li>`;
   }
   h += '</ul>';
-  if (span.intentions.length) h += '<div class="legend" aria-hidden="true"><span><i></i>Do or see</span><span><i class="sq"></i>Hold back</span><span><i class="done"></i>Done</span></div>';
+  if (span.intentions.length) h += `<div class="legend" aria-hidden="true"><span><i></i>Do or see</span><span><i class="sq"></i>Hold back</span><span><i class="done"></i>Done</span>${span.occurrences.some(o => unconfirmed(span, o)) ? '<span><i class="unconfirmed"></i>Not confirmed</span>' : ''}</div>`;
   return h;
 }
 
@@ -752,9 +759,10 @@ function itemsView(span, day) {
   occ.sort((a, b) => (order.get(a.intention_id) ?? 99) - (order.get(b.intention_id) ?? 99));
   return '<ul class="items">' + occ.map(o => {
     const it = span.intentions.find(x => x.id === o.intention_id) || { name: o.intention_id };
-    const sub = [o.missed ? 'Missed' : '', o.detail, it.tag].filter(Boolean).join(', ');
+    const unsure = unconfirmed(span, o);
+    const sub = [o.missed ? 'Missed' : '', unsure ? 'Not confirmed' : '', o.detail, it.tag].filter(Boolean).join(', ');
     const key = `${o.intention_id}@${day}`;
-    return `<li><button class="item${o.done ? ' done' : ''}${o.missed ? ' missed' : ''}${ui.pop === key ? ' pop' : ''}" data-a="toggle" data-iid="${esc(o.intention_id)}" data-day="${day}" role="checkbox" aria-checked="${Boolean(o.done)}">
+    return `<li><button class="item${o.done ? ' done' : ''}${o.missed ? ' missed' : ''}${unsure ? ' unconfirmed' : ''}${ui.pop === key ? ' pop' : ''}" data-a="toggle" data-iid="${esc(o.intention_id)}" data-day="${day}" role="checkbox" aria-checked="${Boolean(o.done)}">
       <span class="check${it.type === 'abstain' ? ' sq' : ''}">${I.check}</span>
       <span class="txt"><span class="nm">${esc(it.name)}</span>${sub ? `<span class="dt">${esc(sub)}</span>` : ''}</span></button></li>`;
   }).join('') + '</ul>';
@@ -1224,13 +1232,17 @@ function buildRequest(span, text, event) {
   return { body, target: target === S.next ? 'next' : 'current', summarizeTo: all.length - 30 };
 }
 
+// A check in still waiting for the person: the evening question, or Deka's follow up question about it.
+const checkinEvent = ask => ask && ask.checkin && !ask.checkin.answered
+  ? { kind: 'checkin', days: ask.checkin.days, ...(ask.checkin.followup ? { followup: true } : {}) } : null;
+
 // Sends a message, or queues it while offline.
 function sendMessage(text) {
   const span = chatSpan();
   const offline = navigator.onLine === false;
   const msg = { id: uid(), role: 'user', text, ts: Date.now(), status: offline ? 'waiting' : 'sent' };
   const ask = [...span.chat].reverse().find(m => m.role === 'deka');
-  const event = ask && ask.checkin && !ask.checkin.answered ? { kind: 'checkin', days: ask.checkin.days } : null;
+  const event = checkinEvent(ask);
   span.chat.push(msg);
   render(); toBottom(true);
   if (offline || ui.turn) return;
@@ -1246,7 +1258,7 @@ function flushQueue() {
   waiting.forEach(m => { m.status = 'sent'; });
   const last = waiting[waiting.length - 1];
   const ask = [...span.chat].reverse().find(m => m.role === 'deka');
-  const event = ask && ask.checkin && !ask.checkin.answered ? { kind: 'checkin', days: ask.checkin.days } : null;
+  const event = checkinEvent(ask);
   startTurn(span, last.text, event, ask);
 }
 
@@ -1345,7 +1357,11 @@ function finishTurn() {
   msg.text = msg.text.trim();
   if (!msg.error && event && event.kind === 'checkin' && ask) {
     ask.checkin.answered = true;
-    span.checked = [...new Set([...span.checked, ...event.days])];
+    // While sessions on those days are still open, Deka has asked about them, so the check in
+    // stays open for one more answer. That answer closes it either way.
+    const open = !event.followup && event.days.some(d => span.occurrences.some(o => o.day === d && !o.done && !o.missed));
+    if (open) msg.checkin = { days: event.days, answered: false, followup: true };
+    else span.checked = [...new Set([...span.checked, ...event.days])];
   }
   if (!msg.error && event && event.kind === 'review') span.review = msg.text;
   const el = $(`m-${msg.id}`);
@@ -1457,6 +1473,12 @@ function dayList(days, today) {
   const names = days.map(d => d === today ? 'today' : d === today - 1 ? 'yesterday' : `Day ${d}`);
   return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
 }
+// "yesterday's sober night and make music", grouped by day.
+function unsureList(span, occ, today) {
+  const list = a => a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}` : a[0];
+  const days = [...new Set(occ.map(o => o.day))].sort((a, b) => a - b);
+  return list(days.map(d => `${d === today - 1 ? 'yesterday' : `day ${d}`}'s ${list(occ.filter(o => o.day === d).map(o => nameOf(span, o.intention_id).toLowerCase()))}`));
+}
 // Once a day, after the check in time, Deka asks how it went. Skipped days are asked about too.
 function maybeCheckin() {
   const cur = S.current;
@@ -1471,8 +1493,17 @@ function maybeCheckin() {
     if (open || (d === n && (planned || n > 1))) days.push(d);
   }
   cur.checkin.asked = todayIso();
+  // Sessions Deka asked about that never got an answer come first, in the same question.
+  const waiting = cur.chat.filter(m => m.checkin && m.checkin.followup && !m.checkin.answered);
+  const unsure = [];
+  for (const m of waiting) {
+    m.checkin.answered = true;
+    for (const o of cur.occurrences) if (m.checkin.days.includes(o.day) && unconfirmed(cur, o)) unsure.push(o);
+  }
   if (!days.length) return;
-  cur.chat.push({ id: uid(), role: 'deka', text: `How did ${dayList(days, n)} go?`, ts: Date.now(), cards: [], checkin: { days, answered: false } });
+  const rest = days.filter(d => !unsure.some(o => o.day === d));
+  const text = unsure.length ? `Did ${unsureList(cur, unsure, n)} happen${rest.length ? `, and how did ${dayList(rest, n)} go` : ''}?` : `How did ${dayList(days, n)} go?`;
+  cur.chat.push({ id: uid(), role: 'deka', text, ts: Date.now(), cards: [], checkin: { days, answered: false } });
   save();
 }
 // On Day 10 the review opens in the chat by itself.

@@ -32,7 +32,7 @@ The app has three tabs:
 
 Past dekas and Settings sit behind the icon in the header. Each deka has its own chat thread; past threads stay readable in Past dekas.
 
-**Check in.** Settings holds a daily check in time, 8:00 pm by default. The first time the app opens after that time, Deka has already asked "How did today go?". Deka logs what you say happened (tap a result on the card to correct it). If something planned that day went unmentioned, it asks about it in one short line and waits for your answer; it never assumes a session was missed. Then it proposes how the rest of the deka fits. A skipped day is asked about the next evening.
+**Check in.** Settings holds a daily check in time, 8:00 pm by default. The first time the app opens after that time, Deka has already asked "How did today go?". Deka logs what you say happened (tap a result on the card to correct it). If something planned that day went unmentioned, it asks about it in one short line and waits for your answer; it never assumes a session was missed, and the check in stays open until you reply. Then it proposes how the rest of the deka fits. A session nobody confirmed shows on Days as a dashed outline, not done and not missed, and the next evening's check in asks about it first. A skipped day is asked about the next evening.
 
 **Review.** On Day 10 Deka opens the review in the chat: what held, what slipped, one pattern. It then drafts the next deka's goals and schedule. Confirming it starts the next deka with a fresh thread.
 
@@ -89,7 +89,7 @@ npm test
 
 With no key, `DEKA_MOCK=1 DEKA_PASSCODE=test npm run dev` runs the whole app against a scripted stand in, so you can work on the UI without spending credit.
 
-`node --env-file=.env.local scripts/real-runs.js --runs 2 --out test/real-runs` plays eight scenarios against the real API through the real server and tool loop (planning, tweaks, check ins, the Day 10 review, a long chat that needs a summary), checks each turn, and writes the transcripts with timing and cost. It costs about $0.45 a run. Set `CLAUDE_MODEL` and `CLAUDE_EFFORT` to try other setups, and `--only 8` to run one scenario.
+`node --env-file=.env.local scripts/real-runs.js --runs 2 --out test/real-runs` plays nine scenarios against the real API through the real server and tool loop (planning, tweaks, check ins, the Day 10 review, a long chat that needs a summary, a check in question left unanswered), checks each turn, and writes the transcripts with timing and cost. It costs about $0.45 a run. Set `CLAUDE_MODEL` and `CLAUDE_EFFORT` to try other setups, and `--only 9` to run one scenario. See `test/real-runs/README.md` for the latest results.
 
 To try the app on your phone, open your machine's LAN address on the same Wi-Fi. Mic input needs HTTPS or localhost, so over plain LAN use the keyboard's own dictation.
 

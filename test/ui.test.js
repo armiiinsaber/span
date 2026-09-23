@@ -166,12 +166,19 @@ test.describe('Deka app', { skip }, () => {
     await seed(st);
     await page.waitFor("document.querySelector('.msg.deka')");
     assert.equal(await lastDeka(), 'How did yesterday and today go?');
-    await say('ran yesterday, missed gym'); await idle();
-    const cur = (await stored()).current;
-    const on = (id, d) => cur.occurrences.find(o => o.intention_id === id && o.day === d);
-    assert.equal(on('run', 4).done, true);
-    assert.equal(on('gym', 4).missed, true);
-    assert.equal(on('sober', 5).done, true);
+    await say('did the run yesterday, missed gym'); await idle();
+    let cur = (await stored()).current;
+    const on = (c, id, d) => c.occurrences.find(o => o.intention_id === id && o.day === d);
+    assert.equal(on(cur, 'run', 4).done, true);
+    assert.equal(on(cur, 'gym', 4).missed, true);
+    assert.equal(Boolean(on(cur, 'sober', 5).done || on(cur, 'sober', 5).missed), false, 'an unmentioned sober night is never assumed');
+    assert.match(await lastDeka(), /Did the sober night happen\?/);
+    assert.deepEqual(cur.checked.sort(), [1, 2, 3], 'the check in stays open for the answer');
+    assert.equal(await page.js("document.querySelectorAll('.card [data-a=confirm]').length"), 0, 'no plan before the answer');
+    await say('yes, the sober night held'); await idle();
+    cur = (await stored()).current;
+    assert.equal(sent.at(-1).messages.at(-1).content.includes('answers the question in your last reply'), true, 'the answer carries the check in marker');
+    assert.equal(on(cur, 'sober', 5).done, true);
     assert.deepEqual(cur.checked.sort(), [1, 2, 3, 4, 5]);
     assert.match(await page.js("[...document.querySelectorAll('.card .eyebrow')].map(e => e.textContent).join('|')"), /Day 4\|Day 5\|Proposed plan/);
     // Tapping a logged result corrects it.
@@ -180,6 +187,32 @@ test.describe('Deka app', { skip }, () => {
     // It asks once per day.
     await page.go();
     assert.equal(await page.js("[...document.querySelectorAll('.msg.deka')].filter(m => /How did/.test(m.textContent)).length"), 1);
+  });
+
+  test('a question left unanswered shows the session as not confirmed, and the next check in asks about it first', async () => {
+    const st = liveState(4, { checked: [1, 2], chat: [
+      { id: 'a1', role: 'deka', text: 'How did today go?', ts: 1, cards: [], checkin: { days: [3], answered: true } },
+      { id: 'u1', role: 'user', text: 'gym was fine', ts: 2, cards: [] },
+      { id: 'q1', role: 'deka', text: 'Did the run happen?', ts: 3, cards: [], checkin: { days: [3], answered: false, followup: true } },
+    ] });
+    st.current.occurrences.find(o => o.intention_id === 'run' && o.day === 1).done = true;
+    st.current.occurrences.find(o => o.intention_id === 'gym' && o.day === 2).done = true;
+    st.settings.checkin = '00:00';
+    await seed(st);
+    await page.waitFor("document.querySelectorAll('.msg.deka').length === 3");
+    assert.equal(await lastDeka(), "Did yesterday's run happen, and how did today go?");
+    await click('[data-tab=days]');
+    assert.equal(await page.js("document.querySelectorAll('.tile[data-day=\"3\"] .tdots i.unconfirmed').length"), 1, 'the day 3 run is outlined, not missed');
+    assert.equal(await page.js("document.querySelectorAll('.tile .tdots i.missed').length"), 0);
+    assert.match(await page.js("document.querySelector('.tile[data-day=\"3\"]').getAttribute('aria-label')"), /1 not confirmed/);
+    await click('.tile[data-day="3"]');
+    assert.match(await page.js("document.querySelector('.item.unconfirmed')?.textContent || ''"), /Run[\s\S]*Not confirmed/);
+    await click('[data-tab=chat]');
+    await say('yes the run happened, and today I did the run and the gym'); await idle();
+    const cur = (await stored()).current;
+    assert.equal(cur.occurrences.find(o => o.intention_id === 'run' && o.day === 3).done, true);
+    assert.deepEqual(cur.checked.sort(), [1, 2, 3, 4]);
+    assert.equal(cur.chat.find(m => m.id === 'q1').checkin.answered, true, 'the old question is closed by the new check in');
   });
 
   test('Day 10 opens the review in the chat and rolls into the next deka', async () => {
