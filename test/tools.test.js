@@ -9,24 +9,32 @@ const goals = () => [
 const live = (day, schedule) => working({ phase: 'live', current_day: day, goals: goals(), schedule });
 const planning = () => working({ phase: 'planning', current_day: null, goals: goals(), schedule: [] });
 const errs = r => (r.errors || []).join('\n');
+const family = { icon: 'family', category: 'people', energy: 'light', social: 'yes', fun: 'no', time_of_day: 'any', weekend: 'no' };
+const keep = { icon: 'unchanged', category: 'unchanged', energy: 'unchanged', social: 'unchanged', fun: 'unchanged', time_of_day: 'unchanged', weekend: 'unchanged' };
 
 test('update_goals adds, edits and removes, cleaning names', () => {
   const w = planning();
   const r = runTool('update_goals', { changes: [
-    { op: 'add', id: 'see_mom', name: 'See mom \u2014 Sundays', type: 'see', tag: '', target: 5 },
-    { op: 'edit', id: 'run', name: '', type: 'unchanged', tag: '', target: 6 },
+    { op: 'add', id: 'see_mom', name: 'See mom \u2014 Sundays', type: 'see', tag: '', target: 5, ...family },
+    { op: 'edit', id: 'run', name: '', type: 'unchanged', tag: '', target: 6, ...keep, icon: 'run' },
     { op: 'remove', id: 'gym', name: '', type: 'unchanged', tag: '', target: 0 },
   ] }, w);
   assert.equal(r.ok, true, errs(r));
   assert.deepEqual(w.goals.map(g => [g.id, g.target]), [['run', 6], ['see_mom', 5]]);
   assert.equal(w.goals[1].name, 'See mom, Sundays');
+  assert.equal(w.goals[1].icon, 'family');
+  assert.equal(w.goals[0].icon, 'run', 'an edit can set the icon');
+  assert.equal(w.goals[0].category, undefined, 'unchanged fields stay as they were');
   assert.equal(r.event.type, 'goals');
 });
 
 test('update_goals rejects bad input', () => {
   const w = planning();
-  assert.match(errs(runTool('update_goals', { changes: [{ op: 'add', id: 'run', name: 'Run', type: 'do', tag: '', target: 2 }] }, w)), /already exists/);
-  assert.match(errs(runTool('update_goals', { changes: [{ op: 'add', id: 'x', name: 'X', type: 'do', tag: '', target: 12 }] }, w)), /target must be 1 to 9/);
+  assert.match(errs(runTool('update_goals', { changes: [{ op: 'add', id: 'run', name: 'Run', type: 'do', tag: '', target: 2, ...family }] }, w)), /already exists/);
+  assert.match(errs(runTool('update_goals', { changes: [{ op: 'add', id: 'x', name: 'X', type: 'do', tag: '', target: 12, ...family }] }, w)), /target must be 1 to 9/);
+  assert.match(errs(runTool('update_goals', { changes: [{ op: 'add', id: 'x', name: 'X', type: 'do', tag: '', target: 2, ...family, icon: 'unicorn' }] }, w)), /needs icon/);
+  assert.match(errs(runTool('update_goals', { changes: [{ op: 'add', id: 'x', name: 'X', type: 'do', tag: '', target: 2, ...family, category: 'unchanged' }] }, w)), /needs category/);
+  assert.match(errs(runTool('update_goals', { changes: [{ op: 'edit', id: 'run', name: '', type: 'unchanged', tag: '', target: 0, ...keep, time_of_day: 'noon' }] }, w)), /time_of_day must be/);
   assert.match(errs(runTool('update_goals', { changes: [{ op: 'edit', id: 'nope', name: '', type: 'unchanged', tag: '', target: 0 }] }, w)), /No goal/);
   assert.match(errs(runTool('update_goals', { changes: [] }, w)), /at least one/);
   const lw = live(5, [{ goal_id: 'run', day: 1, status: 'done' }, { goal_id: 'run', day: 2, status: 'done' }]);
@@ -41,15 +49,16 @@ test('propose_schedule accepts a clean plan and reports changed days', () => {
   const r = runTool('propose_schedule', { occurrences: [
     { goal_id: 'run', day: 5, detail: '' }, { goal_id: 'run', day: 8, detail: '' },
     { goal_id: 'gym', day: 4, detail: '' }, { goal_id: 'gym', day: 6, detail: '' },
-  ], changes: ['Run moves from Day 7 to Day 8', 'Added gym on Day 4'] }, w);
+  ], summary: 'Run to day 8, gym on day 4' }, w);
   assert.equal(r.ok, true, errs(r));
+  assert.equal(r.event.summary, 'Run to day 8, gym on day 4');
   assert.deepEqual(r.event.changed_days, [4, 7, 8]);
 });
 
 test('propose_schedule enforces days, counts, duplicates, fixed work and the past', () => {
   const sched = [{ goal_id: 'run', day: 1, status: 'done' }, { goal_id: 'gym', day: 2, status: 'missed' }];
   const bad = (occ, match) => {
-    const r = runTool('propose_schedule', { occurrences: occ, changes: ['x'] }, live(4, sched));
+    const r = runTool('propose_schedule', { occurrences: occ, summary: 'x' }, live(4, sched));
     assert.equal(r.ok, false); assert.match(errs(r), match);
   };
   const base = [{ goal_id: 'run', day: 5, detail: '' }, { goal_id: 'run', day: 7, detail: '' }, { goal_id: 'gym', day: 5, detail: '' }, { goal_id: 'gym', day: 8, detail: '' }];
@@ -59,11 +68,11 @@ test('propose_schedule enforces days, counts, duplicates, fixed work and the pas
   bad(base.slice(0, 3), /needs 2 upcoming sessions, not 1/);
   bad([...base, { goal_id: 'run', day: 9, detail: '' }], /needs 2 upcoming sessions, not 3/);
   bad([...base, { goal_id: 'ghost', day: 6, detail: '' }], /unknown goal/);
-  const r = runTool('propose_schedule', { occurrences: base, changes: [] }, live(4, sched));
-  assert.match(errs(r), /changes must list/);
+  const r = runTool('propose_schedule', { occurrences: base, summary: ' ' }, live(4, sched));
+  assert.match(errs(r), /summary must say/);
   // A done session can never be listed again on its day.
   const w = working({ phase: 'live', current_day: 1, goals: goals(), schedule: [{ goal_id: 'run', day: 1, status: 'done' }] });
-  const again = runTool('propose_schedule', { occurrences: [{ goal_id: 'run', day: 1, detail: '' }, { goal_id: 'run', day: 3, detail: '' }, { goal_id: 'gym', day: 2, detail: '' }, { goal_id: 'gym', day: 4, detail: '' }], changes: ['x'] }, w);
+  const again = runTool('propose_schedule', { occurrences: [{ goal_id: 'run', day: 1, detail: '' }, { goal_id: 'run', day: 3, detail: '' }, { goal_id: 'gym', day: 2, detail: '' }, { goal_id: 'gym', day: 4, detail: '' }], summary: 'x' }, w);
   assert.match(errs(again), /already done or missed on day 1/);
 });
 
