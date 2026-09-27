@@ -64,8 +64,9 @@ class App {
   dayNum(span = this.S.current) { return diffDays(span.start, this.today) + 1; }
   phase() { const c = this.S.current; if (c.status !== 'live') return 'planning'; return this.dayNum(c) >= 10 ? 'review' : 'live'; }
   summary(span) {
-    const parts = span.intentions.map(it => `${it.name} ${doneOf(span, it.id)}/${it.target}`);
-    const bits = [`Deka ${range(span.start)}: ${parts.join(', ') || 'nothing planned'}.`];
+    const want = g => span.endedDay ? span.occurrences.filter(o => o.intention_id === g.id && o.day <= span.endedDay).length : g.target;
+    const parts = span.intentions.map(it => `${it.name} ${doneOf(span, it.id)}/${want(it)}`);
+    const bits = [`Deka ${span.endedDay ? `${fmt(span.start)} to ${fmt(addDays(span.start, span.endedDay - 1))}, ended early on day ${span.endedDay}` : range(span.start)}: ${parts.join(', ') || 'nothing planned'}.`];
     if (span.reflection) bits.push(`Their reflection: ${span.reflection}`);
     if (span.review) bits.push(`Your read: ${span.review}`);
     return bits.join(' ');
@@ -124,7 +125,29 @@ class App {
         reflection: span.reflection || '',
       };
     }
+    if (event && event.kind === 'early_review') {
+      const ran = span.occurrences.filter(o => o.day <= event.day);
+      body.ended = {
+        range: `${fmt(span.start)} to ${fmt(addDays(span.start, event.day - 1))}`,
+        ended_on_day: event.day,
+        goals: span.intentions.map(g => ({ id: g.id, name: g.name, type: g.type, tag: g.tag || '', target: g.target, done: doneOf(span, g.id), planned: ran.filter(o => o.intention_id === g.id).length })),
+        schedule: ran.map(o => ({ goal_id: o.intention_id, day: o.day, status: occStatus(o) })),
+        notes: span.notes,
+        reflection: span.reflection || '',
+      };
+    }
     return { body, target: target === this.S.next ? 'next' : 'current', summarizeTo: all.length - 30 };
+  }
+
+  // End the deka today and start a new one, as the app does: bring all goals, what is left of them, or none.
+  endEarly(choice) {
+    const old = this.S.current;
+    Object.assign(old, { status: 'done', endedDay: this.dayNum(old) });
+    this.S.spans.unshift(old);
+    const span = this.S.current = newSpan(this.today);
+    span.intentions = choice === 'empty' ? [] : old.intentions.map(g => ({ ...JSON.parse(JSON.stringify(g)), target: choice === 'left' ? g.target - doneOf(old, g.id) : g.target })).filter(g => g.target > 0);
+    if (old.review) span.chat.push({ id: uid(), role: 'deka', text: old.review, cards: [] });
+    return span;
   }
 
   applyGoals(span, changes) {
@@ -339,7 +362,7 @@ async function turn(ctx, text, event, ask, files = []) {
     if (open) msg.checkin = { days: event.days, answered: false, followup: true };
     else span.checked = [...new Set([...span.checked, ...event.days])];
   }
-  if (!msg.error && event && event.kind === 'review') span.review = msg.text;
+  if (!msg.error && event && (event.kind === 'review' || event.kind === 'early_review')) span.review = msg.text;
   if (!msg.error && user) span.offStreak = msg.offTopic ? (span.offStreak || 0) + 1 : 0;
   if (!msg.text && !msg.cards.length && !msg.error) span.chat = span.chat.filter(m => m !== msg);
 
@@ -354,7 +377,7 @@ async function turn(ctx, text, event, ask, files = []) {
   const toolStrings = sink.calls.flatMap(c => c.tools).flatMap(t => JSON.stringify(t.input).match(/"(?:[^"\\]|\\.)*"/g) || []).map(s => JSON.parse(s));
   const record = {
     who: user ? 'person' : 'app',
-    said: [text, files.length ? `[attached ${files.map(f => f.name).join(', ')}]` : ''].filter(Boolean).join(' ') || (event && event.kind === 'review' ? '(Day 10: the app opens the review)' : ''),
+    said: [text, files.length ? `[attached ${files.map(f => f.name).join(', ')}]` : ''].filter(Boolean).join(' ') || (event && { review: '(Day 10: the app opens the review)', early_review: '(New deka: they end this one early, with a quick review)', new_deka: '(The new deka starts with the goals they brought)' }[event.kind]) || '',
     event: event || null,
     openCard: Boolean(body.open_card),
     toSummarize: (body.to_summarize || []).length,
@@ -990,6 +1013,35 @@ async function run(n) {
       if (!/deka|plan|days?|goal|ten|today|tonight|tomorrow|session|run|gym|date|coffee|mom|music|rentletter|sober|book/i.test(t.reply)) f.push('does not bring them back to the deka');
       notes.push(`tools: ${t.tools.map(x => x.name).join(', ') || 'none'}`);
     });
+
+    await scenario('22 end early', async (f, notes) => {
+      const a = seedLongChat(5, false); ctx.app = a;
+      const old = a.S.current;
+      const counts = old.intentions.map(g => ({ id: g.id, done: doneOf(old, g.id), planned: old.occurrences.filter(o => o.intention_id === g.id && o.day <= 5).length, left: g.target - doneOf(old, g.id) }));
+      const t = await say(null, { kind: 'early_review', day: 5 });
+      f.push(...turnChecks(t, { maxWords: 65 }));
+      if (t.tools.length) f.push(`review called ${t.tools.map(x => x.name).join(', ')}`);
+      // Every "N of M" in the review must be some goal's done out of planned on days 1 to 5.
+      const num = w => ({ zero: 0, none: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 }[w.toLowerCase()] ?? Number(w));
+      const pairs = [...t.reply.matchAll(/\b(\d|zero|none|one|two|three|four|five|six|seven|eight|nine)\s+(?:of|out of|for|from)\s+(\d|one|two|three|four|five|six|seven|eight|nine)\b/gi)].map(m => [num(m[1]), num(m[2])]);
+      notes.push(`counts in the review: ${pairs.map(p => p.join(' of ')).join(', ') || 'none'}`);
+      for (const [x, y] of pairs) if (!counts.some(c => c.done === x && c.planned === y)) f.push(`"${x} of ${y}" matches no goal`);
+      if (!pairs.length) f.push('no done out of planned counts');
+      if (/\?/.test(t.reply)) f.push('the review asks a question');
+      const span = a.endEarly('left');
+      const want = counts.filter(c => c.left > 0).map(c => [c.id, c.left]);
+      notes.push(`brought over: ${span.intentions.map(g => `${g.id} ${g.target}`).join(', ')}`);
+      if (JSON.stringify(span.intentions.map(g => [g.id, g.target])) !== JSON.stringify(want)) f.push('the reduced targets are wrong');
+      const t2 = await say(null, { kind: 'new_deka' });
+      f.push(...turnChecks(t2).map(x => `plan: ${x}`));
+      if (t2.tools.some(x => x.name === 'update_goals')) f.push('plan: changed the goals it was given');
+      const card = lastProposal(t2);
+      if (!card) { f.push('plan: no proposal'); return; }
+      for (const [id, n] of want) { const got = card.occurrences.filter(o => o.goal_id === id).length; if (got !== n) f.push(`plan: ${id} has ${got}, not ${n}`); }
+      // The date night was done, so it did not come over; the other rules still hold.
+      f.push(...planChecks(a, span, card.occurrences).filter(x => x !== 'no date night goal').map(x => `plan: ${x}`));
+      notes.push(`plan check: ${card.flags.length ? card.flags.join(' | ') : 'clean'}`);
+    });
   } finally {
     server.close();
   }
@@ -1094,7 +1146,7 @@ function transcript(r, s) {
 }
 
 (async () => {
-  console.log(`Deka real runs: ${RUNS} x 21 scenarios on ${MODEL}`);
+  console.log(`Deka real runs: ${RUNS} x 22 scenarios on ${MODEL}`);
   const runs = await Promise.all(Array.from({ length: RUNS }, (_, i) => run(i + 1)));
   const rows = [];
   for (const r of runs) for (const s of r.results) for (const t of s.turns) rows.push({ run: r.n, scenario: s.name, said: t.said.slice(0, 40), ttfw: t.ttfw, total: t.total, ...t.usage, cost: +t.cost.toFixed(4), rounds: t.rounds, plan_check: t.score.filter(Boolean) });

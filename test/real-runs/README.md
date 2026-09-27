@@ -1,6 +1,16 @@
 # Real runs
 
-## Latest: attachments, scenarios 20 and 21 twice, 1 and 2 once, on Opus 5.5 at low effort
+## Latest: ending a deka early, scenario 22 twice, on Opus 5.5 at low effort
+
+In `end-early/`, run on 2026-09-27. A deka on day 5 (days 1 to 3 done, day 4 free, day 5 still open) ends with a quick review, brings only what is left, and Deka plans the new deka.
+
+| Scenario | Run 1 | Run 2 |
+|---|---|---|
+| 22 end early | pass | pass |
+
+Every done out of planned count in both reviews matched the data, neither asked a question or called a tool, the reduced targets were right (the finished date night stayed behind), and both new plans came back clean from the plan check. Spend was $0.23.
+
+## Earlier: attachments, scenarios 20 and 21 twice, 1 and 2 once, on Opus 5.5 at low effort
 
 In `attachments/` and `attachments-core/`, run on 2026-09-23 after photos and PDFs could be sent with a message. Scenario 20 sends only a photo of a handwritten to do list with five items (`fixtures/todo-list.jpg`, a rendered note, not a camera photo). Scenario 21 sends only a landscape photo, a macOS wallpaper converted when the run starts and never committed.
 

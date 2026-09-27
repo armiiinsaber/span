@@ -104,6 +104,8 @@ try {
       await tap('.day[data-day="4"] .dl'); await snap('day sheet'); await tap('#sheet [data-a=sheet-close]');
       await tap('[data-tab=goals]'); await snap('goals');
       await tap('.row-btn'); await tap('[data-a=icon-open]'); await snap('goal sheet'); await tap('#sheet [data-a=sheet-close]');
+      await tap('[data-a=more]'); await tap('#sheet [data-a=new-deka]'); await snap('new deka sheet');
+      await tap('#sheet [data-a=nd-end][data-v=plain]'); await snap('new deka goals'); await tap('#sheet [data-a=sheet-close]');
       await tap('[data-a=more]'); await snap('more sheet');
       await tap('[data-a=go-past]'); await snap('past');
       await tap('[data-a=back]'); await tap('[data-a=more]'); await tap('[data-a=go-profile]'); await snap('profile');
