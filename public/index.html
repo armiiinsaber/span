@@ -667,6 +667,10 @@ body.no-tabs .toast { bottom: calc(var(--safe-b) + 16px); }
 .pick button.sel .dot { border-color: var(--paper); }
 .pick .rvd { background: var(--paper-deep); border-color: transparent; color: var(--ink-soft); font-size: var(--t-caption2); }
 .pick-hint { margin: 10px 0 0; font-size: var(--t-subhead); color: var(--ink-soft); min-height: 1.4em; text-align: center; }
+.sheet-q { margin: 0 0 20px; font-size: var(--t-body); color: var(--ink-soft); }
+.stack { display: grid; gap: 10px; padding-bottom: 8px; }
+.stack .link { justify-self: center; }
+.msg.recap .eyebrow { display: block; margin-bottom: 4px; }
 .menu { list-style: none; margin: 0 0 8px; padding: 0; border-top: 1px solid var(--hairline); }
 .menu button { display: flex; width: 100%; justify-content: space-between; align-items: center; min-height: 60px; font-size: var(--t-body); border-bottom: 1px solid var(--hairline); text-align: left; }
 .menu svg { width: 1.06rem; height: 1.06rem; color: var(--ink-soft); }
@@ -849,16 +853,20 @@ function spread(n, from = 1) {
 }
 const isLive = span => span && span.status === 'live';
 const openFrom = span => isLive(span) ? Math.min(9, Math.max(1, dayNum(span))) : 1;
+// A deka ended early counts only the days it ran: what was planned on them, and what got done.
+const ranOcc = sp => sp.endedDay ? sp.occurrences.filter(o => o.day <= sp.endedDay) : sp.occurrences;
+const wantOf = (sp, g) => sp.endedDay ? ranOcc(sp).filter(o => o.intention_id === g.id).length : g.target;
+const spanRange = sp => sp.endedDay ? `${fmt(sp.start)} to ${fmt(addDays(sp.start, sp.endedDay - 1))}` : range(sp.start);
 function summary(span) {
-  const parts = span.intentions.map(it => `${it.name} ${doneOf(span, it.id)}/${it.target}`);
-  const bits = [`Deka ${range(span.start)}: ${parts.join(', ') || 'nothing planned'}.`];
+  const parts = span.intentions.map(it => `${it.name} ${doneOf(span, it.id)}/${wantOf(span, it)}`);
+  const bits = [`Deka ${spanRange(span)}${span.endedDay ? `, ended early on day ${span.endedDay}` : ''}: ${parts.join(', ') || 'nothing planned'}.`];
   if (span.reflection) bits.push(`Their reflection: ${span.reflection}`);
   if (span.review) bits.push(`Your read: ${span.review}`);
   return bits.join(' ');
 }
 function completion(span) {
-  const want = span.intentions.reduce((n, it) => n + (it.target || 0), 0);
-  const done = span.occurrences.filter(o => o.done).length;
+  const want = span.intentions.reduce((n, it) => n + (wantOf(span, it) || 0), 0);
+  const done = ranOcc(span).filter(o => o.done).length;
   return want ? Math.min(100, Math.round(100 * done / want)) : 0;
 }
 const spanFor = t => t === 'next' ? S.next : S.current;
@@ -1004,7 +1012,7 @@ function stripCompact(sessions, { today = 0, open = null, tap = null, sort } = {
   }
   return h + (tap ? '</button>' : '</div>');
 }
-const occSessions = span => span.occurrences.map(o => ({ it: span.intentions.find(x => x.id === o.intention_id), day: o.day, state: stateOf(span, o) })).filter(x => x.it);
+const occSessions = span => ranOcc(span).map(o => ({ it: span.intentions.find(x => x.id === o.intention_id), day: o.day, state: stateOf(span, o) })).filter(x => x.it);
 
 // Full: the Days tab, one row per day with big icons. Tap an icon to check it off, a day to open it.
 function daysView(span, { live = false, today = 0 } = {}) {
@@ -1044,10 +1052,11 @@ function goalRows(span, { live = false, editable = false, target = 'current' } =
     const occ = occOf(span, it.id);
     const done = occ.filter(o => o.done).length;
     const placed = occ.filter(o => !o.missed).length;
-    const count = live ? `${done} of ${it.target}` : `${it.target} ${it.target === 1 ? 'time' : 'times'}`;
-    const short = placed < it.target ? `, ${placed ? `${placed} placed` : 'not placed yet'}` : '';
-    const inner = `${sIcon(it)}<span class="gn"><b>${nb(it.name)}</b><span class="sr">, </span><span>${count}${live ? '<span class="sr"> done</span>' : ''}${short}</span></span>${live ? ring(done, it.target) : ''}`;
-    const label = `${it.name}, ${live ? `${done} of ${it.target} done` : `${it.target} times`}${short}`;
+    const want = wantOf(span, it);
+    const count = live ? `${done} of ${want}` : `${it.target} ${it.target === 1 ? 'time' : 'times'}`;
+    const short = placed < it.target && !span.endedDay ? `, ${placed ? `${placed} placed` : 'not placed yet'}` : '';
+    const inner = `${sIcon(it)}<span class="gn"><b>${nb(it.name)}</b><span class="sr">, </span><span>${count}${live ? '<span class="sr"> done</span>' : ''}${short}</span></span>${live ? ring(done, want) : ''}`;
+    const label = `${it.name}, ${live ? `${done} of ${want} done` : `${it.target} times`}${short}`;
     h += editable
       ? `<li><button class="goal row-btn" data-a="edit-int" data-t="${target}" data-iid="${esc(it.id)}">${inner}<span class="sr">. Edit</span></button></li>`
       : `<li><div class="goal" role="img" aria-label="${esc(label)}">${inner}</div></li>`;
@@ -1289,6 +1298,7 @@ function msgView(msg, { readonly = false } = {}) {
     const only = atts && !msg.text;
     return `<div class="msg user" id="m-${msg.id}"><div class="bubble${only ? ' only' : ''}" data-hold="${msg.id}">${atts}${msg.text ? `<span class="bt">${esc(msg.text)}</span>` : ''}</div>${msg.status === 'waiting' ? '<div class="msg-state">Waiting for connection</div>' : ''}</div>`;
   }
+  if (msg.recap) return `<div class="msg deka recap" id="m-${msg.id}"><span class="eyebrow">Your last deka</span><p class="say"><span class="t">${paragraphs(msg.text)}</span></p></div>`;
   const live = ui.turn && ui.turn.msg === msg;
   const text = live ? ui.turn.shown : msg.text;
   const cards = (msg.cards || []).map((c, i) => cardView(msg, c, i, readonly)).join('');
@@ -1391,7 +1401,7 @@ function retryReply(msg, { failed = false } = {}) {
   const ask = again.ask ? span.chat.find(m => m.id === again.ask) : [...span.chat].reverse().find(m => m.role === 'deka' && m.checkin);
   hideToast(); closeLayer();
   render();
-  startTurn(span, again.text, again.event, ask, user);
+  startTurn(span, again.text, again.event, ask, user, again.cards ? { cards: clone(again.cards) } : {});
 }
 
 // A long press on your own message: a small menu with Copy.
@@ -1564,6 +1574,8 @@ function chatView() {
   const span = chatSpan();
   const msgs = span.chat;
   if (!msgs.length && !ui.turn) return `<div class="chat" id="chat" role="log" data-span="${span.id}">${chatEmpty(span)}</div>`;
+  // A new deka that came with only the review of the last one still opens with the first question.
+  if (onlyRecap(span) && !ui.turn) return `<h1 class="sr">Chat with Deka</h1><div class="chat" id="chat" role="log" data-span="${span.id}">${msgs.map(m => msgView(m)).join('')}${chatEmpty(span)}</div>`;
   return `<h1 class="sr">Chat with Deka</h1><div class="chat" id="chat" role="log" data-span="${span.id}">${msgs.map(m => msgView(m)).join('')}</div>`;
 }
 
@@ -1572,7 +1584,7 @@ function refreshChat() {
   const box = $('chat');
   const span = chatSpan();
   if (!box || box.dataset.span !== span.id || ui.tab !== 'chat' || ui.sub) return false;
-  if (!span.chat.length) return false;
+  if (!span.chat.length || (onlyRecap(span) && !ui.turn)) return false;
   if (box.querySelector('.chat-empty')) { box.innerHTML = ''; box.insertAdjacentHTML('beforebegin', '<h1 class="sr">Chat with Deka</h1>'); }
   const seen = new Set([...box.children].map(c => c.id));
   for (const m of span.chat) {
@@ -1647,7 +1659,7 @@ function pastView() {
   h += '<ul class="list">' + S.spans.map((sp, i) => {
     const open = ui.openPast === sp.id;
     return `<li><button class="sum" data-a="open-past" data-id="${esc(sp.id)}" aria-expanded="${open}">
-      <span><span class="ttl">Deka ${S.spans.length - i}</span><span class="when">${range(sp.start)}</span></span>
+      <span><span class="ttl">Deka ${S.spans.length - i}</span><span class="when">${spanRange(sp)}</span>${sp.endedDay ? `<span class="when">Ended on Day ${sp.endedDay}</span>` : ''}</span>
       <span class="pct">${completion(sp)}<small style="font-size:.5em">%</small></span></button>
       ${open ? `<div class="more fade">${sp.reflection ? `<p>${nb(sp.reflection)}</p>` : ''}${sp.review ? `<p class="read">${nb(sp.review)}</p>` : ''}${stripCompact(occSessions(sp), { sort: byGoal(sp) })}${goalRows(sp, { live: true })}
         <div class="actions">${sp.chat && sp.chat.length ? `<button class="btn" data-a="open-thread" data-id="${esc(sp.id)}">Read the chat</button>` : '<p class="quiet" style="padding:0">No chat for this&nbsp;deka.</p>'}</div></div>` : ''}</li>`;
@@ -1658,7 +1670,7 @@ function pastView() {
 function threadView() {
   const sp = S.spans.find(s => s.id === ui.thread);
   if (!sp) return '<p class="quiet">Not found.</p>';
-  return `<div class="head fade"><div class="eyebrow">${range(sp.start)}</div><h1 class="display small">The chat</h1></div>
+  return `<div class="head fade"><div class="eyebrow">${spanRange(sp)}</div><h1 class="display small">The chat</h1></div>
     <div class="chat" role="log">${sp.chat.map(m => msgView(m, { readonly: true })).join('')}</div>`;
 }
 
@@ -1669,6 +1681,7 @@ function profileView() {
   h += `<div class="seg theme-seg" role="group" aria-label="Theme">${THEMES.map(([v, l]) => `<button type="button" data-a="theme" data-v="${v}" aria-pressed="${now === v}">${l}</button>`).join('')}</div><ul class="list">`;
   h += `<li class="setting"><label for="checkinTime">Daily check in</label><input type="time" id="checkinTime" value="${esc(S.settings.checkin)}"></li>`;
   if (S.current) h += `<li class="setting"><label for="startDate">Deka started</label><input type="date" id="startDate" value="${S.current.start}"></li>`;
+  if (canEnd()) h += `<li class="setting"><span>Start a new deka</span><button class="link" data-a="new-deka">Start</button></li>`;
   h += `<li class="setting"><span>Export all data</span><button class="link" data-a="export">Download</button></li>
     <li class="setting"><span>Import from a file</span><button class="link" data-a="import">Choose file</button></li>`;
   if (S.current) h += `<li class="setting"><span>Discard this deka</span><button class="link danger" data-a="discard">Discard</button></li>`;
@@ -1732,19 +1745,21 @@ function autosize(t) {
 }
 
 let toastTimer = null;
-function toast(text, undo) {
+// hard: the toast keeps its time even while touched, for an Undo that must end.
+function toast(text, undo, { ms = 6000, hard = false } = {}) {
   clearTimeout(toastTimer);
   ui.toastUndo = undo || null;
+  ui.toastHard = hard;
   const stick = ui.tab === 'chat' && !ui.sub && (ui.pinned || nearBottom());
   $toast.innerHTML = `<div class="toast glass"><span>${esc(text)}</span>${undo ? '<button data-a="toast-undo">Undo</button>' : ''}</div>`;
   document.body.classList.add('toasting');
   if (stick) toBottom(true);
-  toastTimer = setTimeout(hideToast, 6000);
+  toastTimer = setTimeout(hideToast, ms);
 }
 // A toast waits while it is touched or focused, then gives the person time again.
-document.addEventListener('pointerover', e => { if (e.target.closest('.toast')) { clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, 6000); } });
-document.addEventListener('focusin', e => { if (e.target.closest('.toast')) clearTimeout(toastTimer); });
-document.addEventListener('focusout', e => { if (e.target.closest('.toast')) toastTimer = setTimeout(hideToast, 6000); });
+document.addEventListener('pointerover', e => { if (e.target.closest('.toast') && !ui.toastHard) { clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, 6000); } });
+document.addEventListener('focusin', e => { if (e.target.closest('.toast') && !ui.toastHard) clearTimeout(toastTimer); });
+document.addEventListener('focusout', e => { if (e.target.closest('.toast') && !ui.toastHard) toastTimer = setTimeout(hideToast, 6000); });
 function hideToast() { clearTimeout(toastTimer); $toast.innerHTML = ''; ui.toastUndo = null; document.body.classList.remove('toasting'); }
 
 function renderSheet() {
@@ -1764,11 +1779,13 @@ function renderSheet() {
   } else if (sh.kind === 'feedback') {
     body = feedbackSheet();
   } else if (sh.kind === 'more') {
-    body = `<ul class="menu"><li><button data-a="go-profile">Profile${I.chev}</button></li><li><button data-a="go-past">Past dekas${I.chev}</button></li></ul>`;
+    body = `<ul class="menu"><li><button data-a="go-profile">Profile${I.chev}</button></li><li><button data-a="go-past">Past dekas${I.chev}</button></li>${canEnd() ? `<li><button data-a="new-deka">New deka${I.chev}</button></li>` : ''}</ul>`;
+  } else if (sh.kind === 'newdeka') {
+    body = newDekaSheet(sh);
   } else {
     body = intentionSheet(sh);
   }
-  const title = sh.kind === 'day' ? `Day ${sh.day}<span class="sheet-sub">${sh.day === dayNum(S.current) ? 'Today' : fmt(dayDate(S.current, sh.day))}</span>` : sh.kind === 'more' ? 'More' : sh.kind === 'feedback' ? 'Feedback' : sh.kind === 'new' ? 'New&nbsp;goal' : 'Edit';
+  const title = sh.kind === 'day' ? `Day ${sh.day}<span class="sheet-sub">${sh.day === dayNum(S.current) ? 'Today' : fmt(dayDate(S.current, sh.day))}</span>` : sh.kind === 'more' ? 'More' : sh.kind === 'newdeka' ? 'New deka' : sh.kind === 'feedback' ? 'Feedback' : sh.kind === 'new' ? 'New&nbsp;goal' : 'Edit';
   const shellKey = `${sh.kind}|${sh.iid || sh.day || ''}`;
   const body0 = $('sheetBody');
   if (body0 && $sheet.dataset.key === shellKey) {
@@ -2056,6 +2073,17 @@ function buildRequest(span, text, event, user = null) {
       reflection: span.reflection || '',
     };
   }
+  if (event && event.kind === 'early_review') {
+    const ran = span.occurrences.filter(o => o.day <= event.day);
+    body.ended = {
+      range: `${fmt(span.start)} to ${fmt(dayDate(span, event.day))}`,
+      ended_on_day: event.day,
+      goals: span.intentions.map(g => ({ id: g.id, name: g.name, type: g.type, tag: g.tag || '', target: g.target, done: doneOf(span, g.id), planned: ran.filter(o => o.intention_id === g.id).length })),
+      schedule: ran.map(o => ({ goal_id: o.intention_id, day: o.day, status: occStatus(o) })),
+      notes: span.notes,
+      reflection: span.reflection || '',
+    };
+  }
   return { body, target: target === S.next ? 'next' : 'current', summarizeTo: all.length - 30 };
 }
 
@@ -2113,13 +2141,14 @@ function revealTick() {
   if (!t.pending && t.finished) finishTurn();
 }
 
-async function startTurn(span, text, event, ask, user = null) {
+// opts.cards: cards the reply starts with. opts.then: runs once the reply has settled.
+async function startTurn(span, text, event, ask, user = null, opts = {}) {
   // Only the newest reply keeps what it would take to ask it again.
   const undo = snapshot(span);
   for (const m of span.chat) delete m.undo;
-  const msg = { id: uid(), role: 'deka', text: '', ts: Date.now(), cards: [], undo, ask: { text, event, user: user ? user.id : null, ask: ask ? ask.id : null } };
+  const msg = { id: uid(), role: 'deka', text: '', ts: Date.now(), cards: opts.cards || [], undo, ask: { text, event, user: user ? user.id : null, ask: ask ? ask.id : null, ...(opts.cards ? { cards: clone(opts.cards) } : {}) } };
   span.chat.push(msg);
-  const turn = ui.turn = { msg, span, shown: '', pending: '', finished: false, event, ask, text };
+  const turn = ui.turn = { msg, span, shown: '', pending: '', finished: false, event, ask, text, then: opts.then, ctrl: new AbortController() };
   ui.pinned = true;
   render(); toBottom(true);
   $('chat')?.setAttribute('aria-busy', 'true');
@@ -2142,7 +2171,7 @@ async function startTurn(span, text, event, ask, user = null) {
     }
     const json = JSON.stringify(req.body);
     if (new Blob([json]).size > MAX_REQ) throw Object.assign(new Error('large'), { status: 413, note: 'That is too large. A message can carry up to 4 MB.' });
-    const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json, credentials: 'same-origin' });
+    const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json, credentials: 'same-origin', signal: turn.ctrl.signal });
     if (res.status === 401) { ui.locked = true; throw Object.assign(new Error('locked'), { status: 401 }); }
     // The server's own note for a message that is too long or a day's chat that is used up.
     if (!res.ok || !res.body) throw Object.assign(new Error('failed'), { status: res.status, note: [413, 429].includes(res.status) ? (await res.json().catch(() => ({}))).error : '' });
@@ -2163,6 +2192,8 @@ async function startTurn(span, text, event, ask, user = null) {
     }
   } catch (err) {
     clearTimeout(wakeTimer);
+    // Undone while it was running: the deka it belonged to is gone.
+    if (turn.dropped) return;
     if (err.status === 401) { msg.error = null; span.chat = span.chat.filter(m => m !== msg); ui.turn = null; clearInterval(turn.timer); render(); return; }
     msg.error = err.note ? err.note : err.status === 503 ? 'Deka is not set up yet.' : err.status === 429 ? 'Too many messages. Wait a few minutes.' : navigator.onLine === false ? 'You are offline.' : 'Deka did not answer.';
     msg.retry = { text, event };
@@ -2244,7 +2275,7 @@ function finishTurn() {
       if (!msg.cards.some(c => c.type === 'status')) msg.cards.push(statusCard(span));
     }
   }
-  if (!msg.error && event && event.kind === 'review') span.review = msg.text;
+  if (!msg.error && event && (event.kind === 'review' || event.kind === 'early_review')) span.review = msg.text;
   const el = $(`m-${msg.id}`);
   const mk = el && el.querySelector('.mk');
   if (el) {
@@ -2260,6 +2291,7 @@ function finishTurn() {
   save();
   renderDock();
   setTimeout(flushQueue, 50);
+  if (t.then) setTimeout(() => t.then(t), mk ? 1200 : 0);
 }
 
 /* Applying what Deka did */
@@ -2357,6 +2389,67 @@ function confirmProposal(msg, card) {
   const drop = status();
   render();
   toast('Schedule updated.', () => { span.occurrences = before.o; card.status = 'open'; drop(); render(); });
+}
+
+/* Ending a deka early: a quick review or none, then a new deka from today with the goals they bring. */
+
+const canEnd = () => isLive(S.current) && dayNum(S.current) >= 1 && dayNum(S.current) <= 9;
+const onlyRecap = span => span.chat.length > 0 && span.chat.every(m => m.recap);
+function newDekaSheet(sh) {
+  if (sh.step === 1) return `<p class="sheet-q">${nb('End this deka and start a new one?')}</p><div class="stack">
+    <button class="btn primary block" data-a="nd-end" data-v="review">End with a quick review</button>
+    <button class="btn block" data-a="nd-end" data-v="plain">Just start over</button>
+    <button class="link" data-a="sheet-close">Cancel</button></div>`;
+  return `<p class="sheet-q">${nb('What comes with you?')}</p><div class="stack">
+    <button class="btn block" data-a="nd-goals" data-v="full">Same goals, full counts</button>
+    <button class="btn block" data-a="nd-goals" data-v="left">Same goals, only what's left</button>
+    <button class="btn block" data-a="nd-goals" data-v="empty">Start empty</button>
+    <button class="link" data-a="nd-back">Back</button></div>`;
+}
+function endDeka(review, choice) {
+  const old = S.current;
+  if (!canEnd() || ui.turn) return;
+  // Everything as it was, for Undo.
+  const before = clone({ current: S.current, next: S.next, spans: S.spans });
+  const day = dayNum(old);
+  ui.sheet = null;
+  go('chat'); toBottom();
+  const begin = () => beginDeka(old, day, choice, before);
+  if (!review) { begin(); return; }
+  startTurn(old, null, { kind: 'early_review', day }, null, null, { then: t => {
+    // With no review, the deka still ends; a failed one is not kept.
+    if (t.msg.error) old.chat = old.chat.filter(m => m !== t.msg);
+    begin();
+  } });
+}
+// The goals they bring: all of them, only what is left of each, or none.
+function carried(old, choice) {
+  if (choice === 'empty') return [];
+  return old.intentions.map(g => ({ ...clone(g), target: choice === 'left' ? g.target - doneOf(old, g.id) : g.target })).filter(g => g.target > 0);
+}
+function beginDeka(old, day, choice, before) {
+  Object.assign(old, { status: 'done', closed: todayIso(), endedDay: day });
+  S.spans.unshift(old);
+  S.next = null;
+  const span = S.current = newSpan(todayIso());
+  span.intentions = carried(old, choice);
+  if (old.review) span.chat.push({ id: uid(), role: 'deka', text: old.review, ts: Date.now(), cards: [], recap: true, auto: true });
+  ui.cardOpen = null;
+  go('chat'); toBottom();
+  if (span.intentions.length) {
+    const card = { type: 'goals', id: uid(), lines: span.intentions.map(g => `Added ${g.name}, ${g.target} ${g.target === 1 ? 'time' : 'times'}`), rows: span.intentions.map(g => rowOf(g)), target: 'current', fresh: true, load: loadOf(span) };
+    startTurn(span, null, { kind: 'new_deka' }, null, null, { cards: [card] });
+  }
+  save();
+  const until = Date.now() + 8000;
+  toast('New deka started.', () => { if (Date.now() <= until) undoDeka(before); }, { ms: 8000, hard: true });
+}
+function undoDeka(before) {
+  const t = ui.turn;
+  if (t) { t.dropped = true; clearInterval(t.timer); t.ctrl.abort(); ui.turn = null; }
+  S.current = before.current; S.next = before.next; S.spans = before.spans;
+  save();
+  go('chat'); toBottom();
 }
 
 function closeCurrent() {
@@ -2589,6 +2682,10 @@ document.addEventListener('click', e => {
     case 'go-chat': go('chat'); break;
     case 'more': ui.sheet = { kind: 'more' }; renderSheet(); focusSheet(); break;
     case 'go-past': ui.sheet = null; openSub('past'); break;
+    case 'new-deka': if (canEnd() && !ui.turn) { ui.sheet = { kind: 'newdeka', step: 1 }; renderSheet(); focusSheet(); } break;
+    case 'nd-end': ui.sheet.review = el.dataset.v === 'review'; ui.sheet.step = 2; renderSheet(); focusSheet(); break;
+    case 'nd-back': ui.sheet.step = 1; renderSheet(); focusSheet(); break;
+    case 'nd-goals': endDeka(ui.sheet.review, el.dataset.v); break;
     case 'go-profile': ui.sheet = null; openSub('profile'); break;
     case 'theme': chooseTheme(el.dataset.v); break;
     case 'open-thread': openSub('thread', { thread: el.dataset.id }); break;

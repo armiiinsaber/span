@@ -872,4 +872,118 @@ test.describe('Deka app', { skip }, () => {
       body: 'fixed', scrolls: true, page: true, cursor: 'default', tap: 'rgba(0, 0, 0, 0)', viewport: 'width=device-width, initial-scale=1, viewport-fit=cover', drag: true });
     assert.doesNotMatch(app.viewport, /user-scalable|maximum-scale/, 'pinch zoom stays');
   });
+  // A deka on day 5: runs on days 1 and 3 done, day 4 missed; gym on day 2 done.
+  function dayFive() {
+    const st = liveState(5);
+    for (const o of st.current.occurrences) {
+      if (o.intention_id === 'run' && [1, 3].includes(o.day)) o.done = true;
+      if (o.intention_id === 'run' && o.day === 4) o.missed = true;
+      if (o.intention_id === 'gym' && o.day === 2) o.done = true;
+    }
+    st.current.checked = [1, 2, 3, 4];
+    st.current.notes = { 2: 'Legs heavy.' };
+    st.current.chat.push({ id: 'u0', role: 'user', text: 'plan it', ts: 1, cards: [] }, { id: 'd0', role: 'deka', text: 'Here is a plan.', ts: 2, cards: [] });
+    return st;
+  }
+  const newDeka = async (end, goals) => {
+    await click('[data-a=more]'); await click('#sheet [data-a=new-deka]');
+    assert.match(await text('#sheet .sheet-q'), /End this deka and start a new one\?/);
+    assert.deepEqual(await page.js("[...document.querySelectorAll('#sheet .stack button')].map(b => b.textContent.trim())"), ['End with a quick review', 'Just start over', 'Cancel']);
+    await click(`#sheet [data-a=nd-end][data-v=${end}]`);
+    assert.deepEqual(await page.js("[...document.querySelectorAll('#sheet .stack button')].map(b => b.textContent.trim())"), ['Same goals, full counts', "Same goals, only what's left", 'Start empty', 'Back']);
+    await click(`#sheet [data-a=nd-goals][data-v=${goals}]`);
+  };
+  const today = () => page.js("(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })()");
+
+  test('new deka: in the header menu and Profile only while a deka is live, and Cancel changes nothing', async () => {
+    await seed(dayFive());
+    await click('[data-a=more]');
+    assert.equal(await page.js("document.querySelectorAll('#sheet [data-a=new-deka]').length"), 1);
+    await click('#sheet [data-a=go-profile]');
+    assert.match(await text('main'), /Start a new deka/);
+    await click('main [data-a=new-deka]');
+    await click('#sheet [data-a=sheet-close]');
+    assert.equal((await stored()).current.id, 'c1');
+    await fresh();
+    await click('[data-a=intro-start]');
+    await click('[data-a=more]');
+    assert.equal(await page.js("document.querySelectorAll('#sheet [data-a=new-deka]').length"), 0, 'nothing to end while planning');
+  });
+
+  test('new deka: a quick review and only what is left', async () => {
+    await seed(dayFive());
+    const before = sent.length;
+    await newDeka('review', 'left');
+    await page.waitFor("JSON.parse(localStorage.getItem('deka.v1')).spans.length === 1", 8000);
+    await idle(); await sleep(1300);
+    const review = sent[before];
+    assert.equal(review.tools, undefined, 'the review gets no tools');
+    assert.match(review.messages.at(-1).content, /Event: early review\. They are ending this deka on day 5/);
+    const ended = JSON.parse(review.messages.at(-1).content.match(/<deka>\n(.*)\n<\/deka>/)[1]).deka_that_ended;
+    assert.deepEqual(ended.goals.map(g => [g.id, g.done, g.planned]), [['run', 2, 3], ['gym', 1, 2], ['sober', 0, 1]]);
+    const st = await stored();
+    const old = st.spans[0];
+    assert.equal(old.id, 'c1');
+    assert.equal(old.endedDay, 5);
+    assert.match(old.review, /run 2 of 3, gym 1 of 2, sober night 0 of 1/);
+    assert.equal(old.chat.at(-1).text, old.review, 'the review stays in the old chat');
+    assert.equal(old.notes[2], 'Legs heavy.');
+    // The new deka: today is day 1, with each goal less what was done.
+    assert.equal(st.current.start, await today());
+    assert.equal(st.current.status, 'planning');
+    assert.deepEqual(st.current.intentions.map(g => [g.id, g.target]), [['run', 3], ['gym', 2], ['sober', 2]]);
+    assert.equal(st.current.chat[0].recap, true);
+    assert.deepEqual(await page.js("[...document.querySelectorAll('.goals-card .gr')].map(r => r.querySelectorAll('.dots i').length)"), [3, 2, 2]);
+    assert.equal(await page.js("document.querySelectorAll('.card.proposal').length"), 1, 'Deka proposes a plan');
+    const ctx = lastContext();
+    assert.equal(ctx.days[0].date, await today());
+    assert.equal(ctx.days[0].weekday, await page.js("['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()]"));
+    assert.equal(ctx.current_day, null);
+    assert.match(sent.at(-1).messages.map(m => typeof m.content === 'string' ? m.content : '').join('\n'), /Event: new deka/);
+    // In Past dekas: ended on day 5, counting only days 1 to 5.
+    await click('[data-a=more]'); await click('#sheet [data-a=go-past]');
+    const when = await page.js("[...document.querySelectorAll('.list .when')].map(e => e.textContent)");
+    assert.equal(when[1], 'Ended on Day 5');
+    assert.match(await text('.list .pct'), /^50%/, 'three done of six planned on days 1 to 5');
+    await click('.list .sum');
+    assert.deepEqual(await page.js("[...document.querySelectorAll('.list .goal .gn > span:not(.sr)')].map(e => e.textContent.replace(' done', ''))"), ['2 of 3', '1 of 2', '0 of 1']);
+    assert.equal(await page.js("document.querySelectorAll('.list .strip10 .col[data-day] .s, .list .strip10 .s').length"), 6, 'only the sessions on days that ran');
+  });
+
+  test('new deka: just start over with full counts, then Undo puts the old one back exactly', async () => {
+    await seed(dayFive());
+    const was = (await stored()).current;
+    const before = sent.length;
+    await newDeka('plain', 'full');
+    await idle(); await sleep(1300);
+    assert.equal(sent.slice(before).filter(p => JSON.stringify(p.messages).includes('early review')).length, 0, 'no review');
+    let st = await stored();
+    assert.equal(st.spans[0].review, '');
+    assert.equal(st.spans[0].endedDay, 5);
+    assert.deepEqual(st.current.intentions.map(g => [g.id, g.target]), [['run', 5], ['gym', 3], ['sober', 2]]);
+    assert.equal(st.current.chat.some(m => m.recap), false);
+    assert.ok(sent.length > before);
+    assert.match(await text('.toast'), /New deka started\.\s*Undo/);
+    await click('.toast [data-a=toast-undo]');
+    st = await stored();
+    assert.equal(st.spans.length, 0);
+    assert.deepEqual(st.current, was, 'the old deka, its chat and all, exactly as it was');
+  });
+
+  test('new deka: start empty opens with the first question; Undo ends after 8 seconds', async () => {
+    await seed(dayFive());
+    const before = sent.length;
+    await newDeka('plain', 'empty');
+    await sleep(300);
+    assert.equal(sent.length, before, 'nothing to plan yet');
+    assert.match(await text('.chat-empty'), /What do the next 10/);
+    const st = await stored();
+    assert.equal(st.current.intentions.length, 0);
+    assert.equal(st.current.chat.length, 0);
+    // Past the 8 seconds, Undo does nothing.
+    await page.js('(() => { const now = Date.now; Date.now = () => now() + 9000; })()');
+    await click('.toast [data-a=toast-undo]');
+    assert.equal((await stored()).spans[0].id, 'c1');
+    await page.go();
+  });
 });
