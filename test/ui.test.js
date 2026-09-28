@@ -8,9 +8,10 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 
-process.env.DEKA_PASSCODE = 'uitest';
 process.env.MOCK_DELAY = '4';
 const { createApp } = require('../server');
+const { createDb } = require('../lib/db');
+const { startFake } = require('./fake-supabase');
 const mock = require('../lib/mock');
 // Every request the app makes to Claude, as the server built it.
 const sent = [];
@@ -32,13 +33,20 @@ const CHROME = process.env.CHROME_PATH || [
 const skip = !CHROME || typeof WebSocket === 'undefined' ? 'needs Chrome and Node 22 or newer' : false;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-let server, base, chrome, dir, page;
+let server, base, chrome, dir, page, fake, db;
+// A fresh account for a seeded state, so one test's data never meets another's.
+let who = null;
+const account = async (email = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}@example.com`, data = { first_name: 'Ana', last_name: 'Silva', username: `ana${Math.random().toString(36).slice(2, 8)}` }) => {
+  who = await fake.user(email, data);
+  return who;
+};
+const sessionOf = w => ({ access_token: w.access_token, refresh_token: w.refresh_token, expires_at: w.expires_at, user: { id: w.user.id, email: w.user.email } });
 
 async function openPage(port) {
   const v = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
   const ws = new WebSocket(v.webSocketDebuggerUrl);
-  let id = 0; const pending = new Map();
-  ws.onmessage = e => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } };
+  let id = 0; const pending = new Map(); const errors = [];
+  ws.onmessage = e => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } else if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text); };
   await new Promise(r => { ws.onopen = r; });
   const send = (method, params = {}, sessionId) => new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params, sessionId })); });
   const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' });
@@ -58,7 +66,7 @@ async function openPage(port) {
   };
   const go = async () => { await S('Page.navigate', { url: base }); await waitFor('document.readyState === "complete" && document.getElementById("main").children.length > 0'); };
   const size = w => S('Emulation.setDeviceMetricsOverride', { width: w, height: { 375: 812, 390: 844, 430: 932 }[w], deviceScaleFactor: 3, mobile: true });
-  return { S, js, go, waitFor, size, close: () => ws.close() };
+  return { S, js, go, waitFor, size, errors, close: () => ws.close() };
 }
 
 const click = sel => page.js(`document.querySelector(${JSON.stringify(sel)}).click()`);
@@ -79,14 +87,20 @@ function liveState(day = 4, extra = {}) {
     },
   };
 }
-// Seeds storage, first stopping the page that is open from writing its own state over it.
-const seed = async (state, key = 'deka.v1') => {
+// Seeds storage as a signed in device with its own account, first stopping the page that is
+// open from writing its own state over it. signedOut: nothing but the project details.
+const seed = async (state, key = 'deka.v1', { signedOut = false, sameAccount = false } = {}) => {
+  if (!signedOut && (!sameAccount || !who)) await account();
+  if (state && !signedOut && state.owner === undefined) state.owner = who.user.id;
   await page.js(`(() => {
     const set = Storage.prototype.setItem;
     Storage.prototype.setItem = function () {};
     localStorage.clear();
+    set.call(localStorage, 'deka.config', ${JSON.stringify(JSON.stringify({ url: fake.url, anonKey: fake.anonKey }))});
+    ${signedOut ? '' : `set.call(localStorage, 'deka.session', ${JSON.stringify(JSON.stringify(sessionOf(who)))});`}
     ${state ? `set.call(localStorage, ${JSON.stringify(key)}, ${JSON.stringify(JSON.stringify(state))});` : ''}
   })()`);
+  await page.js("new Promise(r => { const q = indexedDB.deleteDatabase('deka'); q.onsuccess = q.onerror = q.onblocked = () => r(); })");
   await page.go();
 };
 // A new device that has already answered the theme question.
@@ -97,7 +111,9 @@ const lastDeka = () => page.js("[...document.querySelectorAll('.msg.deka .t')].p
 
 test.describe('Deka app', { skip }, () => {
   test.before(async () => {
-    server = createApp({ client: spy }).listen(0);
+    fake = await startFake();
+    db = createDb(fake.databaseUrl);
+    server = createApp({ client: spy, supabase: { url: fake.url, anonKey: fake.anonKey, serviceKey: fake.serviceKey, jwtSecret: fake.jwtSecret }, db, chatPerTenMinutes: 1000 }).listen(0);
     await new Promise(r => server.once('listening', r));
     base = `http://127.0.0.1:${server.address().port}/`;
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'deka-ui-'));
@@ -110,10 +126,10 @@ test.describe('Deka app', { skip }, () => {
     await page.size(390);
     await page.S('Page.navigate', { url: base });
     await page.waitFor('document.readyState === "complete"');
-    assert.equal(await page.js("fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: 'uitest' }) }).then(r => r.status)"), 200);
   });
+  test.afterEach(t => { if (page && page.errors.length) { if (!t.passed) console.error('PAGE ERRORS', page.errors); page.errors.length = 0; } });
   test.after(async () => {
-    page?.close(); server?.close();
+    page?.close(); server?.close(); await db?.end(); if (fake) await fake.stop();
     if (chrome) { const gone = new Promise(r => chrome.once('exit', r)); chrome.kill(); await gone; }
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
@@ -470,30 +486,22 @@ test.describe('Deka app', { skip }, () => {
     await page.js("document.getElementById('msg').value = ''");
   });
 
-  test('right after the passcode, one screen asks light or dark, once per device, applied before paint', async () => {
-    const st = liveState(4);
-    delete st.settings.theme;
-    await seed(st);
-    await page.js("fetch('/api/logout', { method: 'POST' })");
-    // Signed out and never asked: the passcode comes first, and the theme screen never flashes before it.
-    const { result: watch } = await page.S('Page.addScriptToEvaluateOnNewDocument', { source: `window.__seen = []; new MutationObserver(() => { const m = document.getElementById('main'); const k = m && (m.querySelector('.choose') ? 'theme' : m.querySelector('.login') ? 'login' : m.querySelector('.chat, .intro') ? 'app' : ''); if (k && window.__seen.at(-1) !== k) window.__seen.push(k); }).observe(document, { childList: true, subtree: true });` });
+  test('right after the first sign in, one screen asks light or dark, once per account, applied before paint', async () => {
+    // Signed out and never asked: the sign in comes first, and the theme screen never flashes before it.
+    await seed(null, 'deka.v1', { signedOut: true });
+    const { result: watch } = await page.S('Page.addScriptToEvaluateOnNewDocument', { source: `window.__seen = []; new MutationObserver(() => { const m = document.getElementById('main'); const k = m && (m.querySelector('.choose') ? 'theme' : m.querySelector('.auth') ? 'login' : m.querySelector('.chat, .intro') ? 'app' : ''); if (k && window.__seen.at(-1) !== k) window.__seen.push(k); }).observe(document, { childList: true, subtree: true });` });
     await page.S('Page.navigate', { url: base });
-    await page.waitFor("document.getElementById('pass')");
+    await page.waitFor("document.getElementById('email')");
     await page.S('Page.removeScriptToEvaluateOnNewDocument', { identifier: watch.identifier });
-    assert.deepEqual(await page.js('window.__seen'), ['login'], 'nothing before the passcode screen');
-    // A slow session check shows the page color, then the still mark after 400 ms, and nothing else.
-    await page.S('Network.emulateNetworkConditions', { offline: false, latency: 1500, downloadThroughput: -1, uploadThroughput: -1 });
-    try {
-      await page.S('Page.navigate', { url: base });
-      await page.waitFor("document.readyState !== 'loading' && document.getElementById('main')", 8000);
-      await page.waitFor("document.querySelector('#main .center .mk')", 3000);
-      assert.deepEqual(await page.js("({ live: document.querySelector('#main .mk').classList.contains('live'), bar: document.getElementById('barIn').innerHTML, tabs: getComputedStyle(document.getElementById('tabs')).display })"), { live: false, bar: '', tabs: 'none' });
-      await page.waitFor("document.getElementById('pass')", 8000);
-    } finally {
-      await page.S('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
-    }
-    await page.js("(() => { document.getElementById('pass').value = 'uitest'; document.querySelector('[data-form=login]').requestSubmit(); })()");
-    await page.waitFor("document.querySelector('.choose')");
+    assert.deepEqual(await page.js('window.__seen'), ['login'], 'nothing before the sign in screen');
+    // Sign in with a code: the theme question comes right after, before anything else.
+    const email = `theme${Date.now()}@example.com`;
+    await fake.user(email, { first_name: 'Tam', last_name: 'Lee', username: `tam${Date.now().toString(36)}` });
+    await page.js(`(() => { const e = document.getElementById('email'); e.value = ${JSON.stringify(email)}; e.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await page.js("document.querySelector('[data-form=signin]').requestSubmit()");
+    await page.waitFor("document.getElementById('code')");
+    await page.js(`(() => { const c = document.getElementById('code'); c.value = ${JSON.stringify(fake.codeFor(email))}; c.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await page.waitFor("document.querySelector('.choose')", 8000);
     assert.match(await page.js("document.querySelector('h1').textContent"), /Light or/);
     assert.equal(await page.js("document.querySelectorAll('.choice').length"), 2);
     assert.equal(await page.js("getComputedStyle(document.getElementById('tabs')).display"), 'none');
@@ -612,20 +620,6 @@ test.describe('Deka app', { skip }, () => {
     assert.ok(r.bottom <= r.limit, `composer bottom ${r.bottom} is above the keyboard at ${r.limit}`);
     assert.ok(r.send <= r.limit);
     assert.equal(r.tabs, 'none');
-  });
-
-  test('the login screen says the home screen app signs in once too, only in Safari', async () => {
-    const at = async standalone => {
-      const { result } = await page.S('Page.addScriptToEvaluateOnNewDocument', { source: `Object.defineProperty(navigator, 'standalone', { value: ${standalone}, configurable: true })` });
-      await page.js("fetch('/api/logout', { method: 'POST' })");
-      await page.go();
-      const hint = await page.js("document.querySelector('.login .hint')?.textContent || ''");
-      await page.S('Page.removeScriptToEvaluateOnNewDocument', { identifier: result.identifier });
-      return hint;
-    };
-    assert.match(await at(false), /home screen app asks for this once/);
-    assert.equal(await at(true), '', 'not in the installed app');
-    assert.equal(await page.js("fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: 'uitest' }) }).then(r => r.status)"), 200);
   });
 
   test('no horizontal scroll, 44px targets and 16px inputs at every width', async () => {
@@ -788,16 +782,13 @@ test.describe('Deka app', { skip }, () => {
     await page.waitFor("document.querySelector('#tray img')?.naturalWidth > 0");
     assert.deepEqual(await page.js("(() => { const i = document.querySelector('#tray img'); return [i.naturalWidth, i.naturalHeight, i.draggable]; })()"), [1568, 1045, false]);
     assert.equal(await page.js("document.querySelector('#dock .send').disabled"), false, 'can send with no text');
-    // A PDF over 3 MB is turned away with one sentence.
-    await pick('pickFiles', [pdf('huge.pdf', 3.2e6)]);
+    // A PDF over 20 MB is turned away with one sentence; one under it comes along.
+    await pick('pickFiles', [pdf('huge.pdf', 21e6)]);
     await page.waitFor("!document.getElementById('attNote').hidden");
-    assert.equal(await text('#attNote'), 'That PDF is over 3 MB.');
-    // Two PDFs that fit alone but not together.
-    await pick('pickFiles', [pdf('one.pdf', 2.2e6), pdf('two.pdf', 2.2e6)]);
+    assert.equal(await text('#attNote'), 'That PDF is over 20 MB.');
+    await pick('pickFiles', [pdf('big.pdf', 4.5e6)]);
     await page.waitFor("document.querySelectorAll('#tray .att').length === 2");
-    await sleep(200);
-    assert.equal(await text('#attNote'), 'That is too large. A message can carry up to 4 MB.');
-    // Remove one; five at most.
+    // Remove it; five at most.
     await click('#tray .att:nth-child(2) [data-a=att-rm]');
     assert.equal(await page.js("document.querySelectorAll('#tray .att').length"), 1);
     await pick('pickFiles', [pdf('syllabus.pdf'), png(40, 40, 'a.png'), png(40, 40, 'b.png'), png(40, 40, 'c.png'), png(40, 40, 'd.png')]);
@@ -823,6 +814,8 @@ test.describe('Deka app', { skip }, () => {
     const st = await stored();
     const meta = st.current.chat.find(m => m.attachments).attachments;
     assert.deepEqual(meta.map(a => [a.kind, a.name, a.pages || 0]), [['image', 'list.png', 0], ['pdf', 'syllabus.pdf', 2]]);
+    assert.ok(meta.every(a => a.path && a.path.startsWith(`${who.user.id}/`)), 'each file went to the account\'s own folder');
+    assert.equal(fake.files.size >= 2, true, 'in the bucket');
     assert.ok(JSON.stringify(st).length < 20000, 'no file data in localStorage');
     assert.equal(await page.js("new Promise(r => { const q = indexedDB.open('deka'); q.onsuccess = () => { const g = q.result.transaction('files').objectStore('files').count(); g.onsuccess = () => r(g.result); }; })"), 2);
     // Tap the photo: full screen. Tap the PDF: its name and page count.
@@ -1015,5 +1008,290 @@ test.describe('Deka app', { skip }, () => {
       assert.match(await text('.recap .say'), /run 2 of 3/);
       await page.go();
     }
+  });
+  /* Accounts */
+
+  const type = (id, value) => page.js(`(() => { const e = document.getElementById(${JSON.stringify(id)}); e.value = ${JSON.stringify(value)}; e.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  const issues = () => page.js("[...document.querySelectorAll('.af-issue')].map(e => e.textContent.replace(/\\u00a0/g, ' '))");
+  const rowsOf = async (table, uid) => (await fake.pool.query(`select * from public.${table} where user_id = $1 and not deleted order by id`, [uid])).rows;
+  const signedOut = () => seed(null, 'deka.v1', { signedOut: true });
+  let migrated = null;
+
+  test('sign up checks each field as it is typed, then a 6 digit code makes the account', async () => {
+    await signedOut();
+    await click('[data-a=auth-go][data-v=signup]');
+    await page.waitFor("document.getElementById('first')");
+    assert.deepEqual(await page.js("[...document.querySelectorAll('.auth input')].map(i => i.placeholder)"), ['First name', 'Last name', 'Username', 'Email', 'Confirm email']);
+    assert.equal(await page.js("document.querySelector('.auth [type=submit]').disabled"), true);
+    await type('first', 'Kai'); await type('last', 'Moreau');
+    await type('username', 'Kai Moreau!');
+    assert.equal(await page.js("document.getElementById('username').value"), 'kaimoreau', 'lowercase, only letters, numbers, dots and underscores');
+    await type('username', 'ab');
+    assert.deepEqual(await issues(), ['Letters, numbers, dots and underscores, 3 to 20.']);
+    await fake.user('taken@example.com', { username: 'kai.taken' });
+    await type('username', 'kai.taken'); await sleep(600);
+    assert.deepEqual(await issues(), ['Taken.'], 'checked against the database as typed');
+    await type('username', 'kai.moreau'); await sleep(600);
+    assert.deepEqual(await issues(), []);
+    assert.match(await text('.af-hint'), /Available/);
+    await type('email', 'kai@example.com'); await type('confirm', 'kai@example.co');
+    assert.deepEqual(await issues(), ["Emails don't match."]);
+    assert.equal(await page.js("document.querySelector('.auth [type=submit]').disabled"), true);
+    await type('confirm', 'Kai@example.com');
+    assert.deepEqual(await issues(), []);
+    assert.equal(await page.js("document.querySelector('.auth [type=submit]').disabled"), false);
+    await click('.auth [type=submit]');
+    await page.waitFor("document.getElementById('code')");
+    assert.match(await text('.auth h1'), /Check your/);
+    assert.match(await text('.auth .lede'), /kai@example.com/);
+    // The account exists now, with its profile from the form, and waits for the code.
+    const u = (await fake.pool.query("select id from auth.users where email = 'kai@example.com'")).rows[0];
+    const prof = (await fake.pool.query('select first_name, last_name, username, plan from public.profiles where id = $1', [u.id])).rows[0];
+    assert.deepEqual(prof, { first_name: 'Kai', last_name: 'Moreau', username: 'kai.moreau', plan: 'trial' });
+    await type('code', '000000'); await sleep(400);
+    assert.deepEqual(await issues(), ['That code is not right, or it expired.']);
+    await type('code', fake.codeFor('kai@example.com'));
+    await page.waitFor("document.querySelector('.choose')", 8000);
+    await click('[data-a=theme][data-v=light]');
+    await page.waitFor("document.querySelector('.intro')");
+    assert.match(await text('.intro h1'), /Ten days at a/);
+    const sess = JSON.parse(await page.js("localStorage.getItem('deka.session')"));
+    assert.equal(sess.user.id, u.id);
+    assert.equal((await stored()).owner, u.id);
+    await page.waitFor(`fetch('${fake.url}/rest/v1/profiles?select=theme&id=eq.${u.id}', { headers: { apikey: '${fake.anonKey}', Authorization: 'Bearer ' + JSON.parse(localStorage.getItem('deka.session')).access_token } }).then(r => r.json()).then(r => r[0].theme === 'light')`, 5000);
+  });
+
+  test('sign in: an unknown email is told to sign up; a known one gets a code and everything comes down', async () => {
+    const w = await account('known@example.com', { first_name: 'Noor', last_name: 'Haddad', username: 'noor.h' });
+    await seed(liveState(4), 'deka.v1', { sameAccount: true }); await say('plan it'); await idle();
+    await page.waitFor("JSON.parse(localStorage.getItem('deka.sync')).outbox && Object.keys(JSON.parse(localStorage.getItem('deka.sync')).outbox).length === 0", 8000);
+    await signedOut();
+    await type('email', 'nobody@example.com');
+    await click('.auth [type=submit]'); await sleep(300);
+    assert.deepEqual(await issues(), ['No account with that email. Create one below.']);
+    await type('email', 'known@example.com');
+    await click('.auth [type=submit]');
+    await page.waitFor("document.getElementById('code')");
+    await type('code', fake.codeFor('known@example.com'));
+    await page.waitFor("document.querySelector('.card.proposal')", 8000);
+    const st = await stored();
+    assert.equal(st.owner, w.user.id);
+    assert.deepEqual(st.current.intentions.map(g => g.id), ['run', 'gym', 'sober'], 'the goals came down');
+    assert.equal(st.current.chat.filter(m => m.role === 'deka').length, 1);
+    assert.equal(st.settings.theme, 'system', 'no theme question the second time');
+    await click('[data-a=more]'); await click('#sheet [data-a=go-profile]');
+    assert.deepEqual(await page.js("[...document.querySelectorAll('.list.account .sv')].map(e => e.textContent)"), ['Noor Haddad', 'noor.h', 'known@example.com']);
+    assert.match(await text('.head .sub'), /^Trial until /);
+  });
+
+  test('Apple or Google: what the provider gave is kept, and only a username is asked for', async () => {
+    fake.oauth.email = `sam${Date.now()}@example.com`;
+    await signedOut();
+    const google = await page.js("(() => { const b = document.querySelector('.google-btn'); const cs = getComputedStyle(b); return { text: b.textContent.trim(), bg: cs.backgroundColor, border: cs.borderColor, h: Math.round(b.getBoundingClientRect().height) }; })()");
+    assert.deepEqual(google, { text: 'Sign in with Google', bg: 'rgb(255, 255, 255)', border: 'rgb(116, 119, 117)', h: 40 });
+    const apple = await page.js("(() => { const b = document.querySelector('.apple-btn'); const cs = getComputedStyle(b); return { text: b.textContent.trim(), bg: cs.backgroundColor, color: cs.color, h: Math.round(b.getBoundingClientRect().height) }; })()");
+    assert.deepEqual(apple, { text: 'Sign in with Apple', bg: 'rgb(0, 0, 0)', color: 'rgb(255, 255, 255)', h: 44 });
+    await click('.google-btn');
+    await page.waitFor("document.getElementById('username') && !document.getElementById('first')", 8000);
+    assert.match(await text('.auth h1'), /Pick a/);
+    await type('username', 'sam.rivera'); await sleep(600);
+    await click('.auth [type=submit]');
+    await page.waitFor("document.querySelector('.choose')", 8000);
+    const u = (await fake.pool.query('select first_name, last_name, username from public.profiles where email = $1', [fake.oauth.email])).rows[0];
+    assert.deepEqual(u, { first_name: 'Sam', last_name: 'Rivera', username: 'sam.rivera' });
+  });
+
+  test('Profile: edit the name and username, sign out forgets this device, delete removes everything', async () => {
+    const w = await account('edit@example.com', { first_name: 'Ana', last_name: 'Silva', username: 'ana.edit' });
+    await seed(liveState(4), 'deka.v1', { sameAccount: true });
+    await click('[data-a=more]'); await click('#sheet [data-a=go-profile]');
+    await click('[data-a=edit-account]');
+    await page.waitFor("document.querySelector('#sheet #username')");
+    await type('username', 'ana.edit'); await sleep(500);
+    assert.deepEqual(await issues(), [], 'your own username is not taken');
+    await fake.user('other@example.com', { username: 'ana.other' });
+    await type('username', 'ana.other'); await sleep(600);
+    assert.deepEqual(await issues(), ['Taken.']);
+    await type('username', 'ana.new'); await type('first', 'Anna'); await sleep(600);
+    await click('#sheet [type=submit]');
+    await page.waitFor("!document.getElementById('sheet')");
+    assert.deepEqual(await page.js("[...document.querySelectorAll('.list.account .sv')].map(e => e.textContent)"), ['Anna Silva', 'ana.new', 'edit@example.com']);
+    const p = (await fake.pool.query('select first_name, username from public.profiles where id = $1', [w.user.id])).rows[0];
+    assert.deepEqual(p, { first_name: 'Anna', username: 'ana.new' });
+    // Sign out: the cache goes with the session.
+    await page.waitFor("Object.keys(JSON.parse(localStorage.getItem('deka.sync')).outbox).length === 0", 8000);
+    await click('[data-a=sign-out]');
+    await page.waitFor("document.querySelector('.auth')");
+    assert.equal(await page.js("localStorage.getItem('deka.session')"), null);
+    const left = JSON.parse(await page.js("localStorage.getItem('deka.v1') || 'null'"));
+    assert.ok(!left || (!left.current && !left.spans.length && !left.owner && !left.profile), 'nothing of the account stays on the device');
+    assert.equal((await fake.pool.query('select count(*) from public.dekas where user_id = $1', [w.user.id])).rows[0].count, '1', 'the account keeps its data');
+    // Delete: one confirmation, then every row and file is gone.
+    await seed(liveState(4), 'deka.v1', { sameAccount: true });
+    await fetch(`${fake.url}/storage/v1/object/attachments/${w.user.id}/a.jpg`, { method: 'POST', headers: { apikey: fake.anonKey, Authorization: `Bearer ${w.access_token}`, 'Content-Type': 'image/jpeg' }, body: 'x' });
+    await click('[data-a=more]'); await click('#sheet [data-a=go-profile]');
+    await page.js('window.__asked = []; window.confirm = q => { window.__asked.push(q); return true; }');
+    await click('[data-a=delete-account]');
+    await page.waitFor("document.querySelector('.auth')", 8000);
+    assert.deepEqual(await page.js('window.__asked'), ['Delete your account and everything in it? This cannot be undone.']);
+    assert.equal((await fake.pool.query('select count(*) from auth.users where id = $1', [w.user.id])).rows[0].count, '0');
+    assert.equal((await fake.pool.query('select count(*) from public.dekas where user_id = $1', [w.user.id])).rows[0].count, '0');
+    assert.equal(fake.files.has(`attachments/${w.user.id}/a.jpg`), false);
+    assert.match(await text('.toast'), /Your account is gone/);
+    who = null;
+  });
+
+  test('sync: what changes here lands in the database, offline changes wait and go when back', async () => {
+    await seed(liveState(4));
+    const uid = who.user.id;
+    const settled = () => page.waitFor("Object.keys(JSON.parse(localStorage.getItem('deka.sync')).outbox).length === 0", 8000);
+    await settled();
+    assert.deepEqual((await rowsOf('dekas', uid)).map(d => [d.id, d.role, d.status]), [['c1', 'current', 'live']]);
+    assert.equal((await rowsOf('goals', uid)).length, 3);
+    assert.equal((await rowsOf('sessions', uid)).length, 10);
+    // Offline: check one off, add a goal by hand.
+    await page.js(`(() => { const f = window.fetch; window.__off = true; window.fetch = (u, o) => window.__off && String(u).startsWith('${fake.url}') ? Promise.reject(new TypeError('Failed to fetch')) : f(u, o); Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => !window.__off }); })()`);
+    await click('[data-tab=days]');
+    await click('.day[data-day="4"] [data-a=toggle][data-iid=run]');
+    await click('[data-tab=goals]'); await click('[data-a=add-int]');
+    await page.waitFor("document.getElementById('intName')");
+    await page.js("(() => { const i = document.getElementById('intName'); i.value = 'Read'; i.dispatchEvent(new Event('input', { bubbles: true })); })()");
+    await click('#sheetAdd');
+    await sleep(1200);
+    const box = await page.js("JSON.parse(localStorage.getItem('deka.sync')).outbox");
+    assert.ok(Object.keys(box).some(k => k === 'sessions/c1:run@4'), 'the check off waits in the outbox');
+    assert.ok(Object.keys(box).some(k => k === 'goals/c1:read'), 'so does the new goal');
+    assert.equal((await rowsOf('goals', uid)).length, 3, 'nothing reached the database yet');
+    assert.match(await page.js("(() => { document.querySelector('[data-a=more]').click(); document.querySelector('#sheet [data-a=go-profile]').click(); return document.querySelector('main').textContent; })()"), /sync when you are back/);
+    // Back online.
+    await page.js("window.__off = false; window.dispatchEvent(new Event('online'))");
+    await settled();
+    assert.equal((await rowsOf('goals', uid)).find(g => g.goal_id === 'read').target, 3);
+    assert.equal((await rowsOf('sessions', uid)).find(x => x.goal_id === 'run' && x.day === 4).done, true);
+  });
+
+  test('migration: a device from before accounts uploads everything on first sign in, attachments included', async () => {
+    // A realistic life: two finished dekas, one ended early, and a live one with chat, cards, notes, feedback and files.
+    const st = liveState(5);
+    const past = (id, daysBack, endedDay) => ({ id, start: daysAgo(daysBack), status: 'done', closed: daysAgo(daysBack - 9), ...(endedDay ? { endedDay } : {}), notes: { 2: 'Rain.' }, log: [], summary: 'Mock summary.', summarizedUpTo: 0, checked: [1, 2, 3], checkin: {}, reflection: 'Good one.', review: 'Runs held.',
+      intentions: [{ id: 'run', name: 'Run', type: 'do', tag: '', target: 4, icon: 'run', category: 'body' }, { id: 'mom', name: 'See mom', type: 'see', tag: '', target: 2, icon: 'family', category: 'people' }],
+      occurrences: [{ intention_id: 'run', day: 1, done: true, detail: '' }, { intention_id: 'run', day: 3, done: true, detail: '' }, { intention_id: 'mom', day: 4, done: false, missed: true, detail: '' }],
+      chat: [{ id: `${id}u`, role: 'user', text: 'four runs and mom twice', ts: 1, cards: [] }, { id: `${id}d`, role: 'deka', text: 'Got it.', ts: 2, cards: [{ type: 'goals', id: 'gc', lines: ['Added Run, 4 times'], rows: [], target: 'current' }] }] });
+    st.spans = [past('p2', 23, 5), past('p1', 40)];
+    st.current.notes = { 3: 'Slept well.' };
+    st.current.chat = [
+      { id: 'm1', role: 'user', text: 'here is my list', ts: 10, cards: [], attachments: [{ id: 'att1', kind: 'image', name: 'list.jpg' }, { id: 'att2', kind: 'pdf', name: 'plan.pdf', pages: 2 }] },
+      { id: 'm2', role: 'deka', text: 'Everything fits.', ts: 11, cards: [{ type: 'proposal', id: 'pc', target: 'current', occurrences: [{ goal_id: 'run', day: 6 }], summary: 'Spread out', changes: [], status: 'confirmed' }], feedback: { rating: 'up', reason: '', ts: '2026-09-27T10:00:00.000Z' } },
+    ];
+    st.owner = null;
+    await account();
+    migrated = who;
+    await seed(st, 'deka.v1', { sameAccount: true });
+    // The files, as the old app kept them.
+    await page.js(`new Promise(r => { const q = indexedDB.open('deka', 1); q.onupgradeneeded = () => q.result.createObjectStore('files', { keyPath: 'id' }); q.onsuccess = () => { const t = q.result.transaction('files', 'readwrite'); t.objectStore('files').put({ id: 'att1', type: 'image/jpeg', name: 'list.jpg', blob: new Blob(['jpegbytes'], { type: 'image/jpeg' }) }); t.objectStore('files').put({ id: 'att2', type: 'application/pdf', name: 'plan.pdf', blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }) }); t.oncomplete = () => r(); }; })`);
+    await page.go();
+    const uid = who.user.id;
+    await page.waitFor("JSON.parse(localStorage.getItem('deka.v1')).owner && Object.keys(JSON.parse(localStorage.getItem('deka.sync')).outbox).length === 0", 10000);
+    assert.equal((await stored()).owner, uid);
+    const dekas = await rowsOf('dekas', uid);
+    assert.deepEqual(dekas.map(d => [d.id, d.role, d.ended_day, d.review]).sort(), [['c1', 'current', null, ''], ['p1', 'past', null, 'Runs held.'], ['p2', 'past', 5, 'Runs held.']]);
+    assert.equal((await rowsOf('goals', uid)).length, 3 + 2 + 2);
+    assert.equal((await rowsOf('sessions', uid)).length, 10 + 3 + 3);
+    assert.deepEqual((await rowsOf('notes', uid)).map(n => [n.id, n.text]).sort(), [['c1:3', 'Slept well.'], ['p1:2', 'Rain.'], ['p2:2', 'Rain.']]);
+    const msgs = await rowsOf('messages', uid);
+    assert.equal(msgs.length, 2 + 2 + 2);
+    const m2 = msgs.find(m => m.id === 'm2');
+    assert.equal(m2.data.feedback.rating, 'up');
+    assert.equal(m2.data.cards[0].status, 'confirmed');
+    // Attachments went up on their own, into the account's folder, and the message now points at them.
+    await say('plan it'); await idle();
+    const m1 = (await stored()).current.chat.find(m => m.id === 'm1');
+    assert.ok(m1.attachments.every(a => a.path && a.path.startsWith(`${uid}/`)), JSON.stringify(m1.attachments));
+    assert.deepEqual([...fake.files.keys()].filter(k => k.includes(uid)).sort(), [`attachments/${uid}/att1.jpg`, `attachments/${uid}/att2.pdf`]);
+    // The local copy stays, as the cache.
+    assert.equal((await stored()).spans.length, 2);
+    assert.equal(await page.js("new Promise(r => { const q = indexedDB.open('deka'); q.onsuccess = () => { const g = q.result.transaction('files').objectStore('files').count(); g.onsuccess = () => r(g.result); }; })"), 2);
+  });
+
+  test('a second device signs in and gets everything, files on demand', async t => {
+    // Same account as the migration, on a fresh device.
+    if (!migrated) return t.skip('needs the migration test first');
+    who = migrated;
+    await seed(null, 'deka.v1', { sameAccount: true });
+    const uid = who.user.id;
+    await page.waitFor("JSON.parse(localStorage.getItem('deka.v1') || '{}').spans?.length === 2", 10000);
+    const st = await stored();
+    assert.equal(st.owner, uid);
+    assert.deepEqual(st.current.intentions.map(g => [g.id, g.target]), [['run', 5], ['gym', 3], ['sober', 2]]);
+    assert.equal(st.current.occurrences.length, 10);
+    assert.equal(st.current.notes[3], 'Slept well.');
+    assert.deepEqual(st.spans.map(sp => [sp.id, sp.endedDay || null, sp.reflection]), [['p2', 5, 'Good one.'], ['p1', null, 'Good one.']]);
+    assert.deepEqual(st.current.chat.map(m => m.id), ['m1', 'm2', ...st.current.chat.slice(2).map(m => m.id)]);
+    assert.equal(st.current.chat.find(m => m.id === 'm2').feedback.rating, 'up');
+    assert.equal(st.settings.theme, 'system');
+    // The photo was never on this device: it comes from the bucket and is kept for offline.
+    await page.waitFor("document.querySelector('.msg.user .sent img')?.src", 8000);
+    assert.equal(await page.js("new Promise(r => { const q = indexedDB.open('deka'); q.onsuccess = () => { const g = q.result.transaction('files').objectStore('files').count(); g.onsuccess = () => r(g.result); }; })"), 1);
+    await click('.msg.user .sent button:last-child');
+    assert.match(await text('.toast'), /plan\.pdf, 2 pages/);
+    // A change here shows up on the first device's next pull.
+    await click('[data-tab=days]');
+    await click('.day[data-day="5"] [data-a=toggle][data-iid=sober]');
+    await page.waitFor("Object.keys(JSON.parse(localStorage.getItem('deka.sync')).outbox).length === 0", 8000);
+    const before = (await rowsOf('sessions', uid)).find(x => x.goal_id === 'sober' && x.day === 5);
+    assert.equal(before.done, true);
+    who = null;
+  });
+
+  test('a session that ran out is refreshed on use, and a dead one signs out', async () => {
+    await seed(liveState(4));
+    await page.js("(() => { const s = JSON.parse(localStorage.getItem('deka.session')); s.expires_at = Math.floor(Date.now() / 1000) - 10; localStorage.setItem('deka.session', JSON.stringify(s)); })()");
+    await page.go();
+    await say('plan it'); await idle();
+    assert.match(await lastDeka(), /Here is a plan/);
+    const s2 = JSON.parse(await page.js("localStorage.getItem('deka.session')"));
+    assert.notEqual(s2.refresh_token, who.refresh_token, 'a new refresh token');
+    assert.ok(s2.expires_at > Date.now() / 1000 + 3000);
+    await page.js("(() => { const s = JSON.parse(localStorage.getItem('deka.session')); s.expires_at = 1; s.refresh_token = 'gone'; localStorage.setItem('deka.session', JSON.stringify(s)); })()");
+    await page.go(); await sleep(800);
+    assert.equal(await page.js("document.querySelector('.auth') !== null"), true, 'back to sign in');
+  });
+
+  test('Retry puts back only what the reply changed; a check off and a goal added by hand since stay', async () => {
+    const st = liveState(4);
+    st.current.chat.push({ id: 'q1', role: 'deka', text: 'How did today go?', ts: 1, cards: [], auto: true, checkin: { days: [4], answered: false } });
+    await seed(st);
+    await say('run done, skipped the gym'); await idle(); await sleep(1300);
+    let cur = (await stored()).current;
+    assert.deepEqual(cur.occurrences.filter(o => o.day === 4).map(o => [o.intention_id, o.done, Boolean(o.missed)]), [['run', true, false], ['gym', false, true]]);
+    // By hand since: the gym on day 7 done, sober night 5 done, and a goal added.
+    await click('[data-tab=days]');
+    await click('.day[data-day="7"] [data-a=toggle][data-iid=gym]');
+    await click('.day[data-day="5"] [data-a=toggle][data-iid=sober]');
+    await click('[data-tab=goals]'); await click('[data-a=add-int]');
+    await page.waitFor("document.getElementById('intName')");
+    await page.js("(() => { const i = document.getElementById('intName'); i.value = 'Read'; i.dispatchEvent(new Event('input', { bubbles: true })); })()");
+    await click('#sheetAdd');
+    await click('[data-tab=chat]');
+    await click('.msg.deka:last-child [data-a=regen]');
+    await page.waitFor("document.querySelectorAll('.msg.deka').length >= 2", 2000).catch(() => {});
+    await idle(); await sleep(1300);
+    cur = (await stored()).current;
+    assert.equal(cur.intentions.some(g => g.id === 'read'), true, 'the goal added by hand stays');
+    assert.equal(cur.occurrences.find(o => o.intention_id === 'gym' && o.day === 7).done, true, 'the check off by hand stays');
+    assert.equal(cur.occurrences.find(o => o.intention_id === 'sober' && o.day === 5).done, true);
+    assert.deepEqual(cur.chat.filter(m => (m.cards || []).some(c => c.type === 'log')).length, 1, 'logged once, by the retry');
+    const ctx = lastContext();
+    assert.deepEqual(ctx.schedule.filter(o => o.day === 4).map(o => [o.goal_id, o.status]), [['run', 'planned'], ['gym', 'planned']], 'the retry started from day 4 not yet logged');
+    assert.ok(ctx.goals.some(g => g.id === 'read'), 'and with the new goal in place');
+  });
+
+  test('every turn with Deka is written to usage for that person', async () => {
+    await seed(liveState(4));
+    await say('plan it'); await idle();
+    await sleep(300);
+    const rows = (await fake.pool.query('select kind, model, input_tokens, output_tokens from public.usage where user_id = $1', [who.user.id])).rows;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].kind, 'chat');
   });
 });

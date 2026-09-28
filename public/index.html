@@ -519,6 +519,34 @@ html.theming, html.theming * { transition: background-color .2s ease, color .2s 
 .input:focus { outline: none; border-bottom-width: 2px; padding-bottom: 9px; }
 .login .input { text-align: center; letter-spacing: .2em; }
 .login .hint { margin: 4px 0 0; font-size: var(--t-subhead); color: var(--ink-soft); }
+/* Sign in and sign up: plain fields, a note under one only when something is wrong. */
+.auth form { display: grid; gap: 14px; max-width: 320px; margin: 0 auto; width: 100%; text-align: left; }
+.auth.start .mk { margin-bottom: 22px; }
+.auth.start .display { font-size: calc(var(--t-large) * 1.5); margin-bottom: 32px; }
+.auth .display.small { margin-bottom: 20px; }
+.auth .lede { margin-bottom: 24px; }
+.af { display: grid; gap: 4px; }
+.af-issue, .af-hint { margin: 0; font-size: var(--t-footnote); color: var(--ink-soft); }
+.af-issue { color: var(--people); }
+.auth .input.code { text-align: center; letter-spacing: .4em; font-size: var(--t-title2); font-variant-numeric: tabular-nums; }
+.auth .link { justify-self: center; }
+.auth .btn { margin-top: 4px; }
+/* Sign in with Apple and Sign in with Google, as each company asks for them. */
+.oauth { display: grid; gap: 10px; margin-top: 6px; }
+.apple-btn, .google-btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 44px; border-radius: 22px; font-weight: 600; font-size: 17px; }
+.apple-btn { background: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; }
+.apple-btn svg { width: 15px; height: 19px; }
+.google-btn { background: #fff; color: #1F1F1F; border: 1px solid #747775; font-family: 'Roboto', 'Figtree', Arial, sans-serif; font-weight: 500; font-size: 14px; min-height: 40px; }
+.google-btn svg { width: 20px; height: 20px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .apple-btn { background: #fff; color: #000; } :root:not([data-theme="light"]) .google-btn { background: #131314; color: #E3E3E3; border-color: #8E918F; } }
+[data-theme="dark"] .apple-btn { background: #fff; color: #000; }
+[data-theme="dark"] .google-btn { background: #131314; color: #E3E3E3; border-color: #8E918F; }
+.apple-btn:active, .google-btn:active { opacity: .85; }
+/* The account rows in Profile. */
+.list.account .setting { display: grid; grid-template-columns: 5.5em minmax(0, 1fr) auto; gap: 0 12px; align-items: center; }
+.list.account .sl { font-size: var(--t-footnote); color: var(--ink-soft); }
+.list.account .sv { overflow-wrap: anywhere; white-space: normal; }
+.list.account .link { margin-right: -8px; }
 .intro .mk { margin-bottom: 26px; }
 .intro .display { margin: 14px 0 18px; }
 .intro .lede { margin-bottom: 36px; }
@@ -751,7 +779,7 @@ const catOf = it => (it && CATEGORIES.includes(it.category) ? it.category : GOAL
 // new key once and left in place, so it stays readable.
 const KEY = 'deka.v1';
 const OLD_KEY = 'span.v1';
-const blank = () => ({ v: 1, current: null, next: null, spans: [] });
+const blank = () => ({ v: 1, current: null, next: null, spans: [], owner: null, profile: null });
 let S = migrate(load());
 
 function load() {
@@ -768,6 +796,7 @@ function load() {
 }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {}
+  markChanges();
 }
 // Paint first, write after.
 let saveTimer = null;
@@ -794,6 +823,260 @@ function migrate(d) {
   if (!d.seen && (d.spans.length || (d.current && d.current.intentions.length))) d.seen = true;
   return d;
 }
+
+/* Sync: the account's copy of everything, table by table. The app keeps reading and writing its
+   own cache; this layer notices what changed, sends it up, brings other devices' changes down,
+   and lets the newest change to a row win. Offline, changes wait in the outbox. */
+
+const SYNC_KEY = 'deka.sync';
+const readJson = k => { try { return JSON.parse(localStorage.getItem(k)) || null; } catch { return null; } };
+const TABLES = ['dekas', 'goals', 'sessions', 'notes', 'messages'];
+// Message fields that stay on this device: what Retry needs, and passing errors.
+const LOCAL_ONLY = ['undo', 'retry', 'error', 'fresh'];
+const COLS = {
+  dekas: ['role', 'status', 'start_date', 'closed', 'ended_day', 'summary', 'summarized_up_to', 'checked', 'checkin', 'reflection', 'review', 'review_opened', 'off_streak', 'deleted'],
+  goals: ['deka_id', 'goal_id', 'name', 'type', 'tag', 'target', 'icon', 'category', 'energy', 'social', 'fun', 'time_of_day', 'weekend', 'position', 'deleted'],
+  sessions: ['deka_id', 'goal_id', 'day', 'done', 'missed', 'detail', 'position', 'deleted'],
+  notes: ['deka_id', 'day', 'text', 'deleted'],
+  messages: ['deka_id', 'role', 'text', 'ts', 'data', 'deleted'],
+  profiles: ['first_name', 'last_name', 'username', 'theme', 'checkin_time'],
+};
+const freshSync = () => ({ seen: {}, u: {}, pulled: {}, outbox: {} });
+let sync = readJson(SYNC_KEY) || freshSync();
+const saveSync = () => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(sync)); } catch {} };
+const resetSync = () => { sync = freshSync(); saveSync(); };
+// The same JSON whichever way the keys came, so a row read back from the database matches.
+const canon = v => Array.isArray(v) ? `[${v.map(canon).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v).sort().map(k => `${JSON.stringify(k)}:${canon(v[k])}`).join(',')}}` : JSON.stringify(v ?? null);
+const hashRow = (table, row) => canon(Object.fromEntries(COLS[table].map(k => [k, row[k] ?? null])));
+
+// Every row the account should hold, from the state as it is now.
+function rowsOf() {
+  const rows = new Map();
+  const put = (table, row) => rows.set(`${table}/${row.id}`, { table, row: { user_id: S.owner, ...row } });
+  const deka = (sp, role) => {
+    put('dekas', { id: sp.id, role, status: sp.status, start_date: sp.start || null, closed: sp.closed || null, ended_day: sp.endedDay || null, summary: sp.summary || '', summarized_up_to: sp.summarizedUpTo || 0, checked: sp.checked || [], checkin: sp.checkin || {}, reflection: sp.reflection || '', review: sp.review || '', review_opened: sp.reviewOpened || null, off_streak: sp.offStreak || 0, deleted: false });
+    (sp.intentions || []).forEach((g, i) => put('goals', { id: `${sp.id}:${g.id}`, deka_id: sp.id, goal_id: g.id, name: g.name || '', type: g.type || 'do', tag: g.tag || '', target: g.target || 1, icon: g.icon || null, category: g.category || null, energy: g.energy || null, social: g.social || null, fun: g.fun || null, time_of_day: g.time_of_day || null, weekend: g.weekend || null, position: i, deleted: false }));
+    (sp.occurrences || []).forEach((o, i) => put('sessions', { id: `${sp.id}:${o.intention_id}@${o.day}`, deka_id: sp.id, goal_id: o.intention_id, day: o.day, done: Boolean(o.done), missed: Boolean(o.missed), detail: o.detail || '', position: i, deleted: false }));
+    for (const [day, text] of Object.entries(sp.notes || {})) if (text) put('notes', { id: `${sp.id}:${day}`, deka_id: sp.id, day: Number(day), text, deleted: false });
+    (sp.chat || []).forEach((m, i) => {
+      const { id, role: r, text, ts, ...data } = m;
+      for (const k of LOCAL_ONLY) delete data[k];
+      data.pos = i;
+      put('messages', { id, deka_id: sp.id, role: r, text: text || '', ts: ts || 0, data, deleted: false });
+    });
+  };
+  if (S.current) deka(S.current, 'current');
+  if (S.next) deka(S.next, 'next');
+  for (const sp of S.spans) deka(sp, 'past');
+  return rows;
+}
+const profileRow = () => ({ first_name: (S.profile && S.profile.first) || '', last_name: (S.profile && S.profile.last) || '', username: (S.profile && S.profile.username) || null, theme: S.settings.theme || null, checkin_time: S.settings.checkin || '20:00' });
+
+// Called on every save: what differs from what the account last knew goes to the outbox, stamped now.
+function markChanges() {
+  if (!S.owner) return;
+  const now = Date.now(), stamp = new Date(now).toISOString();
+  const rows = rowsOf();
+  let touched = false;
+  for (const [key, { table, row }] of rows) {
+    const h = hashRow(table, row);
+    if (sync.seen[key] === h) continue;
+    sync.seen[key] = h; sync.u[key] = now; touched = true;
+    sync.outbox[key] = { table, row: { ...row, updated_at: stamp } };
+  }
+  for (const key of Object.keys(sync.seen)) {
+    if (key === 'profile' || rows.has(key)) continue;
+    const table = key.slice(0, key.indexOf('/')), id = key.slice(table.length + 1);
+    delete sync.seen[key]; sync.u[key] = now; touched = true;
+    sync.outbox[key] = { table, row: { user_id: S.owner, id, deleted: true, updated_at: stamp } };
+  }
+  const p = profileRow(), ph = hashRow('profiles', p);
+  // Until the account's profile has come down once, there is nothing of ours to send.
+  if (S.profile && sync.seen.profile !== ph) { sync.seen.profile = ph; sync.u.profile = now; sync.outbox.profile = { table: 'profiles', row: { ...p, updated_at: stamp } }; touched = true; }
+  if (touched) { saveSync(); pushSoon(); }
+}
+
+let pushing = false, pushTimer = null;
+function pushSoon() { clearTimeout(pushTimer); pushTimer = setTimeout(() => pushNow().catch(() => {}), 700); }
+function syncState(v) { if (ui.syncing !== v) { ui.syncing = v; if (ui.sub === 'profile') render(); } }
+// Sends the outbox, table by table. Rows and bare deletions go in separate calls, since one
+// call's rows must all carry the same columns.
+async function pushNow() {
+  if (pushing || !signedIn() || !S.owner || !cfg || !cfg.url) return;
+  if (navigator.onLine === false) { syncState('waiting'); return; }
+  pushing = true;
+  try {
+    const keys = Object.keys(sync.outbox);
+    if (!keys.length) return;
+    const byTable = {};
+    for (const k of keys) { const e = sync.outbox[k]; (byTable[e.table] || (byTable[e.table] = [])).push({ key: k, row: e.row }); }
+    for (const table of ['profiles', ...TABLES]) {
+      const list = byTable[table];
+      if (!list) continue;
+      if (table === 'profiles') {
+        const e = list[0];
+        try { await rest('profiles', `id=eq.${S.owner}`, { method: 'PATCH', body: e.row, headers: { Prefer: 'return=minimal' } }); }
+        catch (err) { if (err.status !== 409 && err.status !== 400) throw err; }
+        if (sync.outbox.profile && sync.outbox.profile.row.updated_at === e.row.updated_at) delete sync.outbox.profile;
+        continue;
+      }
+      for (const group of [list.filter(x => !x.row.deleted), list.filter(x => x.row.deleted)]) {
+        for (let i = 0; i < group.length; i += 200) {
+          const chunk = group.slice(i, i + 200);
+          await rest(table, 'on_conflict=user_id,id', { method: 'POST', body: chunk.map(x => x.row), headers: { Prefer: 'resolution=merge-duplicates,return=minimal' } });
+          for (const x of chunk) if (sync.outbox[x.key] && sync.outbox[x.key].row.updated_at === x.row.updated_at) delete sync.outbox[x.key];
+        }
+      }
+    }
+    saveSync();
+    syncState('');
+  } catch (err) {
+    syncState(err.status ? '' : 'waiting');
+    throw err;
+  } finally { pushing = false; }
+}
+
+// Brings down what changed since the last pull. A row we changed more recently stays ours.
+let pulling = false;
+async function pullNow() {
+  if (pulling || !signedIn() || !S.owner || !cfg || !cfg.url || navigator.onLine === false) return false;
+  pulling = true;
+  let changed = false;
+  try {
+    const prof = await rest('profiles', `select=*&id=eq.${S.owner}`);
+    if (prof && prof[0]) changed = applyProfile(prof[0]) || changed;
+    for (const table of TABLES) {
+      const since = sync.pulled[table] || '1970-01-01T00:00:00.000Z';
+      const rows = await rest(table, `select=*&updated_at=gte.${encodeURIComponent(since)}&order=updated_at.asc&limit=2000`);
+      for (const row of rows) {
+        const key = `${table}/${row.id}`;
+        const at = Date.parse(row.updated_at);
+        if (row.updated_at > (sync.pulled[table] || '')) sync.pulled[table] = row.updated_at;
+        if (sync.outbox[key] && (sync.u[key] || 0) >= at) continue;
+        const h = hashRow(table, row);
+        if (!row.deleted && sync.seen[key] === h) { sync.u[key] = at; continue; }
+        if (row.deleted && !sync.seen[key]) continue;
+        applyRemote(table, row);
+        changed = true;
+        if (row.deleted) delete sync.seen[key]; else sync.seen[key] = h;
+        sync.u[key] = at;
+        delete sync.outbox[key];
+      }
+    }
+    saveSync();
+  } finally { pulling = false; }
+  if (changed) {
+    for (const sp of [S.current, S.next, ...S.spans]) if (sp) tidySpan(sp);
+    if (!S.seen && (S.spans.length || (S.current && S.current.intentions.length))) S.seen = true;
+    save();
+  }
+  return changed;
+}
+// The profile row: names, username, plan, and the theme and check in time, which follow the account.
+function applyProfile(p, { force = false } = {}) {
+  const at = Date.parse(p.updated_at || 0);
+  const mine = sync.outbox.profile && (sync.u.profile || 0) >= at && !force;
+  const next = { first: p.first_name || '', last: p.last_name || '', username: p.username || null, email: p.email || (session && session.user.email) || '', plan: p.plan || 'trial', trialEnds: p.trial_ends_at || null, created: p.created_at || null };
+  const before = JSON.stringify(S.profile), beforeTheme = S.settings.theme, beforeCheckin = S.settings.checkin;
+  if (mine) { S.profile = { ...next, first: S.profile ? S.profile.first : next.first, last: S.profile ? S.profile.last : next.last, username: S.profile ? S.profile.username : next.username }; }
+  else {
+    S.profile = next;
+    if (p.theme) S.settings.theme = p.theme;
+    if (p.checkin_time) S.settings.checkin = p.checkin_time;
+    sync.seen.profile = hashRow('profiles', p); sync.u.profile = at; delete sync.outbox.profile;
+  }
+  if (S.settings.theme !== beforeTheme) applyTheme();
+  return JSON.stringify(S.profile) !== before || S.settings.theme !== beforeTheme || S.settings.checkin !== beforeCheckin;
+}
+function placeSpan(sp, role) {
+  const drop = x => { if (S.current === x) S.current = null; if (S.next === x) S.next = null; S.spans = S.spans.filter(y => y !== x); };
+  if (role === 'past') { drop(sp); S.spans.push(sp); return; }
+  const slot = role === 'next' ? 'next' : 'current';
+  if (S[slot] === sp) return;
+  const was = S[slot];
+  drop(sp);
+  if (was && was !== sp) { drop(was); S.spans.push(was); }
+  S[slot] = sp;
+}
+function applyRemote(table, row) {
+  if (table === 'dekas') {
+    let sp = spanById(row.id);
+    if (row.deleted) { if (sp) { if (S.current === sp) S.current = null; if (S.next === sp) S.next = null; S.spans = S.spans.filter(x => x !== sp); } return; }
+    if (!sp) { sp = newSpan(row.start_date || todayIso()); sp.id = row.id; }
+    Object.assign(sp, { status: row.status, start: row.start_date || sp.start, closed: row.closed || undefined, endedDay: row.ended_day || undefined, summary: row.summary || '', summarizedUpTo: row.summarized_up_to || 0, checked: row.checked || [], checkin: row.checkin || {}, reflection: row.reflection || '', review: row.review || '', reviewOpened: row.review_opened || undefined, offStreak: row.off_streak || 0 });
+    if (sp.closed === undefined) delete sp.closed; if (sp.endedDay === undefined) delete sp.endedDay; if (sp.reviewOpened === undefined) delete sp.reviewOpened;
+    placeSpan(sp, row.role);
+    return;
+  }
+  const sp = spanById(row.deka_id);
+  if (!sp) return;
+  if (table === 'goals') {
+    const i = sp.intentions.findIndex(g => g.id === row.goal_id);
+    if (row.deleted) { if (i >= 0) sp.intentions.splice(i, 1); return; }
+    const g = i >= 0 ? sp.intentions[i] : { id: row.goal_id };
+    Object.assign(g, { name: row.name, type: row.type, tag: row.tag || '', target: row.target, pos: row.position });
+    for (const k of IDENTITY) { if (row[k]) g[k] = row[k]; else delete g[k]; }
+    if (i < 0) sp.intentions.push(g);
+  } else if (table === 'sessions') {
+    const i = sp.occurrences.findIndex(o => o.intention_id === row.goal_id && o.day === row.day);
+    if (row.deleted) { if (i >= 0) sp.occurrences.splice(i, 1); return; }
+    const o = i >= 0 ? sp.occurrences[i] : { intention_id: row.goal_id, day: row.day };
+    Object.assign(o, { done: Boolean(row.done), missed: Boolean(row.missed), detail: row.detail || '', pos: row.position });
+    if (i < 0) sp.occurrences.push(o);
+  } else if (table === 'notes') {
+    if (row.deleted) delete sp.notes[row.day]; else sp.notes[row.day] = row.text || '';
+  } else if (table === 'messages') {
+    const i = sp.chat.findIndex(m => m.id === row.id);
+    if (row.deleted) { if (i >= 0) sp.chat.splice(i, 1); return; }
+    const m = i >= 0 ? sp.chat[i] : { id: row.id };
+    const local = Object.fromEntries(LOCAL_ONLY.filter(k => k in m).map(k => [k, m[k]]));
+    for (const k of Object.keys(m)) if (!['id', ...LOCAL_ONLY].includes(k)) delete m[k];
+    Object.assign(m, { role: row.role, text: row.text || '', ts: row.ts || 0 }, row.data || {}, local);
+    if (i < 0) sp.chat.push(m);
+  }
+}
+// Rows arrive in any order; each list settles into its place.
+function tidySpan(sp) {
+  const byPos = (a, b) => (a.pos ?? 1e9) - (b.pos ?? 1e9);
+  sp.intentions.sort(byPos); sp.occurrences.sort(byPos); sp.chat.sort((a, b) => byPos(a, b) || (a.ts || 0) - (b.ts || 0));
+  for (const x of [...sp.intentions, ...sp.occurrences, ...sp.chat]) delete x.pos;
+  S.spans.sort((a, b) => (b.closed || b.start || '').localeCompare(a.closed || a.start || ''));
+}
+// Files that only this device has go up to the bucket, so other devices and Deka can read them.
+let uploading = false;
+async function uploadPending() {
+  if (uploading || !signedIn() || navigator.onLine === false) return;
+  uploading = true;
+  try {
+    let moved = false;
+    for (const sp of [S.current, S.next, ...S.spans]) for (const m of (sp && sp.chat) || []) for (const a of m.attachments || []) {
+      if (a.path) continue;
+      if (!files.has(a.id) && !(await DB.get(a.id).catch(() => null))) continue;
+      try { if (await uploadAttachment(a)) moved = true; } catch {}
+    }
+    if (moved) save();
+  } finally { uploading = false; }
+}
+async function syncNow() {
+  try { await pullNow(); await uploadPending(); await pushNow(); } catch {}
+  if (!ui.turn && !ui.sheet && !document.activeElement?.matches('textarea, input')) render();
+}
+// First time signed in on this device: the account's data comes down, or what was here goes up.
+async function bootAccount() {
+  const uid = userId();
+  if (S.owner && S.owner !== uid) { S = blank(); resetSync(); files.clear(); urls.clear(); DB.clear().catch(() => {}); }
+  if (!S.owner) { S.owner = uid; resetSync(); }
+  try {
+    const prof = await rest('profiles', `select=*&id=eq.${uid}`);
+    if (prof && prof[0]) applyProfile(prof[0], { force: !S.profile || !S.profile.username });
+  } catch {}
+  if (!S.profile && session && session.user.email) S.profile = { first: '', last: '', username: null, email: session.user.email, plan: null };
+  save();
+  await syncNow();
+  saveSoon();
+}
+window.addEventListener('online', () => { syncNow(); });
+setInterval(() => { if (!document.hidden && signedIn()) syncNow(); }, 45000);
 
 /* Dates. The UI never names weekdays; Deka gets them. */
 
@@ -937,17 +1220,63 @@ const I = {
 // A Phosphor icon from the sprite, drawn in the text color.
 const icon = k => `<svg viewBox="0 0 256 256" aria-hidden="true" focusable="false"><use href="#i-${k}"/></svg>`;
 
-/* API */
+/* Account: the Supabase project, the session on this device, and what talks to them.
+   The app speaks to Supabase with the public key and its own session; Deka's server gets the
+   session too. Nothing here ever sees the service role key. */
 
-async function api(path, body) {
+const CFG_KEY = 'deka.config', SESSION_KEY = 'deka.session', PKCE_KEY = 'deka.pkce';
+let cfg = readJson(CFG_KEY);
+let session = readJson(SESSION_KEY);
+const signedIn = () => Boolean(session && session.access_token);
+const userId = () => (session && session.user && session.user.id) || null;
+function setSession(x) {
+  session = x ? { access_token: x.access_token, refresh_token: x.refresh_token, expires_at: x.expires_at || Math.floor(Date.now() / 1000) + (x.expires_in || 3600), user: { id: x.user.id, email: x.user.email || '' } } : null;
+  try { if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session)); else localStorage.removeItem(SESSION_KEY); } catch {}
+}
+async function loadConfig() {
+  try { const r = await fetch('/api/config'); if (r.ok) { cfg = await r.json(); localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } } catch {}
+  return cfg;
+}
+const fail = (message, status, code) => Object.assign(new Error(message), { status, code });
+const sbHeaders = (auth, extra = {}) => ({ apikey: cfg.anonKey, Authorization: `Bearer ${auth && session ? session.access_token : cfg.anonKey}`, ...extra });
+// A token lasts an hour. The refresh token renews it, and the session lives as long as it is used.
+let refreshing = null;
+async function freshSession() {
+  if (!session || !cfg) return session;
+  if (session.expires_at - 60 > Date.now() / 1000) return session;
+  if (!refreshing) refreshing = (async () => {
+    try {
+      const r = await fetch(`${cfg.url}/auth/v1/token?grant_type=refresh_token`, { method: 'POST', headers: sbHeaders(false, { 'Content-Type': 'application/json' }), body: JSON.stringify({ refresh_token: session.refresh_token }) });
+      if (r.ok) setSession(await r.json());
+      else if ([400, 401, 403].includes(r.status)) signOut({ quiet: true });
+    } catch {}
+    return session;
+  })().finally(() => { refreshing = null; });
+  return refreshing;
+}
+// GoTrue, PostgREST and Storage. raw sends bytes as they are.
+async function sb(path, { method = 'GET', body, headers = {}, auth = true, raw = false } = {}) {
+  if (!cfg || !cfg.url) throw fail('Deka is not set up yet.', 503);
+  if (auth) await freshSession();
+  const res = await fetch(`${cfg.url}${path}`, { method, headers: sbHeaders(auth, { ...(body !== undefined && !raw ? { 'Content-Type': 'application/json' } : {}), ...headers }), body: body === undefined ? undefined : raw ? body : JSON.stringify(body) });
+  if (raw && res.ok && method === 'GET') return res.blob();
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok) throw fail((data && (data.msg || data.message || data.error_description || data.error)) || `Request failed (${res.status})`, res.status, data && (data.error_code || data.code));
+  return data;
+}
+const rest = (table, query, opts = {}) => sb(`/rest/v1/${table}${query ? `?${query}` : ''}`, opts);
+
+// Deka's own server, with the session.
+async function api(path, body, method) {
+  await freshSession();
   const res = await fetch(path, {
-    method: body ? 'POST' : 'GET',
-    headers: body ? { 'Content-Type': 'application/json' } : {},
+    method: method || (body ? 'POST' : 'GET'),
+    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) },
     body: body ? JSON.stringify(body) : undefined,
-    credentials: 'same-origin',
   });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && path !== '/api/login') { ui.locked = true; render(); }
   if (!res.ok) throw Object.assign(new Error(data.error || 'Request failed'), { status: res.status });
   return data;
 }
@@ -960,7 +1289,7 @@ const ui = {
   day: null,
   thread: null,
   scroll: {},
-  locked: false,
+  auth: null,       // the sign in screens, while signed out
   awake: false,
   sheet: null,
   openPast: null,
@@ -971,6 +1300,7 @@ const ui = {
   cardOpen: null,   // 'msg:card:day', a day opened on a plan card
   enter: new Set(), // plan cards that just arrived and should animate in
   atts: [],         // attachments waiting in the composer
+  syncing: '',      // '', 'waiting' (changes kept here until online) or 'off' (signed out)
 };
 
 const $ = id => document.getElementById(id);
@@ -1130,13 +1460,15 @@ function goalsCard(msg, card, i, readonly) {
 }
 // Answer a trim card, from a tap or from Deka when they answer in words: use lowers each target and
 // drops planned sessions past it, latest first; keep leaves the counts. Undo puts it all back.
-function resolveTrim(card, choice) {
+function resolveTrim(card, choice, by = null) {
   const goals = spanFor(card.target) || chatSpan();
   const before = clone({ i: goals.intentions, o: goals.occurrences });
+  if (by) { const owner = goals.chat.find(m => (m.cards || []).includes(card)); if (owner) noteCard(by, owner, owner.cards.indexOf(card), card); }
   if (choice === 'use') {
     for (const t of card.trim.trims) {
       const g = goals.intentions.find(x => x.id === t.goal_id);
       if (!g || g.target !== t.requested) continue;
+      if (by) { noteGoal(by, goals, g.id); for (const o of occOf(goals, g.id)) noteOcc(by, goals, o.intention_id, o.day); }
       g.target = t.suggested;
       const need = g.target - doneOf(goals, g.id);
       while (plannedOf(goals, g.id) > need) {
@@ -1216,13 +1548,182 @@ function themeView() {
     <button class="link" data-a="theme" data-v="system">Match my iPhone</button></div>`;
 }
 
-function loginView() {
-  return `<div class="login center fade">${mark('large')}<h1 class="display">Deka</h1>
-    <form data-form="login" autocomplete="on"><label class="sr" for="pass">Passcode</label>
-      <input class="input" id="pass" type="password" autocomplete="current-password" placeholder="Passcode" required>
-      ${ui.loginError ? `<p role="alert" style="margin:0">${esc(ui.loginError)}</p>` : ''}
-      <button class="btn primary block" type="submit">Enter</button>
-      ${navigator.standalone === false ? '<p class="hint">The home screen app asks for this once&nbsp;too.</p>' : ''}</form></div>`;
+/* Signing in and signing up. No passwords: an email and a 6 digit code, or Apple or Google. */
+
+const USERNAME = /^[a-z0-9._]{3,20}$/;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const authState = () => ({ screen: 'start', form: { first: '', last: '', username: '', email: '', confirm: '' }, touched: {}, taken: {}, busy: false, error: '', code: '', codeFor: '', mode: 'signin' });
+const authUi = () => ui.auth || (ui.auth = authState());
+// What is wrong with each field, or nothing.
+function authIssues(f, { names = true } = {}) {
+  const out = {};
+  if (names && !f.first.trim()) out.first = 'Enter your first name.';
+  if (names && !f.last.trim()) out.last = 'Enter your last name.';
+  if (!USERNAME.test(f.username)) out.username = 'Letters, numbers, dots and underscores, 3 to 20.';
+  else if (authUi().taken[f.username] === true) out.username = 'Taken.';
+  if (!EMAIL.test(f.email.trim())) out.email = 'Enter an email.';
+  if (f.confirm.trim().toLowerCase() !== f.email.trim().toLowerCase() || !f.confirm.trim()) out.confirm = "Emails don't match.";
+  return out;
+}
+const field = (id, label, value, { type = 'text', hint = '', issue = '', auto = 'off', extra = '' } = {}) =>
+  `<div class="af"><label class="sr" for="${id}">${label}</label><input class="input" id="${id}" type="${type}" value="${esc(value)}" placeholder="${label}" autocomplete="${auto}" ${extra}>${issue ? `<p class="af-issue" role="alert">${nb(issue)}</p>` : hint ? `<p class="af-hint">${nb(hint)}</p>` : ''}</div>`;
+const oauthButtons = () => `<div class="oauth">
+  <button type="button" class="apple-btn" data-a="oauth" data-v="apple"><svg viewBox="0 0 384 512" aria-hidden="true"><path fill="currentColor" d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>Sign in with Apple</button>
+  <button type="button" class="google-btn" data-a="oauth" data-v="google"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Sign in with Google</button></div>`;
+function authView() {
+  const a = authUi(), f = a.form;
+  const err = a.error ? `<p class="af-issue" role="alert">${nb(a.error)}</p>` : '';
+  const busy = a.busy ? ' disabled' : '';
+  if (a.screen === 'signup') {
+    const issues = authIssues(f);
+    const show = k => (a.touched[k] ? issues[k] || '' : '');
+    const ok = !Object.keys(issues).length && a.taken[f.username] === false;
+    return `<div class="auth center fade">${mark('medium')}<h1 class="display small">Create your&nbsp;account</h1>
+      <form data-form="signup" novalidate>
+        ${field('first', 'First name', f.first, { auto: 'given-name', issue: show('first') })}
+        ${field('last', 'Last name', f.last, { auto: 'family-name', issue: show('last') })}
+        ${field('username', 'Username', f.username, { auto: 'username', issue: show('username'), hint: a.taken[f.username] === false ? 'Available.' : '', extra: 'autocapitalize="none" spellcheck="false" maxlength="20"' })}
+        ${field('email', 'Email', f.email, { type: 'email', auto: 'email', issue: show('email'), extra: 'autocapitalize="none" inputmode="email"' })}
+        ${field('confirm', 'Confirm email', f.confirm, { type: 'email', auto: 'off', issue: show('confirm'), extra: 'autocapitalize="none" inputmode="email"' })}
+        ${err}<button class="btn primary block" type="submit"${ok && !a.busy ? '' : ' disabled'}>${a.busy ? 'Sending the code' : 'Create account'}</button>
+        <button type="button" class="link" data-a="auth-go" data-v="start">I have an account</button></form></div>`;
+  }
+  if (a.screen === 'code') {
+    return `<div class="auth center fade">${mark('medium')}<h1 class="display small">Check your&nbsp;email</h1>
+      <p class="lede">${nb(`A 6 digit code went to ${a.codeFor}.`)}</p>
+      <form data-form="code" novalidate>
+        <div class="af"><label class="sr" for="code">Code</label><input class="input code" id="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" placeholder="000000" value="${esc(a.code)}"${busy}></div>
+        ${err}<button class="btn primary block" type="submit"${a.code.length === 6 && !a.busy ? '' : ' disabled'}>${a.busy ? 'Checking' : 'Continue'}</button>
+        <button type="button" class="link" data-a="auth-resend"${busy}>Send a new code</button>
+        <button type="button" class="link" data-a="auth-go" data-v="${a.mode === 'signup' ? 'signup' : 'start'}">Back</button></form></div>`;
+  }
+  if (a.screen === 'username') {
+    // After Apple or Google: only what the provider did not give.
+    const p = S.profile || {};
+    const needNames = !(p.first || '').trim();
+    const issues = authIssues({ ...f, email: 'x@y.z', confirm: 'x@y.z' }, { names: needNames });
+    const show = k => (a.touched[k] ? issues[k] || '' : '');
+    const ok = !Object.keys(issues).length && a.taken[f.username] === false;
+    return `<div class="auth center fade">${mark('medium')}<h1 class="display small">Pick a&nbsp;username</h1>
+      <form data-form="username" novalidate>
+        ${needNames ? field('first', 'First name', f.first, { auto: 'given-name', issue: show('first') }) + field('last', 'Last name', f.last, { auto: 'family-name', issue: show('last') }) : ''}
+        ${field('username', 'Username', f.username, { auto: 'username', issue: show('username'), hint: a.taken[f.username] === false ? 'Available.' : '', extra: 'autocapitalize="none" spellcheck="false" maxlength="20"' })}
+        ${err}<button class="btn primary block" type="submit"${ok && !a.busy ? '' : ' disabled'}>Continue</button>
+        <button type="button" class="link" data-a="sign-out">Sign out</button></form></div>`;
+  }
+  return `<div class="auth start center fade">${mark('large')}<h1 class="display">Deka</h1>
+    <form data-form="signin" novalidate>
+      ${field('email', 'Email', f.email, { type: 'email', auto: 'email', extra: 'autocapitalize="none" inputmode="email"' })}
+      ${err}<button class="btn primary block" type="submit"${EMAIL.test(f.email.trim()) && !a.busy ? '' : ' disabled'}>${a.busy ? 'Sending the code' : 'Continue'}</button>
+      ${oauthButtons()}
+      <button type="button" class="link" data-a="auth-go" data-v="signup">New here? Create an&nbsp;account</button></form></div>`;
+}
+let takenTimer = null;
+// Asks the database whether the username is free, a moment after typing stops.
+function checkUsername(u) {
+  const a = authUi();
+  clearTimeout(takenTimer);
+  if (!USERNAME.test(u) || u in a.taken) return;
+  takenTimer = setTimeout(async () => {
+    try {
+      const taken = await sb('/rest/v1/rpc/username_taken', { method: 'POST', body: { u }, auth: false });
+      a.taken[u] = taken === true && u !== (S.profile && S.profile.username);
+    } catch { a.taken[u] = false; }
+    if (ui.auth === a) render();
+  }, 350);
+}
+async function sendCode(email, { signup = false, data = {} } = {}) {
+  const a = authUi();
+  a.busy = true; a.error = ''; render();
+  try {
+    await sb('/auth/v1/otp', { method: 'POST', body: { email, create_user: signup, ...(signup ? { data } : {}) }, auth: false });
+    a.screen = 'code'; a.codeFor = email; a.code = ''; a.mode = signup ? 'signup' : 'signin';
+  } catch (err) {
+    a.error = err.status === 422 && !signup ? 'No account with that email. Create one below.' : err.status === 429 ? 'Too many tries. Wait a few minutes.' : err.status === 503 ? err.message : !navigator.onLine ? 'You are offline.' : 'The code could not be sent. Try again.';
+  }
+  a.busy = false; render();
+  if (a.screen === 'code') $('code')?.focus();
+}
+async function verifyCode() {
+  const a = authUi();
+  a.busy = true; a.error = ''; render();
+  try {
+    const x = await sb('/auth/v1/verify', { method: 'POST', body: { type: 'email', email: a.codeFor, token: a.code }, auth: false });
+    setSession(x);
+    await afterSignIn();
+    return;
+  } catch (err) {
+    a.error = err.status === 403 || err.status === 401 ? 'That code is not right, or it expired.' : !navigator.onLine ? 'You are offline.' : 'Could not check the code. Try again.';
+  }
+  a.busy = false; render();
+}
+// Apple and Google, through Supabase, with a code exchange when they send us back.
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+async function oauth(provider) {
+  if (!cfg || !cfg.url) { authUi().error = 'Deka is not set up yet.'; render(); return; }
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const verifier = b64u(bytes);
+  try { localStorage.setItem(PKCE_KEY, verifier); } catch {}
+  const challenge = b64u(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+  location.href = `${cfg.url}/auth/v1/authorize?provider=${provider}&redirect_to=${encodeURIComponent(`${location.origin}/`)}&code_challenge=${challenge}&code_challenge_method=s256`;
+}
+async function finishOAuth() {
+  const code = new URLSearchParams(location.search).get('code');
+  if (!code) return false;
+  history.replaceState(null, '', location.pathname);
+  const verifier = localStorage.getItem(PKCE_KEY) || '';
+  try {
+    const x = await sb('/auth/v1/token?grant_type=pkce', { method: 'POST', body: { auth_code: code, code_verifier: verifier }, auth: false });
+    setSession(x);
+    await afterSignIn();
+  } catch { authUi().error = 'Sign in did not finish. Try again.'; render(); }
+  return true;
+}
+// Signed in: the account's data comes down, or this device's data goes up the first time.
+async function afterSignIn() {
+  ui.auth = null;
+  ui.checking = true; ui.slow = true; render();
+  await bootAccount();
+  ui.checking = false; ui.slow = false;
+  ui.awake = false;
+  render();
+  if (ui.tab === 'chat') toBottom();
+}
+function needsUsername() { return signedIn() && S.profile && !S.profile.username; }
+async function saveUsername() {
+  const a = authUi(), f = a.form;
+  a.busy = true; a.error = ''; render();
+  const body = { username: f.username, ...(!(S.profile.first || '').trim() ? { first_name: f.first.trim(), last_name: f.last.trim() } : {}), updated_at: new Date().toISOString() };
+  try {
+    const rows = await rest('profiles', `id=eq.${userId()}`, { method: 'PATCH', body, headers: { Prefer: 'return=representation' } });
+    if (rows && rows[0]) applyProfile(rows[0], { force: true });
+    ui.auth = null;
+  } catch (err) { a.error = err.status === 409 ? 'Taken.' : 'Could not save. Try again.'; a.busy = false; }
+  render();
+}
+async function signOut({ quiet = false } = {}) {
+  const was = session;
+  if (!quiet && Object.keys(sync.outbox).length && navigator.onLine !== false) await pushNow().catch(() => {});
+  if (!quiet && Object.keys(sync.outbox).length && !confirm('Some changes have not synced yet. Sign out anyway?')) return;
+  setSession(null);
+  if (!quiet && was && cfg) fetch(`${cfg.url}/auth/v1/logout`, { method: 'POST', headers: { apikey: cfg.anonKey, Authorization: `Bearer ${was.access_token}` } }).catch(() => {});
+  // The cache belongs to that account; a shared device forgets it.
+  S = blank(); resetSync();
+  try { localStorage.removeItem(KEY); } catch {}
+  files.clear(); urls.clear(); DB.clear().catch(() => {});
+  if (ui.turn) { ui.turn.dropped = true; clearInterval(ui.turn.timer); ui.turn.ctrl.abort(); ui.turn = null; }
+  Object.assign(ui, { sub: null, tab: 'chat', sheet: null, thread: null, auth: authState() });
+  render();
+}
+async function deleteAccount() {
+  if (!confirm('Delete your account and everything in it? This cannot be undone.')) return;
+  ui.status = 'Deleting'; ui.sub = null; render();
+  try {
+    await api('/api/account', null, 'DELETE');
+    ui.status = null;
+    await signOut({ quiet: true });
+    toast('Your account is gone.');
+  } catch (err) { ui.status = null; render(); toast(err.message || 'The account could not be deleted.'); }
 }
 
 /* Chat */
@@ -1379,33 +1880,76 @@ function feedbackSheet() {
     <button class="btn primary block" type="submit">Send</button></form>`;
 }
 
-// Everything a reply can change, taken before it starts, so Retry can put it all back first.
-function snapshot(span) {
-  return clone({
-    span: { intentions: span.intentions, occurrences: span.occurrences, checked: span.checked, summary: span.summary, summarizedUpTo: span.summarizedUpTo, offStreak: span.offStreak || 0, review: span.review || '', status: span.status, start: span.start },
-    next: S.next ? { id: S.next.id, intentions: S.next.intentions, occurrences: S.next.occurrences } : null,
-    cards: span.chat.flatMap(m => (m.cards || []).map((c, i) => [`${m.id}:${i}`, c.status ?? null, c.trim ? c.trim.choice : null])),
-    checkins: span.chat.filter(m => m.checkin).map(m => [m.id, m.checkin]),
-  });
+// What a reply changed, noted as it changes it: each goal, session, card and field it touched,
+// as it was before and as the reply left it. Retry puts back only those, and only the ones
+// nobody changed by hand since.
+const trail = msg => msg.undo && msg.undo.occ ? msg.undo : (msg.undo = { goals: {}, occ: {}, fields: {}, cards: {}, checkins: {} });
+const same = (a, b) => canon(a ?? null) === canon(b ?? null);
+function noteGoal(msg, span, id) {
+  const t = trail(msg), k = `${span.id}:${id}`;
+  if (!(k in t.goals)) { const i = span.intentions.findIndex(g => g.id === id); t.goals[k] = { before: i >= 0 ? clone(span.intentions[i]) : null, at: i }; }
 }
-function restore(span, u) {
-  Object.assign(span, u.span);
-  if (u.next && S.next && S.next.id === u.next.id) Object.assign(S.next, { intentions: u.next.intentions, occurrences: u.next.occurrences });
-  const cards = new Map(u.cards.map(([k, st, ch]) => [k, [st, ch]]));
-  for (const m of span.chat) (m.cards || []).forEach((c, i) => {
-    const was = cards.get(`${m.id}:${i}`);
-    if (!was) return;
-    if (was[0] != null) c.status = was[0];
-    if (c.trim) c.trim.choice = was[1];
-  });
-  for (const [id, ck] of u.checkins) { const m = span.chat.find(x => x.id === id); if (m) m.checkin = ck; }
+function noteOcc(msg, span, iid, day) {
+  const t = trail(msg), k = `${span.id}:${iid}@${day}`;
+  if (!(k in t.occ)) { const o = findOcc(span, iid, day); t.occ[k] = { before: o ? clone(o) : null }; }
+}
+function noteField(msg, span, f) {
+  const t = trail(msg), k = `${span.id}.${f}`;
+  if (!(k in t.fields)) t.fields[k] = { before: clone(span[f] ?? null) };
+}
+function noteCard(msg, owner, i, c) {
+  const t = trail(msg), k = `${owner.id}:${i}`;
+  if (!(k in t.cards)) t.cards[k] = { before: { status: c.status ?? null, choice: c.trim ? c.trim.choice : null } };
+}
+function noteCheckin(msg, m) {
+  const t = trail(msg);
+  if (!(m.id in t.checkins)) t.checkins[m.id] = { before: clone(m.checkin || null) };
+}
+// Once the reply is done: how it left each thing it touched.
+function settleTrail(msg, span) {
+  if (!msg.undo || !msg.undo.occ) return;
+  const t = msg.undo;
+  for (const [k, e] of Object.entries(t.goals)) { const id = k.slice(span.id.length + 1); const g = span.intentions.find(x => x.id === id); e.after = g ? clone(g) : null; }
+  for (const [k, e] of Object.entries(t.occ)) { const [iid, day] = k.slice(span.id.length + 1).split('@'); const o = findOcc(span, iid, Number(day)); e.after = o ? clone(o) : null; }
+  for (const [k, e] of Object.entries(t.fields)) e.after = clone(span[k.slice(span.id.length + 1)] ?? null);
+  for (const [k, e] of Object.entries(t.cards)) { const c = cardAt(span, k); e.after = c ? { status: c.status ?? null, choice: c.trim ? c.trim.choice : null } : null; }
+  for (const [id, e] of Object.entries(t.checkins)) { const m = span.chat.find(x => x.id === id); e.after = m ? clone(m.checkin || null) : null; }
+}
+const cardAt = (span, k) => { const [mid, i] = k.split(':'); const m = span.chat.find(x => x.id === mid); return m && m.cards ? m.cards[Number(i)] : null; };
+function restoreTrail(span, t) {
+  for (const [k, e] of Object.entries(t.goals)) {
+    const id = k.slice(span.id.length + 1);
+    const i = span.intentions.findIndex(x => x.id === id);
+    const now = i >= 0 ? span.intentions[i] : null;
+    if (!same(now, e.after)) continue;
+    if (!e.before) { if (i >= 0) span.intentions.splice(i, 1); }
+    else if (i >= 0) span.intentions[i] = e.before;
+    else span.intentions.splice(Math.min(e.at < 0 ? span.intentions.length : e.at, span.intentions.length), 0, e.before);
+  }
+  for (const [k, e] of Object.entries(t.occ)) {
+    const [iid, day] = k.slice(span.id.length + 1).split('@');
+    const i = span.occurrences.findIndex(o => o.intention_id === iid && o.day === Number(day));
+    const now = i >= 0 ? span.occurrences[i] : null;
+    if (!same(now, e.after)) continue;
+    if (!e.before) { if (i >= 0) span.occurrences.splice(i, 1); }
+    else if (i >= 0) span.occurrences[i] = e.before;
+    else span.occurrences.push(e.before);
+  }
+  for (const [k, e] of Object.entries(t.fields)) { const f = k.slice(span.id.length + 1); if (same(span[f] ?? null, e.after)) span[f] = e.before; }
+  for (const [k, e] of Object.entries(t.cards)) {
+    const c = cardAt(span, k);
+    if (!c || !same({ status: c.status ?? null, choice: c.trim ? c.trim.choice : null }, e.after)) continue;
+    if (e.before.status != null) c.status = e.before.status;
+    if (c.trim) c.trim.choice = e.before.choice;
+  }
+  for (const [id, e] of Object.entries(t.checkins)) { const m = span.chat.find(x => x.id === id); if (m && same(m.checkin || null, e.after)) m.checkin = e.before || undefined; }
 }
 // Asks again: undoes what the reply changed, drops it, and sends the same message the same way.
 function retryReply(msg, { failed = false } = {}) {
   const span = chatSpan();
   if (!msg || ui.turn || (!failed && !retryable(msg))) return;
   const again = msg.ask || { text: (msg.retry || {}).text, event: (msg.retry || {}).event };
-  if (msg.undo) restore(span, msg.undo);
+  if (msg.undo && msg.undo.occ) restoreTrail(span, msg.undo);
   span.chat = span.chat.filter(m => m !== msg);
   const user = again.user ? span.chat.find(m => m.id === again.user) : null;
   const ask = again.ask ? span.chat.find(m => m.id === again.ask) : [...span.chat].reverse().find(m => m.role === 'deka' && m.checkin);
@@ -1453,7 +1997,7 @@ function closeLayer(kind) {
 /* Attachments: photos and PDFs. The files live in IndexedDB on this device; a message keeps
    only their ids, names and page counts. Photos are made smaller before they are sent. */
 
-const MAX_ATTS = 5, MAX_PDF = 3 * 1024 * 1024, MAX_REQ = 4000000, LONG_EDGE = 1568;
+const MAX_ATTS = 5, MAX_PDF = 20 * 1024 * 1024, LONG_EDGE = 1568;
 const b64len = n => Math.ceil(n / 3) * 4;
 const files = new Map(); // id: Blob, for this session
 const urls = new Map();  // id: object URL of a photo
@@ -1479,11 +2023,32 @@ const DB = (() => {
     clear: () => run('readwrite', st => st.clear()),
   };
 })();
+// The file for an attachment: from memory, this device's store, or the account's bucket.
+function attMeta(id) {
+  for (const sp of [S.current, S.next, ...S.spans]) for (const m of (sp && sp.chat) || []) for (const a of m.attachments || []) if (a.id === id) return a;
+  return null;
+}
 async function blobOf(id) {
   if (files.has(id)) return files.get(id);
   const rec = await DB.get(id).catch(() => null);
-  if (rec && rec.blob) files.set(id, rec.blob);
-  return rec ? rec.blob : null;
+  if (rec && rec.blob) { files.set(id, rec.blob); return rec.blob; }
+  const a = attMeta(id);
+  if (!a || !a.path || !signedIn()) return null;
+  try {
+    const blob = await sb(`/storage/v1/object/authenticated/attachments/${a.path}`, { raw: true });
+    files.set(id, blob);
+    DB.put({ id, type: blob.type, name: a.name, blob }).catch(() => {});
+    return blob;
+  } catch { return null; }
+}
+// Up to the account's own folder in the bucket; the message then carries only the path.
+async function uploadAttachment(a) {
+  const blob = await blobOf(a.id);
+  if (!blob) return false;
+  const path = `${userId()}/${a.id}.${a.kind === 'pdf' ? 'pdf' : 'jpg'}`;
+  await sb(`/storage/v1/object/attachments/${path}`, { method: 'POST', body: blob, raw: true, headers: { 'Content-Type': a.kind === 'pdf' ? 'application/pdf' : 'image/jpeg', 'x-upsert': 'true' } });
+  a.path = path;
+  return true;
 }
 const srcOf = id => urls.has(id) ? ` src="${urls.get(id)}"` : '';
 // Photos drawn before their file is read get it as soon as it is.
@@ -1559,12 +2124,9 @@ async function addFiles(list) {
     const pdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
     const img = /^image\/(jpeg|png|webp|heic|heif)$/.test(f.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name);
     if (!pdf && !img) { attNote('Only photos and PDFs can be attached.'); continue; }
-    if (pdf && f.size > MAX_PDF) { attNote('That PDF is over 3 MB.'); continue; }
+    if (pdf && f.size > MAX_PDF) { attNote('That PDF is over 20 MB.'); continue; }
     let a;
     try { a = pdf ? await readPdf(f) : await shrink(f); } catch { attNote('That file could not be read.'); continue; }
-    // Room left in one request, leaving some for the chat that goes with it.
-    const used = ui.atts.reduce((n, x) => n + b64len(x.blob.size), 0);
-    if (used + b64len(a.blob.size) > MAX_REQ - 200000) { if (a.url) URL.revokeObjectURL(a.url); attNote('That is too large. A message can carry up to 4 MB.'); continue; }
     ui.atts.push(a);
     renderTray();
   }
@@ -1685,18 +2247,57 @@ function threadView() {
 }
 
 const THEMES = [['light', 'Light'], ['dark', 'Dark'], ['system', 'Match iPhone']];
+const planLine = p => !p ? '' : p.plan === 'pro' ? 'Pro' : p.plan === 'standard' ? 'Standard' : p.trialEnds ? `Trial until ${fmt(p.trialEnds.slice(0, 10))}` : 'Trial';
 function profileView() {
   const now = S.settings.theme || 'system';
-  let h = `<div class="head fade"><div class="eyebrow">Stored on this&nbsp;device</div><h1 class="display">Profile</h1></div>`;
-  h += `<div class="seg theme-seg" role="group" aria-label="Theme">${THEMES.map(([v, l]) => `<button type="button" data-a="theme" data-v="${v}" aria-pressed="${now === v}">${l}</button>`).join('')}</div><ul class="list">`;
+  const p = S.profile || {};
+  const name = `${p.first || ''} ${p.last || ''}`.trim();
+  let h = `<div class="head fade"><div class="eyebrow">${esc(p.username ? `@${p.username}` : 'Your account')}</div><h1 class="display">Profile</h1>${p.plan ? `<p class="sub">${esc(planLine(p))}</p>` : ''}</div>`;
+  h += `<ul class="list account"><li class="setting"><span class="sl">Name</span><span class="sv">${esc(name || 'Not set')}</span><button class="link" data-a="edit-account" aria-label="Edit name and username">Edit</button></li>
+    <li class="setting"><span class="sl">Username</span><span class="sv">${esc(p.username || 'Not set')}</span></li>
+    <li class="setting"><span class="sl">Email</span><span class="sv">${esc(p.email || (session && session.user.email) || '')}</span></li></ul>`;
+  h += `<div class="seg theme-seg" role="group" aria-label="Theme" style="margin-top:24px">${THEMES.map(([v, l]) => `<button type="button" data-a="theme" data-v="${v}" aria-pressed="${now === v}">${l}</button>`).join('')}</div><ul class="list">`;
   h += `<li class="setting"><label for="checkinTime">Daily check in</label><input type="time" id="checkinTime" value="${esc(S.settings.checkin)}"></li>`;
   if (S.current) h += `<li class="setting"><label for="startDate">Deka started</label><input type="date" id="startDate" value="${S.current.start}"></li>`;
   if (canEnd()) h += `<li class="setting"><span>Start a new deka</span><button class="link" data-a="new-deka">Start</button></li>`;
-  h += `<li class="setting"><span>Export all data</span><button class="link" data-a="export">Download</button></li>
+  h += `<li class="setting"><span>Export my data</span><button class="link" data-a="export">Download</button></li>
     <li class="setting"><span>Import from a file</span><button class="link" data-a="import">Choose file</button></li>`;
   if (S.current) h += `<li class="setting"><span>Discard this deka</span><button class="link danger" data-a="discard">Discard</button></li>`;
-  h += `<li class="setting"><span>Lock this device</span><button class="link" data-a="lock">Lock</button></li></ul>`;
+  h += `<li class="setting"><span>Sign out</span><button class="link" data-a="sign-out">Sign out</button></li>
+    <li class="setting"><span>Delete my account</span><button class="link danger" data-a="delete-account">Delete</button></li></ul>`;
+  if (ui.syncing === 'waiting') h += '<p class="quiet">Changes sync when you are back&nbsp;online.</p>';
   return h;
+}
+// Edit name and username, in a sheet.
+function accountSheet(sh) {
+  const f = sh.form;
+  const issues = authIssues({ ...f, email: 'x@y.z', confirm: 'x@y.z' });
+  const show = k => (sh.touched[k] ? issues[k] || '' : '');
+  const same = f.username === (S.profile && S.profile.username);
+  const ok = !Object.keys(issues).length && (same || authUi().taken[f.username] === false);
+  return `<form class="form" data-form="account" novalidate>
+    ${field('first', 'First name', f.first, { auto: 'given-name', issue: show('first') })}
+    ${field('last', 'Last name', f.last, { auto: 'family-name', issue: show('last') })}
+    ${field('username', 'Username', f.username, { auto: 'username', issue: show('username'), hint: !same && authUi().taken[f.username] === false ? 'Available.' : '', extra: 'autocapitalize="none" spellcheck="false" maxlength="20"' })}
+    ${sh.error ? `<p class="af-issue" role="alert">${nb(sh.error)}</p>` : ''}
+    <button class="btn primary block" type="submit"${ok && !sh.busy ? '' : ' disabled'}>Save</button></form>`;
+}
+async function saveAccount() {
+  const sh = ui.sheet, f = sh.form;
+  sh.busy = true; sh.error = ''; renderSheet();
+  try {
+    const rows = await rest('profiles', `id=eq.${userId()}`, { method: 'PATCH', body: { first_name: f.first.trim(), last_name: f.last.trim(), username: f.username, updated_at: new Date().toISOString() }, headers: { Prefer: 'return=representation' } });
+    if (rows && rows[0]) applyProfile(rows[0], { force: true });
+    ui.sheet = null; render(); toast('Saved.');
+  } catch (err) {
+    if (navigator.onLine === false || err.status === undefined) {
+      // Offline: kept here and sent later.
+      S.profile = { ...S.profile, first: f.first.trim(), last: f.last.trim(), username: f.username };
+      ui.sheet = null; render(); toast('Saved. It syncs when you are online.');
+      return;
+    }
+    sh.error = err.status === 409 ? 'Taken.' : 'Could not save. Try again.'; sh.busy = false; renderSheet();
+  }
 }
 
 /* Header, dock, sheet, toast */
@@ -1704,7 +2305,7 @@ function profileView() {
 function renderBar() {
   const brand = `<span class="brand" role="img" aria-label="Deka">${mark('header')}<span class="mark" aria-hidden="true">Deka</span></span>`;
   if (ui.checking) { $bar.innerHTML = ''; return; }
-  if (ui.locked || !S.seen || !S.settings.theme) { $bar.innerHTML = brand; return; }
+  if (!signedIn() || needsUsername() || !S.seen || !S.settings.theme) { $bar.innerHTML = brand; return; }
   const left = ui.sub
     ? `<button class="back" data-a="back" aria-label="Back">${I.back}</button>`
     : brand;
@@ -1714,7 +2315,7 @@ function renderBar() {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
 function renderDock() {
-  const show = !ui.checking && !ui.locked && S.seen && S.settings.theme && !ui.sub && ui.tab === 'chat';
+  const show = !ui.checking && signedIn() && !needsUsername() && S.seen && S.settings.theme && !ui.sub && ui.tab === 'chat';
   if (!show) { $dock.hidden = true; setDockHeight(); return; }
   if (!$('msg')) {
     const mic = SR ? `<button class="icon-btn" type="button" data-a="mic" aria-label="Speak">${I.mic}</button>` : '';
@@ -1792,10 +2393,12 @@ function renderSheet() {
     body = `<ul class="menu"><li><button data-a="go-profile">Profile${I.chev}</button></li><li><button data-a="go-past">Past dekas${I.chev}</button></li>${canEnd() ? `<li><button data-a="new-deka">New deka${I.chev}</button></li>` : ''}</ul>`;
   } else if (sh.kind === 'newdeka') {
     body = newDekaSheet(sh);
+  } else if (sh.kind === 'account') {
+    body = accountSheet(sh);
   } else {
     body = intentionSheet(sh);
   }
-  const title = sh.kind === 'day' ? `Day ${sh.day}<span class="sheet-sub">${sh.day === dayNum(S.current) ? 'Today' : fmt(dayDate(S.current, sh.day))}</span>` : sh.kind === 'more' ? 'More' : sh.kind === 'newdeka' ? 'New deka' : sh.kind === 'feedback' ? 'Feedback' : sh.kind === 'new' ? 'New&nbsp;goal' : 'Edit';
+  const title = sh.kind === 'day' ? `Day ${sh.day}<span class="sheet-sub">${sh.day === dayNum(S.current) ? 'Today' : fmt(dayDate(S.current, sh.day))}</span>` : sh.kind === 'more' ? 'More' : sh.kind === 'newdeka' ? 'New deka' : sh.kind === 'account' ? 'Your name' : sh.kind === 'feedback' ? 'Feedback' : sh.kind === 'new' ? 'New&nbsp;goal' : 'Edit';
   const shellKey = `${sh.kind}|${sh.iid || sh.day || ''}`;
   const body0 = $('sheetBody');
   if (body0 && $sheet.dataset.key === shellKey) {
@@ -1869,14 +2472,17 @@ function intentionSheet(sh) {
 /* Render */
 
 function render() {
-  const flip = ui.tab === 'days' && !ui.sub && !ui.locked ? capture() : null;
-  const ask = !ui.locked && !S.settings.theme;
-  const intro = !ui.locked && !S.seen;
-  document.body.classList.toggle('no-tabs', ui.checking || ui.locked || intro || ask);
+  const out = !signedIn(), name = !out && needsUsername();
+  const flip = ui.tab === 'days' && !ui.sub && !out ? capture() : null;
+  const ask = !out && !name && !S.settings.theme;
+  const intro = !out && !name && !S.seen;
+  document.body.classList.toggle('no-tabs', ui.checking || out || name || intro || ask);
   renderBar();
   let kept = false;
   if (ui.checking) $main.innerHTML = pendingView();
-  else if (ui.locked) $main.innerHTML = loginView();
+  else if (out) $main.innerHTML = authView();
+  else if (ui.status) $main.innerHTML = waitingView(ui.status);
+  else if (name) { authUi().screen = 'username'; $main.innerHTML = authView(); }
   else if (ask) $main.innerHTML = themeView();
   else if (ui.status) $main.innerHTML = waitingView(ui.status);
   else if (intro) $main.innerHTML = introView();
@@ -1926,7 +2532,7 @@ function applyTheme({ animate = false } = {}) {
 function chooseTheme(v) {
   if (!THEMES.some(([k]) => k === v)) return;
   S.settings.theme = v;
-  save();
+  save(); pushSoon();
   applyTheme({ animate: true });
   render();
 }
@@ -2123,7 +2729,7 @@ function sendMessage(text, atts = []) {
 }
 
 function flushQueue() {
-  if (ui.turn || navigator.onLine === false || ui.locked) return;
+  if (ui.turn || navigator.onLine === false || !signedIn()) return;
   const span = S.current;
   if (!span) return;
   const waiting = span.chat.filter(m => m.status === 'waiting');
@@ -2156,9 +2762,8 @@ function revealTick() {
 // opts.cards: cards the reply starts with. opts.then: runs once the reply has settled.
 async function startTurn(span, text, event, ask, user = null, opts = {}) {
   // Only the newest reply keeps what it would take to ask it again.
-  const undo = snapshot(span);
   for (const m of span.chat) delete m.undo;
-  const msg = { id: uid(), role: 'deka', text: '', ts: Date.now(), cards: opts.cards || [], undo, ask: { text, event, user: user ? user.id : null, ask: ask ? ask.id : null, ...(opts.cards ? { cards: clone(opts.cards) } : {}) } };
+  const msg = { id: uid(), role: 'deka', text: '', ts: Date.now(), cards: opts.cards || [], ask: { text, event, user: user ? user.id : null, ask: ask ? ask.id : null, ...(opts.cards ? { cards: clone(opts.cards) } : {}) } };
   span.chat.push(msg);
   const turn = ui.turn = { msg, span, shown: '', pending: '', finished: false, event, ask, text, then: opts.then, recap: opts.recap || null, ctrl: new AbortController() };
   ui.pinned = true;
@@ -2172,19 +2777,22 @@ async function startTurn(span, text, event, ask, user = null, opts = {}) {
     const hide = document.querySelector(`#m-${msg.id} .waking`); if (hide) hide.hidden = true;
     const req = buildRequest(span, text, event, user);
     turn.target = req.target; turn.summarizeTo = req.summarizeTo;
-    // Files go only with the message they came with: photos as images, PDFs as documents.
+    // Files go up to the bucket first, and only with the message they came with. The request
+    // carries their paths; the server reads them from there.
     if (user && (user.attachments || []).length) {
-      const out = [];
+      const refs = [];
       for (const a of user.attachments) {
-        const blob = await blobOf(a.id);
-        if (blob) out.push({ kind: a.kind, media_type: a.kind === 'pdf' ? 'application/pdf' : 'image/jpeg', name: a.name, data: await b64(blob) });
+        if (!a.path) { try { await uploadAttachment(a); } catch (err) { throw Object.assign(new Error('upload'), { status: err.status || 0, note: err.status === 413 ? 'That file is too large to send.' : 'An attachment could not be sent. Try again.' }); } }
+        if (a.path) refs.push({ path: a.path, kind: a.kind, name: a.name });
       }
-      if (out.length) req.body.attachments = out;
+      if (refs.length) req.body.attachments = refs;
+      save();
     }
     const json = JSON.stringify(req.body);
-    if (new Blob([json]).size > MAX_REQ) throw Object.assign(new Error('large'), { status: 413, note: 'That is too large. A message can carry up to 4 MB.' });
-    const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json, credentials: 'same-origin', signal: turn.ctrl.signal });
-    if (res.status === 401) { ui.locked = true; throw Object.assign(new Error('locked'), { status: 401 }); }
+    await freshSession();
+    if (!signedIn()) throw Object.assign(new Error('signed out'), { status: 401 });
+    const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: json, signal: turn.ctrl.signal });
+    if (res.status === 401) throw Object.assign(new Error('signed out'), { status: 401 });
     // The server's own note for a message that is too long or a day's chat that is used up.
     if (!res.ok || !res.body) throw Object.assign(new Error('failed'), { status: res.status, note: [413, 429].includes(res.status) ? (await res.json().catch(() => ({}))).error : '' });
     const reader = res.body.getReader();
@@ -2206,8 +2814,7 @@ async function startTurn(span, text, event, ask, user = null, opts = {}) {
     clearTimeout(wakeTimer);
     // Undone while it was running: the deka it belonged to is gone.
     if (turn.dropped) return;
-    if (err.status === 401) { msg.error = null; span.chat = span.chat.filter(m => m !== msg); ui.turn = null; clearInterval(turn.timer); render(); return; }
-    msg.error = err.note ? err.note : err.status === 503 ? 'Deka is not set up yet.' : err.status === 429 ? 'Too many messages. Wait a few minutes.' : navigator.onLine === false ? 'You are offline.' : 'Deka did not answer.';
+    msg.error = err.status === 401 ? 'Signed out. Sign in again.' : err.note ? err.note : err.status === 503 ? 'Deka is not set up yet.' : err.status === 429 ? 'Too many messages. Wait a few minutes.' : navigator.onLine === false ? 'You are offline.' : 'Deka did not answer.';
     msg.retry = { text, event };
   }
   turn.finished = true;
@@ -2220,10 +2827,11 @@ function onEvent(turn, ev, data) {
   if (ev === 'error') { msg.error = data.message; msg.retry = { text: turn.text, event: turn.event }; return; }
   if (ev === 'done') return;
   if (ev === 'off_topic') { turn.offTopic = true; return; }
-  if (ev === 'summary') { turn.span.summary = data.summary; turn.span.summarizedUpTo = Math.max(0, turn.summarizeTo); return; }
+  if (ev === 'summary') { noteField(msg, turn.span, 'summary'); noteField(msg, turn.span, 'summarizedUpTo'); turn.span.summary = data.summary; turn.span.summarizedUpTo = Math.max(0, turn.summarizeTo); return; }
   const target = spanFor(turn.target) || turn.span;
   if (ev === 'goals') {
     const before = clone({ i: target.intentions, o: target.occurrences });
+    for (const c of data.changes) { noteGoal(msg, target, c.id); if (c.op === 'remove') for (const o of occOf(target, c.id)) noteOcc(msg, target, o.intention_id, o.day); }
     const had = new Map(target.intentions.map(g => [g.id, g.target]));
     const lines = applyGoals(target, data.changes);
     const rows = data.changes.map(c => {
@@ -2234,12 +2842,13 @@ function onEvent(turn, ev, data) {
     msg.cards.push({ type: 'goals', id: uid(), lines, rows, target: turn.target, fresh: true, load: loadOf(target) });
     toast('Goals updated.', () => { target.intentions = before.i; target.occurrences = before.o; render(); });
   } else if (ev === 'log') {
+    for (const e of data.entries) { noteOcc(msg, turn.span, e.goal_id, data.day); if (e.moved_from) noteOcc(msg, turn.span, e.goal_id, e.moved_from); if (e.extra) noteGoal(msg, turn.span, e.goal_id); }
     applyLog(turn.span, data);
     msg.cards.push({ type: 'log', span: turn.span.id, day: data.day, entries: data.entries.map(e => ({ goal_id: e.goal_id, status: e.status })) });
   } else if (ev === 'proposal') {
     // What the plan was before: the open card when tweaking one, otherwise the plan in place.
     let before = null;
-    for (const m of turn.span.chat) for (const c of m.cards || []) if (c.type === 'proposal' && c.status === 'open') { before = c.occurrences; c.status = 'replaced'; }
+    turn.span.chat.forEach(m => (m.cards || []).forEach((c, i) => { if (c.type === 'proposal' && c.status === 'open') { noteCard(msg, m, i, c); before = c.occurrences; c.status = 'replaced'; } }));
     if (!before) before = target.occurrences.filter(o => !o.done && !o.missed).map(o => ({ goal_id: o.intention_id, day: o.day }));
     const card = { type: 'proposal', id: uid(), target: turn.target, occurrences: data.occurrences, summary: data.summary || '', changes: data.changes || [], changed_days: data.changed_days, status: 'open', moved: before.length ? movedFrom(before, data.occurrences) : null };
     msg.cards.push(card);
@@ -2256,7 +2865,7 @@ function onEvent(turn, ev, data) {
     card.load = loadOf(target, data.trims);
   } else if (ev === 'trim_resolved') {
     const card = latestTrim(turn.span);
-    if (card && !card.trim.choice) resolveTrim(card, data.choice);
+    if (card && !card.trim.choice) resolveTrim(card, data.choice, msg);
   } else if (ev === 'status') {
     if (!msg.cards.some(c => c.type === 'status')) msg.cards.push(statusCard(turn.span));
   }
@@ -2274,9 +2883,10 @@ function finishTurn() {
   const { msg, span, event, ask } = t;
   for (const c of msg.cards || []) delete c.fresh;
   // Any answered message moves the streak: one more redirect, or back to zero.
-  if (!msg.error && t.text) span.offStreak = t.offTopic ? (span.offStreak || 0) + 1 : 0;
+  if (!msg.error && t.text) { noteField(msg, span, 'offStreak'); span.offStreak = t.offTopic ? (span.offStreak || 0) + 1 : 0; }
   msg.text = msg.text.trim();
   if (!msg.error && event && event.kind === 'checkin' && ask) {
+    noteCheckin(msg, ask); noteField(msg, span, 'checked');
     ask.checkin.answered = true;
     // While sessions on those days are still open, Deka has asked about them, so the check in
     // stays open for one more answer. That answer closes it either way.
@@ -2287,7 +2897,8 @@ function finishTurn() {
       if (!msg.cards.some(c => c.type === 'status')) msg.cards.push(statusCard(span));
     }
   }
-  if (!msg.error && event && (event.kind === 'review' || event.kind === 'early_review')) span.review = msg.text;
+  if (!msg.error && event && (event.kind === 'review' || event.kind === 'early_review')) { noteField(msg, span, 'review'); span.review = msg.text; }
+  settleTrail(msg, span);
   const el = $(`m-${msg.id}`);
   const mk = el && el.querySelector('.mk');
   if (el) {
@@ -2378,6 +2989,13 @@ function confirmProposal(msg, card) {
   const span = spanFor(card.target);
   if (!span || !proposalFits(span, card)) { card.status = 'stale'; render(); toast('This plan is out of date. Ask Deka again.'); return; }
   const before = clone({ o: span.occurrences, status: span.status, start: span.start, card: card.status, cur: S.current && S.current.id, next: S.next && S.next.id });
+  // Confirmed from the newest reply: Retry on that reply puts this plan back too.
+  const by = span.chat[span.chat.length - 1] === msg && msg.undo && msg.undo.occ ? msg : null;
+  if (by) {
+    for (const o of span.occurrences) if (!o.done && !o.missed) noteOcc(by, span, o.intention_id, o.day);
+    for (const o of card.occurrences) noteOcc(by, span, o.goal_id, o.day);
+    noteField(by, span, 'status'); noteField(by, span, 'start'); noteCard(by, msg, msg.cards.indexOf(card), card);
+  }
   const keep = span.occurrences.filter(o => o.done || o.missed);
   span.occurrences = [...keep, ...card.occurrences.map(o => ({ intention_id: o.goal_id, day: o.day, done: false, detail: o.detail || '' }))];
   card.status = 'confirmed';
@@ -2395,10 +3013,12 @@ function confirmProposal(msg, card) {
     if (span.start < todayIso()) span.start = todayIso();
     span.status = 'live';
     const drop = status();
+    if (by) settleTrail(by, span);
     render(); toast('Deka started.', () => { Object.assign(span, { occurrences: before.o, status: before.status, start: before.start }); card.status = 'open'; drop(); render(); });
     return;
   }
   const drop = status();
+  if (by) settleTrail(by, span);
   render();
   toast('Schedule updated.', () => { span.occurrences = before.o; card.status = 'open'; drop(); render(); });
 }
@@ -2503,7 +3123,7 @@ function unsureList(span, occ, today) {
 // Once a day, after the check in time, Deka asks how it went. Skipped days are asked about too.
 function maybeCheckin() {
   const cur = S.current;
-  if (!isLive(cur) || ui.locked || !S.seen) return;
+  if (!isLive(cur) || !signedIn() || !S.seen) return;
   const n = dayNum(cur);
   if (n < 1 || n > 9 || !checkinDue() || cur.checkin.asked === todayIso()) return;
   const days = [];
@@ -2530,7 +3150,7 @@ function maybeCheckin() {
 // On Day 10 the review opens in the chat by itself.
 function maybeReview() {
   const cur = S.current;
-  if (!isLive(cur) || dayNum(cur) < 10 || cur.reviewOpened || ui.turn || ui.locked || navigator.onLine === false) return;
+  if (!isLive(cur) || dayNum(cur) < 10 || cur.reviewOpened || ui.turn || !signedIn() || navigator.onLine === false) return;
   cur.reviewOpened = todayIso();
   if (!S.next) S.next = newSpan(nextStart());
   startTurn(cur, null, { kind: 'review' }, null);
@@ -2813,7 +3433,12 @@ document.addEventListener('click', e => {
     case 'discard':
       if (!confirm('Discard this deka? Past dekas stay.')) return;
       S.current = null; S.next = null; closeSub(); go('chat'); sweepFiles(); break;
-    case 'lock': api('/api/logout', {}).catch(() => {}).finally(() => { ui.locked = true; ui.loginError = ''; ui.sub = null; render(); }); break;
+    case 'sign-out': signOut(); break;
+    case 'delete-account': deleteAccount(); break;
+    case 'auth-go': { const a = authUi(); a.screen = el.dataset.v; a.error = ''; a.busy = false; render(); $(a.screen === 'signup' ? 'first' : 'email')?.focus(); break; }
+    case 'auth-resend': sendCode(authUi().codeFor, { signup: false }); break;
+    case 'oauth': oauth(el.dataset.v); break;
+    case 'edit-account': { const p = S.profile || {}; ui.sheet = { kind: 'account', form: { first: p.first || '', last: p.last || '', username: p.username || '' }, touched: {}, busy: false, error: '' }; renderSheet(); focusSheet(); break; }
   }
 });
 
@@ -2822,13 +3447,17 @@ document.addEventListener('submit', e => {
   if (!form) return;
   e.preventDefault();
   const kind = form.dataset.form;
-  if (kind === 'login') {
-    const pass = $('pass').value;
-    api('/api/login', { passcode: pass })
-      .then(() => { ui.locked = false; ui.loginError = ''; ui.awake = true; render(); boot(); })
-      .catch(err => { ui.loginError = err.status === 429 ? 'Too many tries. Wait a few minutes.' : err instanceof TypeError ? 'No connection. Try again.' : 'Wrong passcode.'; render(); $('pass')?.focus(); });
+  if (kind === 'signin') { const f = authUi().form; if (EMAIL.test(f.email.trim())) sendCode(f.email.trim()); return; }
+  if (kind === 'signup') {
+    const a = authUi(), f = a.form;
+    a.touched = { first: 1, last: 1, username: 1, email: 1, confirm: 1 };
+    if (Object.keys(authIssues(f)).length || a.taken[f.username] !== false) { render(); return; }
+    sendCode(f.email.trim(), { signup: true, data: { first_name: f.first.trim(), last_name: f.last.trim(), username: f.username } });
     return;
   }
+  if (kind === 'code') { if (authUi().code.length === 6) verifyCode(); return; }
+  if (kind === 'username') { const a = authUi(); a.touched = { first: 1, last: 1, username: 1 }; if (a.taken[a.form.username] === false) saveUsername(); else render(); return; }
+  if (kind === 'account') { const sh = ui.sheet; sh.touched = { first: 1, last: 1, username: 1 }; saveAccount(); return; }
   if (kind === 'sheet') { if (ui.sheet && ui.sheet.kind === 'new') addFromSheet(); else closeSheet(); return; }
   if (kind === 'feedback') {
     const sh = ui.sheet, msg = sh && msgById(sh.mid);
@@ -2855,6 +3484,20 @@ document.addEventListener('submit', e => {
 let noteTimer = null;
 document.addEventListener('input', e => {
   const t = e.target;
+  // Sign up, sign in and the account sheet check each field as it is typed.
+  if (['first', 'last', 'username', 'email', 'confirm', 'code'].includes(t.id) && t.closest('[data-form]')) {
+    const inSheet = Boolean(t.closest('#sheet'));
+    const a = inSheet ? ui.sheet : authUi();
+    if (t.id === 'code') { a.code = t.value.replace(/\D/g, '').slice(0, 6); if (t.value !== a.code) t.value = a.code; const go = document.querySelector('main [type=submit]'); if (go) go.disabled = a.code.length !== 6 || a.busy; if (a.code.length === 6) verifyCode(); return; }
+    if (t.id === 'username') { const v = t.value.toLowerCase().replace(/[^a-z0-9._]/g, '').slice(0, 20); if (v !== t.value) t.value = v; a.form.username = v; checkUsername(v); }
+    else a.form[t.id] = t.value;
+    a.touched[t.id] = true;
+    // Redraw around the field without losing the cursor.
+    const at = t.selectionStart, id = t.id;
+    if (inSheet) renderSheet(); else render();
+    const again = $(id); if (again) { again.focus({ preventScroll: true }); try { again.setSelectionRange(at, at); } catch {} }
+    return;
+  }
   if (t.id === 'msg') {
     autosize(t);
     if (!$('tooLong').hidden && t.value.trim().length <= 2000) { $('tooLong').hidden = true; setDockHeight(); }
@@ -2904,13 +3547,19 @@ document.addEventListener('keydown', e => {
 
 document.addEventListener('change', e => {
   if (e.target.id === 'startDate' && e.target.value && S.current) { S.current.start = e.target.value; saveSoon(); }
-  if (e.target.id === 'checkinTime' && e.target.value) { S.settings.checkin = e.target.value; saveSoon(); }
+  if (e.target.id === 'checkinTime' && e.target.value) { S.settings.checkin = e.target.value; save(); pushSoon(); }
   if (e.target.id === 'importFile') importData(e.target.files[0]);
   if (/^pick(Photos|Camera|Files)$/.test(e.target.id)) { const list = [...e.target.files]; e.target.value = ''; addFiles(list); }
 });
 
 window.addEventListener('online', () => { renderDock(); refreshChat(); flushQueue(); maybeReview(); });
 window.addEventListener('offline', renderDock);
+
+/* A tap on the header takes the screen back to the top, as the status bar does in native apps. */
+$('bar').addEventListener('click', e => {
+  if (e.target.closest('button') || ui.sheet) return;
+  $sc.scrollTo({ top: 0, behavior: calm() ? 'auto' : 'smooth' });
+});
 
 /* Header hairline once the page scrolls */
 const $barEl = $('bar');
@@ -3099,7 +3748,9 @@ function importData(file) {
           files.set(id, blob);
           return DB.put({ id, type: a.type, name: a.name, blob }).catch(() => {});
         }))).then(() => refreshChat());
+        const keep = { owner: S.owner, profile: S.profile };
         S = migrate(d);
+        Object.assign(S, keep);
         applyTheme();
         go('chat'); toast('Imported.');
       } catch { render(); toast('That file is not a Deka export.'); }
@@ -3111,24 +3762,35 @@ function importData(file) {
 
 /* Boot: draw from local data first, then check the session. */
 
-function boot() {
+async function boot() {
   applyTheme();
   // Ask the browser to keep saved data even when space runs low or the site sits unused.
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
-  maybeCheckin();
   setTimeout(sweepFiles, 3000);
-  // A device that has not chosen a theme waits for the session check, so a signed out device goes
-  // straight to the passcode and the theme question comes only after a sign in. Offline, it asks anyway.
-  ui.checking = !S.settings.theme;
+  if (!signedIn()) {
+    // Signed out: the sign in screen, once the project details are known. A return from Apple
+    // or Google finishes the sign in first.
+    ui.auth = authState();
+    if (!cfg) await loadConfig(); else loadConfig();
+    if (await finishOAuth()) return;
+    ui.checking = false; render();
+    return;
+  }
+  if (!cfg) await loadConfig(); else loadConfig();
+  maybeCheckin();
+  // Draw from this device's copy at once. A device with nothing on it yet waits a moment for the account.
+  ui.checking = !S.owner || (!S.settings.theme && !S.spans.length && !(S.current && S.current.intentions.length));
   const slow = ui.checking && setTimeout(() => { if (ui.checking) { ui.slow = true; render(); } }, 400);
-  const settle = () => { if (!ui.checking) return; clearTimeout(slow); ui.checking = false; ui.slow = false; render(); };
+  const settle = () => { if (!ui.checking) return; clearTimeout(slow); ui.checking = false; ui.slow = false; render(); if (ui.tab === 'chat') toBottom(); };
   render();
   if (ui.tab === 'chat') toBottom();
-  wake().then(() => { settle(); flushQueue(); maybeReview(); }).catch(settle);
+  bootAccount().then(() => { settle(); flushQueue(); maybeReview(); }).catch(settle);
+  wake().catch(() => {});
 }
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
+  if (signedIn()) syncNow();
   const before = S.current && S.current.chat.length;
   maybeCheckin();
   if (!document.activeElement?.matches('textarea, input') && !ui.sheet && !ui.turn) render();
