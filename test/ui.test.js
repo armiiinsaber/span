@@ -948,6 +948,8 @@ test.describe('Deka app', { skip }, () => {
     await click('.list .sum');
     assert.deepEqual(await page.js("[...document.querySelectorAll('.list .goal .gn > span:not(.sr)')].map(e => e.textContent.replace(' done', ''))"), ['2 of 3', '1 of 2', '0 of 1']);
     assert.equal(await page.js("document.querySelectorAll('.list .strip10 .col[data-day] .s, .list .strip10 .s').length"), 6, 'only the sessions on days that ran');
+    const strip = await page.js("(() => { const cols = [...document.querySelectorAll('.list .strip10 .col')]; const end = cols.at(-1); return { cols: cols.length, label: end.getAttribute('aria-label'), text: end.textContent, span: getComputedStyle(end).gridColumnStart, review: document.querySelectorAll('.list .strip10 .rvdot').length, width: Math.round(end.getBoundingClientRect().right - cols[5 - 1].getBoundingClientRect().right) > 100 }; })()");
+    assert.deepEqual(strip, { cols: 6, label: 'Ended on day 5', text: 'Ended', span: 'span 5', review: 0, width: true }, 'days 1 to 5, then one ended marker');
   });
 
   test('new deka: just start over with full counts, then Undo puts the old one back exactly', async () => {
@@ -985,5 +987,33 @@ test.describe('Deka app', { skip }, () => {
     await click('.toast [data-a=toast-undo]');
     assert.equal((await stored()).spans[0].id, 'c1');
     await page.go();
+  });
+  test('new deka: a review that fails still starts the new deka, and Try again writes it into the archive', async () => {
+    for (const [offline, line] of [[false, "Review didn't load."], [true, 'Review skipped. You were offline.']]) {
+      await seed(dayFive());
+      // Every chat request fails, and offline the browser says so.
+      await page.js(`(() => { window.__fail = true; const f = window.fetch; window.fetch = (u, o) => window.__fail && String(u).includes('/api/chat') ? Promise.reject(new TypeError('Failed to fetch')) : f(u, o);
+        ${offline ? "Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => !window.__fail });" : ''} })()`);
+      await newDeka('review', 'left');
+      await page.waitFor("JSON.parse(localStorage.getItem('deka.v1')).spans.length === 1", 8000);
+      await sleep(300);
+      let st = await stored();
+      assert.equal(st.spans[0].review, '');
+      assert.equal(st.spans[0].chat.some(m => m.error), false, 'the failed review is not kept');
+      assert.deepEqual(st.current.intentions.map(g => [g.id, g.target]), [['run', 3], ['gym', 2], ['sober', 2]], 'the new deka starts anyway');
+      assert.equal(await text('.recap .recap-note span'), line);
+      assert.equal(await text('.recap [data-a=review-again]'), 'Try again');
+      await idle(); await sleep(300);
+      await page.js('window.__fail = false');
+      await click('.recap [data-a=review-again]');
+      await page.waitFor("JSON.parse(localStorage.getItem('deka.v1')).spans[0].review", 8000);
+      await sleep(400);
+      st = await stored();
+      assert.match(st.spans[0].review, /run 2 of 3/);
+      assert.equal(st.spans[0].chat.at(-1).text, st.spans[0].review, 'written into the archived chat');
+      assert.equal(await page.js("document.querySelector('.recap .recap-note')"), null);
+      assert.match(await text('.recap .say'), /run 2 of 3/);
+      await page.go();
+    }
   });
 });

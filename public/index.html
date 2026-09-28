@@ -346,6 +346,8 @@ button.strip10 { text-align: inherit; }
 .strip10 .col.today .dn { color: var(--ink); font-weight: 600; }
 .strip10 .col.past .s { opacity: .7; }
 .strip10 .col.open { background: var(--paper-deep); }
+.strip10 .col.ended { align-items: stretch; padding: 6px 8px 8px; }
+.strip10 .col.ended i { height: 1.5px; margin-top: 12px; border-radius: 1px; background: var(--hairline); }
 .strip10 .col.open .dn { color: var(--ink); font-weight: 600; }
 /* Compact strip icons grow with text, up to what a tenth of the width holds. */
 .strip10 .s { --z: clamp(21px, 1.24rem, 30px); }
@@ -671,6 +673,8 @@ body.no-tabs .toast { bottom: calc(var(--safe-b) + 16px); }
 .stack { display: grid; gap: 10px; padding-bottom: 8px; }
 .stack .link { justify-self: center; }
 .msg.recap .eyebrow { display: block; margin-bottom: 4px; }
+.recap-note { display: flex; align-items: center; flex-wrap: wrap; gap: 0 4px; font-size: var(--t-subhead); color: var(--ink-soft); }
+.recap-note .link { margin-left: -4px; }
 .menu { list-style: none; margin: 0 0 8px; padding: 0; border-top: 1px solid var(--hairline); }
 .menu button { display: flex; width: 100%; justify-content: space-between; align-items: center; min-height: 60px; font-size: var(--t-body); border-bottom: 1px solid var(--hairline); text-align: left; }
 .menu svg { width: 1.06rem; height: 1.06rem; color: var(--ink-soft); }
@@ -998,9 +1002,11 @@ function mini(today) {
 
 // Compact: one column per day. sessions: [{ it, day, state, changed, from }].
 // On a plan card the whole strip is one button, so the target stays large: a tap opens the day under it.
-function stripCompact(sessions, { today = 0, open = null, tap = null, sort } = {}) {
+// ended: the day a deka ended early. The days after it are one quiet marker, not empty days.
+function stripCompact(sessions, { today = 0, open = null, tap = null, sort, ended = 0 } = {}) {
   let h = tap ? `<button class="strip10" ${tap} aria-expanded="${Boolean(open)}"><span class="sr">${open ? 'Close the day' : 'Open the plan day by day'}</span>` : '<div class="strip10">';
   for (let d = 1; d <= 10; d++) {
+    if (ended && d > ended) { h += `<div class="col ended" style="grid-column: span ${10 - ended}" role="img" aria-label="Ended on day ${ended}"><span class="dn" aria-hidden="true">Ended</span><i aria-hidden="true"></i></div>`; break; }
     const mine = sessions.filter(x => x.day === d);
     if (sort) mine.sort((a, b) => sort(a.it.id, b.it.id));
     const cls = ['col', d === today ? 'today' : '', today && d < today ? 'past' : '', open === d ? 'open' : ''].filter(Boolean).join(' ');
@@ -1298,7 +1304,11 @@ function msgView(msg, { readonly = false } = {}) {
     const only = atts && !msg.text;
     return `<div class="msg user" id="m-${msg.id}"><div class="bubble${only ? ' only' : ''}" data-hold="${msg.id}">${atts}${msg.text ? `<span class="bt">${esc(msg.text)}</span>` : ''}</div>${msg.status === 'waiting' ? '<div class="msg-state">Waiting for connection</div>' : ''}</div>`;
   }
-  if (msg.recap) return `<div class="msg deka recap" id="m-${msg.id}"><span class="eyebrow">Your last deka</span><p class="say"><span class="t">${paragraphs(msg.text)}</span></p></div>`;
+  if (msg.recap) {
+    const busy = ui.turn && ui.turn.recap === msg;
+    const note = msg.skipped ? `<div class="recap-note" role="status"><span>${busy ? 'Writing the&nbsp;review.' : msg.skipped === 'offline' ? 'Review skipped. You were&nbsp;offline.' : "Review didn't&nbsp;load."}</span>${busy ? '' : `<button class="link" data-a="review-again" data-m="${msg.id}">Try again</button>`}</div>` : '';
+    return `<div class="msg deka recap" id="m-${msg.id}"><span class="eyebrow">Your last deka</span>${msg.text ? `<p class="say"><span class="t">${paragraphs(msg.text)}</span></p>` : ''}${note}</div>`;
+  }
   const live = ui.turn && ui.turn.msg === msg;
   const text = live ? ui.turn.shown : msg.text;
   const cards = (msg.cards || []).map((c, i) => cardView(msg, c, i, readonly)).join('');
@@ -1661,7 +1671,7 @@ function pastView() {
     return `<li><button class="sum" data-a="open-past" data-id="${esc(sp.id)}" aria-expanded="${open}">
       <span><span class="ttl">Deka ${S.spans.length - i}</span><span class="when">${spanRange(sp)}</span>${sp.endedDay ? `<span class="when">Ended on Day ${sp.endedDay}</span>` : ''}</span>
       <span class="pct">${completion(sp)}<small style="font-size:.5em">%</small></span></button>
-      ${open ? `<div class="more fade">${sp.reflection ? `<p>${nb(sp.reflection)}</p>` : ''}${sp.review ? `<p class="read">${nb(sp.review)}</p>` : ''}${stripCompact(occSessions(sp), { sort: byGoal(sp) })}${goalRows(sp, { live: true })}
+      ${open ? `<div class="more fade">${sp.reflection ? `<p>${nb(sp.reflection)}</p>` : ''}${sp.review ? `<p class="read">${nb(sp.review)}</p>` : ''}${stripCompact(occSessions(sp), { sort: byGoal(sp), ended: sp.endedDay || 0 })}${goalRows(sp, { live: true })}
         <div class="actions">${sp.chat && sp.chat.length ? `<button class="btn" data-a="open-thread" data-id="${esc(sp.id)}">Read the chat</button>` : '<p class="quiet" style="padding:0">No chat for this&nbsp;deka.</p>'}</div></div>` : ''}</li>`;
   }).join('') + '</ul>';
   return h;
@@ -2018,7 +2028,9 @@ const occStatus = o => o.done ? 'done' : o.missed ? 'missed' : 'planned';
 // What Deka sees this turn: the goals and schedule it is working on, the date and
 // weekday of each day, recent messages and the summary of older ones.
 function buildRequest(span, text, event, user = null) {
-  const p = phase();
+  // An early review, even one asked again from the archive, speaks of the deka as it was on the day it ended.
+  const early = event && event.kind === 'early_review';
+  const p = early ? 'live' : phase();
   if (p === 'planning' && span.start < todayIso() && !span.occurrences.some(o => o.done)) span.start = todayIso();
   let target = span;
   if (p === 'review') { if (!S.next) S.next = newSpan(nextStart()); target = S.next; }
@@ -2044,7 +2056,7 @@ function buildRequest(span, text, event, user = null) {
   const body = {
     phase: p,
     today: `${WEEKDAYS[new Date().getDay()]} ${todayIso()}`,
-    current_day: p === 'live' ? dayNum(span) : null,
+    current_day: early ? event.day : p === 'live' ? dayNum(span) : null,
     days: dayMap(target.start),
     goals: target.intentions.map(g => ({ id: g.id, name: g.name, type: g.type, tag: g.tag || '', target: g.target, ...Object.fromEntries(IDENTITY.filter(k => g[k]).map(k => [k, g[k]])) })),
     schedule: target.occurrences.map(o => ({ goal_id: o.intention_id, day: o.day, status: occStatus(o), detail: o.detail || '' })),
@@ -2148,7 +2160,7 @@ async function startTurn(span, text, event, ask, user = null, opts = {}) {
   for (const m of span.chat) delete m.undo;
   const msg = { id: uid(), role: 'deka', text: '', ts: Date.now(), cards: opts.cards || [], undo, ask: { text, event, user: user ? user.id : null, ask: ask ? ask.id : null, ...(opts.cards ? { cards: clone(opts.cards) } : {}) } };
   span.chat.push(msg);
-  const turn = ui.turn = { msg, span, shown: '', pending: '', finished: false, event, ask, text, then: opts.then, ctrl: new AbortController() };
+  const turn = ui.turn = { msg, span, shown: '', pending: '', finished: false, event, ask, text, then: opts.then, recap: opts.recap || null, ctrl: new AbortController() };
   ui.pinned = true;
   render(); toBottom(true);
   $('chat')?.setAttribute('aria-busy', 'true');
@@ -2414,12 +2426,13 @@ function endDeka(review, choice) {
   const day = dayNum(old);
   ui.sheet = null;
   go('chat'); toBottom();
-  const begin = () => beginDeka(old, day, choice, before);
+  const begin = skipped => beginDeka(old, day, choice, before, skipped);
   if (!review) { begin(); return; }
   startTurn(old, null, { kind: 'early_review', day }, null, null, { then: t => {
-    // With no review, the deka still ends; a failed one is not kept.
-    if (t.msg.error) old.chat = old.chat.filter(m => m !== t.msg);
-    begin();
+    // With no review, the deka still ends; a failed one is not kept, and the new chat offers it again.
+    if (!t.msg.error) { begin(); return; }
+    old.chat = old.chat.filter(m => m !== t.msg);
+    begin(navigator.onLine === false ? 'offline' : 'error');
   } });
 }
 // The goals they bring: all of them, only what is left of each, or none.
@@ -2427,13 +2440,14 @@ function carried(old, choice) {
   if (choice === 'empty') return [];
   return old.intentions.map(g => ({ ...clone(g), target: choice === 'left' ? g.target - doneOf(old, g.id) : g.target })).filter(g => g.target > 0);
 }
-function beginDeka(old, day, choice, before) {
+function beginDeka(old, day, choice, before, skipped = null) {
   Object.assign(old, { status: 'done', closed: todayIso(), endedDay: day });
   S.spans.unshift(old);
   S.next = null;
   const span = S.current = newSpan(todayIso());
   span.intentions = carried(old, choice);
   if (old.review) span.chat.push({ id: uid(), role: 'deka', text: old.review, ts: Date.now(), cards: [], recap: true, auto: true });
+  else if (skipped) span.chat.push({ id: uid(), role: 'deka', text: '', ts: Date.now(), cards: [], recap: true, auto: true, skipped, span: old.id });
   ui.cardOpen = null;
   go('chat'); toBottom();
   if (span.intentions.length) {
@@ -2443,6 +2457,16 @@ function beginDeka(old, day, choice, before) {
   save();
   const until = Date.now() + 8000;
   toast('New deka started.', () => { if (Date.now() <= until) undoDeka(before); }, { ms: 8000, hard: true });
+}
+// Try again: the review is written into the archived deka and shown here once it lands.
+function reviewAgain(note) {
+  const old = S.spans.find(sp => sp.id === note.span);
+  if (!old || ui.turn) return;
+  startTurn(old, null, { kind: 'early_review', day: old.endedDay }, null, null, { recap: note, then: t => {
+    if (t.msg.error) { old.chat = old.chat.filter(m => m !== t.msg); note.skipped = navigator.onLine === false ? 'offline' : 'error'; }
+    else { note.text = old.review; delete note.skipped; delete note.span; }
+    save(); refreshMsgs();
+  } });
 }
 function undoDeka(before) {
   const t = ui.turn;
@@ -2686,6 +2710,7 @@ document.addEventListener('click', e => {
     case 'nd-end': ui.sheet.review = el.dataset.v === 'review'; ui.sheet.step = 2; renderSheet(); focusSheet(); break;
     case 'nd-back': ui.sheet.step = 1; renderSheet(); focusSheet(); break;
     case 'nd-goals': endDeka(ui.sheet.review, el.dataset.v); break;
+    case 'review-again': { const m = chatSpan().chat.find(x => x.id === el.dataset.m); if (m && m.skipped) reviewAgain(m); break; }
     case 'go-profile': ui.sheet = null; openSub('profile'); break;
     case 'theme': chooseTheme(el.dataset.v); break;
     case 'open-thread': openSub('thread', { thread: el.dataset.id }); break;
