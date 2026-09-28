@@ -20,10 +20,17 @@ if (!DIR) { console.error('Set LIGHTHOUSE_DIR to a node_modules folder with ligh
 const { startFlow } = await import(path.join(DIR, 'lighthouse', 'core', 'index.js'));
 const puppeteer = (await import(path.join(DIR, 'puppeteer-core', 'lib', 'puppeteer', 'puppeteer-core.js'))).default;
 
-process.env.DEKA_PASSCODE = 'audit';
 process.env.MOCK_DELAY = '0';
 const { createApp } = require(path.join(ROOT, 'server'));
 const mock = require(path.join(ROOT, 'lib', 'mock'));
+const { createDb } = require(path.join(ROOT, 'lib', 'db'));
+const { startFake } = require(path.join(ROOT, 'test', 'fake-supabase'));
+// Accounts: the Supabase stand in signs the audit in.
+const fake = await startFake();
+const db = createDb(fake.databaseUrl);
+const who = await fake.user('audit@example.com', { first_name: 'Ana', last_name: 'Silva', username: 'ana.silva' });
+const SESSION = { access_token: who.access_token, refresh_token: who.refresh_token, expires_at: who.expires_at, user: { id: who.user.id, email: who.user.email } };
+const CONFIG = { url: fake.url, anonKey: fake.anonKey };
 const { ICONS } = require(path.join(ROOT, 'lib', 'icons'));
 
 const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -58,7 +65,7 @@ function state() {
       { type: 'status', span: 'c1', day: 4, goals: intentions.map(g => ({ id: g.id, name: g.name, type: g.type, icon: g.icon, category: g.category, done: occurrences.filter(o => o.intention_id === g.id && o.done).length, target: g.target })) },
     ] },
   ];
-  return { v: 1, seen: true, next: null, spans: [], settings: { checkin: '23:59', theme: 'system' },
+  return { v: 1, seen: true, next: null, spans: [], owner: who.user.id, profile: { first: 'Ana', last: 'Silva', username: 'ana.silva', email: 'audit@example.com', plan: 'trial', trialEnds: '2026-10-08T00:00:00.000Z' }, settings: { checkin: '23:59', theme: 'system' },
     current: { id: 'c1', start: iso(start), status: 'live', notes: { 4: 'Slept well.' }, log: [], chat, summary: '', summarizedUpTo: 0, checked: [1, 2], checkin: {}, intentions, occurrences } };
 }
 
@@ -66,7 +73,7 @@ function state() {
 let server = null, base = '';
 async function serve() {
   if (server) server.close();
-  server = createApp({ client: mock }).listen(0);
+  server = createApp({ client: mock, supabase: { url: fake.url, anonKey: fake.anonKey, serviceKey: fake.serviceKey, jwtSecret: fake.jwtSecret }, db, chatPerTenMinutes: 1000 }).listen(0);
   await new Promise(r => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}/`;
 }
@@ -81,13 +88,14 @@ try {
       await page.evaluateOnNewDocument(standalone => { Object.defineProperty(navigator, 'standalone', { value: standalone, configurable: true }); }, mode === 'standalone');
       await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: theme }]);
       await page.goto(base);
-      await page.evaluate(async s => {
-        await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: 'audit' }) });
+      await page.evaluate(async (s, session, config) => {
         // Stop the running page from saving its own state over the seed before the audit reloads it.
         const set = Storage.prototype.setItem;
         Storage.prototype.setItem = function () {};
         set.call(localStorage, 'deka.v1', JSON.stringify(s));
-      }, state());
+        set.call(localStorage, 'deka.session', JSON.stringify(session));
+        set.call(localStorage, 'deka.config', JSON.stringify(config));
+      }, state(), SESSION, CONFIG);
       const config = { extends: 'lighthouse:default', settings: {
         formFactor: 'mobile', disableStorageReset: true, onlyCategories: ['performance', 'accessibility'],
         screenEmulation: { mobile: true, width, height: HEIGHTS[width], deviceScaleFactor: 3, disabled: false },
@@ -109,9 +117,15 @@ try {
       await tap('[data-a=more]'); await snap('more sheet');
       await tap('[data-a=go-past]'); await snap('past');
       await tap('[data-a=back]'); await tap('[data-a=more]'); await tap('[data-a=go-profile]'); await snap('profile');
-      await page.evaluate(() => { localStorage.clear(); location.reload(); }); await new Promise(r => setTimeout(r, 900)); await snap('theme choice');
+      // Signed out: sign in, sign up and the code screen. Then a first sign in: theme, then the intro.
+      await page.evaluate(config => { localStorage.clear(); localStorage.setItem('deka.config', JSON.stringify(config)); location.reload(); }, CONFIG); await new Promise(r => setTimeout(r, 900)); await snap('sign in');
+      await page.evaluate(() => { const e = document.getElementById('email'); e.value = 'audit@example.com'; e.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('[data-form=signin]').requestSubmit(); });
+      await page.waitForSelector('#code', { timeout: 4000 }); await snap('code');
+      await tap('[data-a=auth-go][data-v=start]'); await tap('[data-a=auth-go][data-v=signup]'); await snap('sign up');
+      await fake.pool.query('update public.profiles set theme = null where id = $1', [who.user.id]);
+      await page.evaluate((session, config) => { localStorage.clear(); localStorage.setItem('deka.config', JSON.stringify(config)); localStorage.setItem('deka.session', JSON.stringify(session)); location.reload(); }, SESSION, CONFIG);
+      await page.waitForSelector('.choose', { timeout: 6000 }); await snap('theme choice');
       await tap('[data-a=theme][data-v=system]'); await snap('intro');
-      await page.evaluate(() => fetch('/api/logout', { method: 'POST' }).then(() => location.reload())); await new Promise(r => setTimeout(r, 900)); await snap('login');
       const res = await flow.createFlowResult();
       for (const step of res.steps) {
         const lhr = step.lhr;
@@ -128,6 +142,7 @@ try {
 } finally {
   await browser.close();
   if (server) server.close();
+  await db.end(); await fake.stop();
 }
 if (OUT) fs.writeFileSync(OUT, `${JSON.stringify(results, null, 1)}\n`);
 const perf = results.filter(r => r.performance != null).map(r => r.performance);

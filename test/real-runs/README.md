@@ -1,6 +1,19 @@
 # Real runs
 
-## Latest: ending a deka early, scenario 22 twice, on Opus 5.5 at low effort
+## Latest: accounts, scenarios 1, 2, 19 and 20 once, on Opus 5.5 at low effort
+
+In `accounts/`, run on 2026-09-28 after accounts replaced the passcode. Every turn went through a signed in test account on the Supabase stand in (a real Postgres with setup.sql, row level security on), with the photo in scenario 20 uploaded to the account's folder in the bucket and fetched by the server from there, and each turn written to the usage table.
+
+| Scenario | Run 1 |
+|---|---|
+| 1 full dump | pass |
+| 2 book and trim | pass |
+| 19 rambling | pass |
+| 20 photo of a to do list | pass |
+
+Spend was $0.64, and the usage table showed the same tokens and cost as the harness counted.
+
+## Earlier: ending a deka early, scenario 22 twice, on Opus 5.5 at low effort
 
 In `end-early/`, run on 2026-09-27. A deka on day 5 (days 1 to 3 done, day 4 free, day 5 still open) ends with a quick review, brings only what is left, and Deka plans the new deka.
 

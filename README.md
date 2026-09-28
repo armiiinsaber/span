@@ -9,7 +9,12 @@ Live at dekaapp.com. Design follows DESIGN.md in the melomaniacstudios repo and 
 ## How it is built
 
 ```
-server.js           Express app, default export: passcode gate, rate limits, POST /api/chat, POST /api/feedback
+server.js           Express app, default export: session check, rate limits, /api/config, /api/chat, /api/feedback, /api/account
+lib/auth.js         Checks the Supabase session token on every request, by shared secret or published keys
+lib/db.js           The server's own Postgres line: usage, the daily limit, feedback (memory when unset)
+lib/storage.js      Attachments out of the private bucket, and emptying a folder and deleting a user
+lib/plans.js        Plans, their limits, and list prices
+supabase/           setup.sql, to run once in the SQL Editor, made from the numbered migrations beside it
 vercel.json         Function max duration and static headers
 lib/chat.js         Deka's system prompt, the context each turn sends, the streamed tool loop
 lib/tools.js        The tools and the checks every call must pass
@@ -24,7 +29,8 @@ public/fonts/       Figtree for all text and Melomaniac Serif for the wordmark, 
 brand/              The Deka mark: the source PNG and the traced SVGs
 scripts/            trace_mark.py (PNG to SVG), brand.js (SVG to icons and splash screens), icons.js (the icon sprite),
                     real-runs.js (Deka against the real API), audit.mjs (Lighthouse on every screen)
-test/               node:test suites; ui.test.js drives headless Chrome; real-runs/ holds the latest real API transcripts
+test/               node:test suites; ui.test.js drives headless Chrome; fake-supabase.js stands in for Supabase on a real
+                    Postgres started from node_modules; real-runs/ holds the latest real API transcripts
 ```
 
 Everything in the app speaks one visual language: a ten day strip where every session is its goal's icon. Each goal has a Phosphor icon and a category (body, people, fun, work, mind, rest) with one soft tint. A planned session is the icon in its tint, a done one fills with chartreuse, a missed one fades, and one nobody confirmed keeps a dashed outline. The strip comes in three sizes: compact on plan cards in the chat, full on the Days tab, and mini (ten dots, filled as days pass) wherever it says where you are.
@@ -53,7 +59,9 @@ Profile and Past dekas sit behind the profile icon in the header. Each deka has 
 
 **Look and feel.** Deka follows Apple's guidelines where a web app can. Text uses a scale modeled on Apple's text styles, with Body at 17 points and nothing under 11, and on iPhone it follows the text size setting. Every control is at least 44 by 44 points. Dark mode follows the system: a warm near black under ivory text, the same tints lifted, chartreuse still for done. Glass is only for what floats over content: the tab bar, the composer, toasts and sheets. Cards are solid. Sheets have a grabber, open at medium when they are tall, drag up to large and swipe down to close. Motion uses springs and never runs with Reduce Motion, where sheets and toasts fade instead. The header is static, not fixed: fixed headers near the notch drift on iPhone.
 
-**Light or dark.** Right after the passcode, each device is asked once: Light, Dark, or Match my iPhone, which follows the system setting and is what a device gets until it chooses. The choice lives at the top of Profile and applies at once, with a short crossfade (none with Reduce Motion). It is saved with the data, so export and import carry it, and mirrored in `deka.theme`, which a small script in the page head reads to set the theme before anything paints. iOS launch screens can only follow the system setting, so with a choice that differs from the system, the launch screen shows the system's theme for a moment.
+**Accounts.** Sign up with a first name, last name, username, email and confirm email, checked as you type (the username against the database), then a 6 digit code from the email. Sign in is the email and a code, or Sign in with Apple or Google, which ask only for what the provider did not give, usually the username. No passwords. Sessions last as long as they are used. Profile shows the name, username and email, lets you edit the names and username, shows the plan quietly, and has Sign out, Export my data and Delete my account, which removes every row and file after one confirmation. Everything lives in Postgres under row level security, so an account only ever sees its own rows; this device keeps a cache, so Days and Goals draw at once and everything but Deka works offline, with changes queued and sent when the connection returns. Each record carries `updated_at` and the latest change wins. A device from before accounts uploads everything it has, past dekas and attachments included, the first time it signs in, and keeps its copy as the cache.
+
+**Light or dark.** Right after the first sign in, each account is asked once: Light, Dark, or Match my iPhone, which follows the system setting and is what a device gets until it chooses. The choice lives at the top of Profile and applies at once, with a short crossfade (none with Reduce Motion). It is saved with the data, so export and import carry it, and mirrored in `deka.theme`, which a small script in the page head reads to set the theme before anything paints. iOS launch screens can only follow the system setting, so with a choice that differs from the system, the launch screen shows the system's theme for a moment.
 
 **The top edge.** From iOS 26, where the system finds no flat color at the top of a web app, it blurs the status bar area, and that blur reaches down over the page. Deka puts a fixed strip in the page color at the top edge, only as tall as the status bar, for iOS to read. At the top of a page it is invisible; once content scrolls up under the status bar, a few pixels of soft edge fade in below it. It never covers the header.
 
@@ -92,11 +100,11 @@ Hard limits, checked on the server before any call to Claude:
 | Message length | 2,000 characters; longer gets a note to shorten it, with no call. The app stops it in the composer too. |
 | Output per call, thinking included | 8,000 tokens for a normal reply, 10,000 while planning a new deka, 12,000 for the Day 10 review, about twice the most seen in real runs. A call that hits its ceiling is logged and the turn ends with the retry message. |
 | Calls per turn | 4: the first, one retry for a failed call, one try at a better plan, one for a reply that was never written. Past that, the retry message. |
-| Turns per device per day | 150, counted by a device cookie and the app's date. Past that: "That is all the chat for today. Everything else works by hand until tomorrow." |
+| Turns per account per day | 150, counted in the `usage` table by the app's date, so it holds across devices and instances. Past that: "That is all the chat for today. Everything else works by hand until tomorrow." |
 | Messages per IP | 40 in 10 minutes, as before. |
 | Tools | Only Deka's own: `update_goals`, `log_day`, `propose_schedule`, `show_status`, `save_summary` when older messages need it, and `mark_off_topic`, which changes nothing and only tells the app a turn was a redirect. No web search or any other tool. |
 
-Like the rate limits, the daily count lives in memory, so each Vercel instance counts on its own.
+The daily count lives in the database with the rest of usage, and the plan limits live in `lib/plans.js`.
 
 ### Data from before the rename
 
@@ -109,7 +117,11 @@ Set these in the Vercel project under Settings, Environment Variables, for Produ
 | Variable | Required | Notes |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Server only. Never sent to the browser. |
-| `DEKA_PASSCODE` | yes | The one passcode. Needed to log in and for every `/api` call. Changing it signs every device out. Falls back to `SPAN_PASSCODE` when unset. |
+| `SUPABASE_URL` | yes | The project URL, like `https://abcdefgh.supabase.co`. Sent to the browser through `/api/config`. |
+| `SUPABASE_ANON_KEY` | yes | The public key (anon, or the newer publishable key). Sent to the browser; row level security is what protects the data. |
+| `SUPABASE_SERVICE_ROLE_KEY` | yes | Server only, never sent anywhere. Reads attachments for Claude, empties a folder and deletes a user. |
+| `DATABASE_URL` | yes | Server only. The Postgres connection string from the project's Connect dialog, the transaction pooler on port 6543. Usage and feedback. |
+| `SUPABASE_JWT_SECRET` | older projects | Server only. Only for a project that still signs sessions with the legacy JWT secret; new projects publish keys instead and need nothing here. |
 | `CLAUDE_MODEL` | no | Defaults to `claude-opus-5-5`. |
 | `CLAUDE_EFFORT` | no | `low` (default), `medium`, `high`. In real runs low planned as well as medium, with the first word sooner and about 17% less cost; see `test/real-runs/README.md`. |
 | `DEKA_MOCK` | no | Local only. `1` plans with a scripted stand in when there is no key. Ignored in production. |
@@ -129,13 +141,13 @@ npm test
 
 `vercel dev` runs the app the way Vercel does: files in `public/` are served as static files and `server.js` runs as the function. Without the CLI, `npm run dev` serves the same thing with plain Node.
 
-With no key, `DEKA_MOCK=1 DEKA_PASSCODE=test npm run dev` runs the whole app against a scripted stand in, so you can work on the UI without spending credit.
+With no key, `DEKA_MOCK=1 npm run dev` runs the server against a scripted stand in for Claude. Signing in still needs a Supabase project in `.env`; the browser tests instead start a stand in for Supabase on a real Postgres (see `test/fake-supabase.js`), and that is the easiest way to see every screen without a project.
 
 After changing `lib/icons.js`, run `node scripts/icons.js` to rebuild the icon sprite in `public/index.html`, and bump `CACHE` in `public/sw.js`.
 
 `node scripts/audit.mjs out.json` runs Lighthouse on every screen at 375, 390 and 430 px, in Safari and as the installed app, in light and dark, against the scripted stand in. It needs Lighthouse and puppeteer-core installed somewhere; point `LIGHTHOUSE_DIR` at that `node_modules` folder.
 
-`node --env-file=.env.local scripts/real-runs.js --runs 2 --out test/real-runs` plays eighteen scenarios against the real API through the real server and tool loop (planning, tweaks, check ins, the Day 10 review, a long chat that needs a summary, a check in question left unanswered, two fun nights to spread, and the guardrails: off topic requests, an injection, distress, a long paste), checks each turn, and writes the transcripts with timing and cost. It costs about $0.45 a run. Set `CLAUDE_MODEL` and `CLAUDE_EFFORT` to try other setups, and `--only 11,12` to run some of them. See `test/real-runs/README.md` for the latest results.
+`node --env-file=.env.local scripts/real-runs.js --runs 2 --out test/real-runs` signs in as a test account on the Supabase stand in and plays the scenarios against the real API through the real server and tool loop (planning, tweaks, check ins, the Day 10 review, a long chat that needs a summary, a check in question left unanswered, two fun nights to spread, and the guardrails: off topic requests, an injection, distress, a long paste), checks each turn, and writes the transcripts with timing and cost. It costs about $0.45 a run. Set `CLAUDE_MODEL` and `CLAUDE_EFFORT` to try other setups, and `--only 11,12` to run some of them. See `test/real-runs/README.md` for the latest results.
 
 To try the app on your phone, open your machine's LAN address on the same Wi-Fi. Mic input needs HTTPS or localhost, so over plain LAN use the keyboard's own dictation.
 
@@ -145,16 +157,61 @@ Vercel detects Express from `server.js`. Its default export is the app, and the 
 
 `vercel.json` sets `maxDuration` to 120 seconds, room for a Claude call plus one retry after a failed validation. The `*.js` key is deliberate: Vercel names the Express function `index`, so a `server.js` key does not match it. The same file carries the security and cache headers that Express sets locally, since static files skip Express on Vercel.
 
-### Login and rate limits
+### Sessions and limits
 
-The session is an HttpOnly cookie, `SameSite=Lax`, `Secure` over HTTPS, and host only, so it belongs to dekaapp.com alone. It lasts 365 days and is renewed on every API call. Its value is derived from the passcode, so a new passcode makes every old session fail. Because www redirects to the apex, every login happens on dekaapp.com.
+The app signs in with Supabase directly, using the public key, and keeps the session in its own storage. Every call to `/api` carries the session token, and the server checks its signature (the project's published keys, or the legacy JWT secret) before doing anything. The daily turn limit counts per account in the `usage` table, so it holds across devices and server instances. The rate limits (40 chat messages per 10 minutes per IP) live in memory and are soft: each Vercel instance counts on its own. For a hard limit, add Vercel Firewall rate limiting on `/api/chat`.
 
-The rate limits (40 chat messages per 10 minutes, 10 login tries per 15 minutes, per IP) live in memory. Vercel runs several instances that do not share memory, so these limits are soft: each instance counts on its own and a new instance starts at zero. The passcode is the real protection; keep it long. For a hard limit, add Vercel Firewall rate limiting on `/api/chat`.
+Plans: each profile is `trial`, `standard` or `pro`, and a new account starts on trial with `trial_ends_at` ten days out. Until billing exists everyone keeps full access, and the plan only shows in Profile. The limits per plan (turns a day and a month) live in `lib/plans.js`, all at today's values, so turning tiers on later is a change there.
+
+### Setting up Supabase
+
+Everything Deka needs from Supabase, click by click. Do these in order; the first three make the app work, the rest add Apple and Google.
+
+**1. The project, in Canada.**
+1. Go to supabase.com, sign in, and press New project.
+2. Name it `deka`, set a database password (keep it; it is part of `DATABASE_URL`), and for Region choose Canada (Central), which is `ca-central-1`. Press Create new project and wait for it to finish setting up.
+3. In the left bar open Project Settings (the gear), then API. Copy the Project URL and the anon public key. Under Project Settings, API keys, reveal and copy the service_role key. Under Project Settings, JWT keys, note whether the project uses a legacy JWT secret; new projects use signing keys and need nothing more.
+4. Open Connect at the top of the dashboard, choose Transaction pooler, and copy the connection string; put the database password in it. That is `DATABASE_URL`.
+
+**2. The database, from setup.sql.**
+1. In the left bar open SQL Editor and press New query.
+2. Open `supabase/setup.sql` from this repository, paste all of it, and press Run.
+3. To confirm: in the left bar open Table Editor. You should see `profiles`, `dekas`, `goals`, `sessions`, `notes`, `messages`, `feedback` and `usage`, each with a shield icon meaning row level security is on. Open Storage: a private bucket `attachments` exists. Open Authentication, Policies: every table lists one policy, and `storage.objects` lists "attachments: own folder". Running the file again is safe.
+
+**3. Sign in by email code.**
+1. In the left bar open Authentication, then Sign In / Providers. Email is on by default. Turn off Confirm email if you want the first code to sign people straight in (Deka verifies by code either way), and leave Secure email change on.
+2. Open Authentication, Emails (Email Templates). Deka sends a 6 digit code, so the template must show `{{ .Token }}`, not the link. Set both Confirm sign up and Magic Link to the same message, in Deka's voice, for example:
+   Subject: `Your Deka code`
+   Body:
+   ```
+   <p style="font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 17px; color: #141310;">Here is your code for Deka.</p>
+   <p style="font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 32px; letter-spacing: .3em; color: #141310;"><strong>{{ .Token }}</strong></p>
+   <p style="font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 15px; color: #6b6a64;">It works for the next hour. If you did not ask for it, you can ignore this email.</p>
+   ```
+3. Under Authentication, URL Configuration, set Site URL to `https://dekaapp.com` and add `https://dekaapp.com/` and `http://localhost:3000/` to Redirect URLs.
+4. Under Authentication, Sessions: leave Time-box user sessions and Inactivity timeout unset (or set the inactivity timeout to one year on a plan that allows it), so a device stays signed in as long as it is used. Under Authentication, Rate Limits, the default of a few emails an hour per address is fine; raise it if sign ups stall.
+5. Supabase's built in mailer is for testing only. Under Project Settings, Authentication, SMTP Settings, turn on a custom SMTP provider (Resend, Postmark, or similar) before real people sign up, with the sender `hello@dekaapp.com` or another address on the domain.
+
+**4. Sign in with Google.**
+1. In Google Cloud Console, make or pick a project, then APIs & Services, OAuth consent screen: External, app name `Deka`, support email, and `dekaapp.com` under Authorized domains. Publish it.
+2. APIs & Services, Credentials, Create credentials, OAuth client ID, type Web application, name `Deka web`. Under Authorized JavaScript origins add `https://dekaapp.com`. Under Authorized redirect URIs add the callback Supabase shows (Authentication, Sign In / Providers, Google), which is `https://<project ref>.supabase.co/auth/v1/callback`. Create, and copy the Client ID and Client secret.
+3. In Supabase, Authentication, Sign In / Providers, Google: turn it on, paste the Client ID and Client secret, save.
+
+**5. Sign in with Apple.**
+1. In the Apple Developer account, Certificates, Identifiers & Profiles, Identifiers, add an App ID (`com.dekaapp.ios`, or the one the App Store app will use) with the Sign In with Apple capability.
+2. Identifiers again, add a Services ID: identifier `com.dekaapp.web`, description `Deka`. Turn on Sign In with Apple, press Configure, pick the App ID as primary, and under Website URLs add the domain `dekaapp.com` and the return URL Supabase shows for Apple (`https://<project ref>.supabase.co/auth/v1/callback`). Save.
+3. Keys, add a key named `Deka Sign in with Apple` with Sign In with Apple turned on, configured for the App ID. Download the `.p8` file once and note the Key ID; also note the Team ID (top right of the developer account).
+4. In Supabase, Authentication, Sign In / Providers, Apple: turn it on, enter the Services ID as the Client ID, and generate the secret key with the Team ID, Key ID and the `.p8` contents (Supabase's Apple page has a generator, and the secret expires every six months, so set a reminder). Save.
+5. Domain verification: Apple verifies the domain through the return URL and Services ID configuration above; no file needs hosting for the web flow. If Apple asks for a verification file for an email relay, add `apple-developer-domain-association.txt` under `public/.well-known/` and redeploy.
+
+**6. Vercel.** In the project, Settings, Environment Variables, set for Production and Preview: `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, and `SUPABASE_JWT_SECRET` only if the project uses the legacy secret. Remove `DEKA_PASSCODE`; the passcode gate is gone. Redeploy.
+
+**Old devices.** A device that signed in with the passcode opens on the sign in screen. Its data is still on the device, and the first sign in uploads all of it into the account, so nothing is lost; there is nothing to do on the server side to keep old sessions.
 
 ## Deploy on Vercel
 
 1. In Vercel, Add New, Project, import `armiiinsaber/span` from GitHub. The framework preset is Express; leave build settings empty.
-2. Add `ANTHROPIC_API_KEY` and `DEKA_PASSCODE` under Environment Variables, and `CLAUDE_MODEL` if you want a different model.
+2. Add the environment variables from the table above, and `CLAUDE_MODEL` if you want a different model.
 3. Deploy. Every push to `main` deploys to production after that.
 
 ## Domains
@@ -202,4 +259,4 @@ iOS may keep showing the old home screen icon until the app is removed from the 
 
 Open dekaapp.com in Safari, Share, Add to Home Screen. It opens full screen and keeps working offline.
 
-**Sign in and saved data.** After the passcode, a device stays signed in for a year, and every use renews that year, so an active device never signs out. Changing `DEKA_PASSCODE` signs every device out. iOS keeps Safari and the home screen app apart, each with its own sign in and its own saved data, so each asks for the passcode once. The home screen app is the safe place for your data: Safari can clear storage for sites you have not opened in a while, while an installed app keeps it. The app also asks the browser to keep its storage where that is supported. Export a copy now and then under Profile. Plans made offline are by hand until you are back online. An installed copy from an older address is a separate app; add Deka again from dekaapp.com.
+**Sign in and saved data.** A signed in device stays signed in as long as it is used; Supabase renews the session on every use. iOS keeps Safari and the home screen app apart, each with its own sign in and its own cache, so each asks you to sign in once; the account's data comes down either way. The home screen app is the safe place for your data: Safari can clear storage for sites you have not opened in a while, while an installed app keeps it. The app also asks the browser to keep its storage where that is supported. Export a copy now and then under Profile. Plans made offline are by hand until you are back online. An installed copy from an older address is a separate app; add Deka again from dekaapp.com.

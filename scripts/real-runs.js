@@ -12,12 +12,16 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-process.env.DEKA_PASSCODE = crypto.randomBytes(16).toString('hex');
 if (!process.env.ANTHROPIC_API_KEY) { console.error('ANTHROPIC_API_KEY is not set.'); process.exit(1); }
 
 const Anthropic = require('@anthropic-ai/sdk');
 const { createApp } = require('../server');
 const { MODEL, EFFORT } = require('../lib/chat');
+const { createDb } = require('../lib/db');
+// Accounts: each run signs in as its own person on the Supabase stand in, which runs a real
+// Postgres with setup.sql, so every turn goes through a session and lands in usage.
+const { startFake } = require('../test/fake-supabase');
+let FAKE = null, DB = null;
 
 const arg = (name, dflt) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : dflt; };
 const RUNS = Number(arg('runs', 1));
@@ -310,13 +314,22 @@ async function turn(ctx, text, event, ask, files = []) {
   span.chat.push(msg);
   const { body, target, summarizeTo } = app.buildRequest(span, text, event);
   if (user) delete user.pending;
-  if (files.length) body.attachments = files;
+  // Files go up to the person's folder in the bucket first; the request carries only their paths.
+  if (files.length) {
+    body.attachments = [];
+    for (const f of files) {
+      const p = `${ctx.uid}/${f.name}`;
+      const up = await fetch(`${FAKE.url}/storage/v1/object/attachments/${p}`, { method: 'POST', headers: { apikey: FAKE.anonKey, Authorization: `Bearer ${ctx.token}`, 'Content-Type': f.media_type, 'x-upsert': 'true' }, body: Buffer.from(f.data, 'base64') });
+      if (!up.ok) throw new Error(`upload ${up.status}`);
+      body.attachments.push({ path: p, kind: f.kind, name: f.name });
+    }
+  }
   const sink = { calls: [], invalid: [], improved: [] };
   ctx.sink.current = sink;
   const events = [];
   const t0 = Date.now();
   let firstWord = null;
-  const res = await fetch(`${ctx.base}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: ctx.cookie }, body: JSON.stringify(body) });
+  const res = await fetch(`${ctx.base}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`chat ${res.status}`);
   const dec = new TextDecoder();
   let buf = '';
@@ -488,11 +501,10 @@ async function run(n) {
   const sink = {};
   const client = recordingClient(new Proxy({}, { get: (_, k) => sink.current[k] }));
   const origLog = console.log;
-  const server = createApp({ client }).listen(0);
+  const server = createApp({ client, supabase: { url: FAKE.url, anonKey: FAKE.anonKey, serviceKey: FAKE.serviceKey, jwtSecret: FAKE.jwtSecret }, db: DB, chatPerTenMinutes: 1000 }).listen(0);
   const base = `http://127.0.0.1:${server.address().port}`;
-  const login = await fetch(`${base}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: process.env.DEKA_PASSCODE }) });
-  const cookie = login.headers.get('set-cookie').split(';')[0];
-  const ctx = { app, base, cookie, sink, turns: [] };
+  const who = await FAKE.user(`run${n}@example.com`, { first_name: 'Test', last_name: `Run ${n}`, username: `run.${n}` });
+  const ctx = { app, base, token: who.access_token, uid: who.user.id, sink, turns: [] };
   const results = [];
   const scenario = async (name, fn) => {
     if (ONLY && !ONLY.split(',').includes(name.split(' ')[0])) return;
@@ -917,7 +929,7 @@ async function run(n) {
       ctx.sink.current = calls;
       const { body } = ctx.app.buildRequest(ctx.app.S.current, 'x', null);
       body.message = 'Here is everything. '.repeat(250);
-      const r = await fetch(`${ctx.base}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: ctx.cookie }, body: JSON.stringify(body) });
+      const r = await fetch(`${ctx.base}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` }, body: JSON.stringify(body) });
       const note = (await r.json().catch(() => ({}))).error || '';
       notes.push(`${body.message.length} characters: status ${r.status}, "${note}"`);
       if (r.status !== 413) f.push(`status ${r.status}, not 413`);
@@ -1147,7 +1159,13 @@ function transcript(r, s) {
 
 (async () => {
   console.log(`Deka real runs: ${RUNS} x 22 scenarios on ${MODEL}`);
+  FAKE = await startFake();
+  DB = createDb(FAKE.databaseUrl);
   const runs = await Promise.all(Array.from({ length: RUNS }, (_, i) => run(i + 1)));
+  // Every turn was a signed in one: the usage rows say so. The last row lands just after the stream ends.
+  await new Promise(r => setTimeout(r, 800));
+  const usage = (await FAKE.pool.query('select count(*)::int as turns, coalesce(sum(input_tokens), 0)::int as input, coalesce(sum(output_tokens), 0)::int as output, coalesce(sum(cost_usd), 0)::float as cost from public.usage')).rows[0];
+  console.log(`\nusage table: ${usage.turns} turns, ${usage.input} in, ${usage.output} out, $${usage.cost.toFixed(3)}`);
   const rows = [];
   for (const r of runs) for (const s of r.results) for (const t of s.turns) rows.push({ run: r.n, scenario: s.name, said: t.said.slice(0, 40), ttfw: t.ttfw, total: t.total, ...t.usage, cost: +t.cost.toFixed(4), rounds: t.rounds, plan_check: t.score.filter(Boolean) });
   console.log('\nrun  scenario            ttfw   total  in     cached  out    cost    said');
@@ -1166,4 +1184,5 @@ function transcript(r, s) {
     }
     fs.writeFileSync(path.join(OUT, 'metrics.json'), `${JSON.stringify({ model: MODEL, date: new Date().toISOString().slice(0, 10), runs: runs.map(x => ({ run: x.n, scenarios: x.results.map(s => ({ name: s.name, pass: s.pass, fails: s.fails })) })), turns: rows }, null, 1)}\n`);
   }
+  await DB.end(); await FAKE.stop();
 })();
