@@ -1,49 +1,32 @@
-// Deka server: gates /api with one passcode and plans with Claude.
-// On Vercel this file is the one function. The default export is the app, and
-// files in public/ are served by Vercel directly. Locally, npm start serves both.
+// Deka server: checks each request's Supabase session, plans with Claude, and keeps the
+// records only the server may write, usage and feedback. On Vercel this file is the one
+// function. The default export is the app, and files in public/ are served by Vercel
+// directly. Locally, npm start serves both.
 
 const path = require('path');
-const crypto = require('crypto');
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const { runChat, MODEL, checkAttachments } = require('./lib/chat');
+const { verifyToken } = require('./lib/auth');
+const { createDb, allowTurn } = require('./lib/db');
+const { createStorage } = require('./lib/storage');
+const { costOf } = require('./lib/plans');
 
 const PORT = process.env.PORT || 3000;
-// SPAN_PASSCODE is the name from before the rename, read only when DEKA_PASSCODE is unset.
-const PASSCODE = process.env.DEKA_PASSCODE || process.env.SPAN_PASSCODE || '';
-const COOKIE = 'span_session';
-// Each device gets its own id, so the daily limit counts per device; the session token is shared.
-const DEVICE = 'deka_device';
 // Hard limits, checked before any call to Claude.
 const MAX_MESSAGE = 2000;
-// A whole chat request, attachments included, stays under Vercel's 4.5 MB body limit.
-const MAX_BODY = '4mb';
-const DAILY_TURNS = 150;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
-if (!PASSCODE) console.warn('DEKA_PASSCODE is not set. Every login will fail until it is.');
+// Everything Supabase, from the environment. The service role key stays in this process.
+const SUPABASE = {
+  url: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
+  anonKey: process.env.SUPABASE_ANON_KEY || '',
+  serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  jwtSecret: process.env.SUPABASE_JWT_SECRET || '',
+};
+if (!SUPABASE.url || !SUPABASE.anonKey) console.warn('SUPABASE_URL and SUPABASE_ANON_KEY are not set. Nobody can sign in until they are.');
 
-// A device stays signed in for a year, and every request it makes pushes that year out again.
-const SESSION_MS = 365 * 24 * 60 * 60 * 1000;
-// The session token is derived from the passcode, so changing it signs every device out.
-const sessionToken = pass => crypto.createHmac('sha256', pass).update('span session v1').digest('hex');
-
-function safeEqual(a, b) {
-  const x = Buffer.from(String(a));
-  const y = Buffer.from(String(b));
-  return x.length === y.length && crypto.timingSafeEqual(x, y);
-}
-
-function readCookie(req, name) {
-  const raw = req.headers.cookie || '';
-  for (const part of raw.split(';')) {
-    const [k, ...v] = part.trim().split('=');
-    if (k === name) return decodeURIComponent(v.join('='));
-  }
-  return '';
-}
-
-// Fixed window limiter, in memory. Enough for one person on one instance.
+// Fixed window limiter, in memory. Enough for one instance; the daily limit lives in the database.
 function limiter({ windowMs, max }) {
   const hits = new Map();
   return (req, res, next) => {
@@ -62,30 +45,14 @@ function limiter({ windowMs, max }) {
   };
 }
 
-function createApp({ client, passcode = PASSCODE, dailyTurns = DAILY_TURNS } = {}) {
+// chatPerTenMinutes: the per address limit on chat, lowered or raised in tests.
+function createApp({ client, supabase = SUPABASE, db = createDb(process.env.DATABASE_URL), storage = createStorage(supabase), fetch: fetchImpl = fetch, chatPerTenMinutes = 40 } = {}) {
   const app = express();
-  const token = passcode ? sessionToken(passcode) : '';
-  // Turns per device per day, in memory: like the rate limits, each instance counts on its own.
-  const turns = new Map();
-  const device = (req, res) => {
-    let id = readCookie(req, DEVICE);
-    if (!/^[a-f0-9]{24}$/.test(id)) {
-      id = crypto.randomBytes(12).toString('hex');
-      res.cookie(DEVICE, id, { httpOnly: true, secure: req.secure || IS_PROD, sameSite: 'lax', maxAge: SESSION_MS, path: '/' });
-    }
-    return id;
-  };
-  // HttpOnly, SameSite Lax and host only, so it stays on dekaapp.com. Secure whenever the request
-  // came in over HTTPS, which Vercel reports through the proxy; plain local dev stays usable.
-  const setSession = (req, res) => res.cookie(COOKIE, token, {
-    httpOnly: true, secure: req.secure || IS_PROD, sameSite: 'lax', maxAge: SESSION_MS, path: '/',
-  });
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
-  app.use(express.json({ limit: MAX_BODY }));
+  app.use(express.json({ limit: '1mb' }));
   app.use((err, req, res, next) => {
-    // Read the rest of the upload away, or the client waits on it and never sees the answer.
-    if (err && err.type === 'entity.too.large') { req.resume(); res.set('Connection', 'close'); return res.status(413).json({ error: 'That is too large. A message can carry up to 4 MB.' }); }
+    if (err && err.type === 'entity.too.large') { req.resume(); res.set('Connection', 'close'); return res.status(413).json({ error: 'That is too large to send.' }); }
     if (err && err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Bad request.' });
     next(err);
   });
@@ -96,54 +63,51 @@ function createApp({ client, passcode = PASSCODE, dailyTurns = DAILY_TURNS } = {
     next();
   });
 
-  app.post('/api/login', limiter({ windowMs: 15 * 60 * 1000, max: 10 }), (req, res) => {
-    const given = (req.body && req.body.passcode) || '';
-    if (!passcode || !safeEqual(given, passcode)) return res.status(401).json({ error: 'Wrong passcode.' });
-    setSession(req, res);
-    res.json({ ok: true });
-  });
+  // What the app needs to talk to Supabase itself: the project URL and the public key.
+  app.get('/api/config', (req, res) => res.json({ url: supabase.url, anonKey: supabase.anonKey, model: MODEL }));
 
-  app.post('/api/logout', (req, res) => {
-    res.clearCookie(COOKIE, { path: '/' });
-    res.json({ ok: true });
-  });
-
-  // Everything else under /api needs a valid session, and using it renews it for another year.
-  app.use('/api', (req, res, next) => {
-    if (passcode && safeEqual(readCookie(req, COOKIE), token)) { setSession(req, res); return next(); }
-    res.status(401).json({ error: 'Locked.' });
+  // Everything else under /api needs a signed in person.
+  app.use('/api', async (req, res, next) => {
+    const token = (req.headers.authorization || '').replace(/^Bearer /, '');
+    const claims = token ? await verifyToken(token, { url: supabase.url, secret: supabase.jwtSecret, fetch: fetchImpl }) : null;
+    if (!claims) return res.status(401).json({ error: 'Signed out.' });
+    req.user = { id: claims.sub, email: claims.email || '' };
+    next();
   });
 
   app.get('/api/session', (req, res) => res.json({ ok: true, model: MODEL, ai: Boolean(client) }));
 
-  // A thumbs up or down on a reply, written to the server log for review. Nothing goes to Claude.
-  app.post('/api/feedback', limiter({ windowMs: 10 * 60 * 1000, max: 60 }), (req, res) => {
+  // A thumbs up or down on a reply: a row for review, and a line in the log. Nothing goes to Claude.
+  app.post('/api/feedback', limiter({ windowMs: 10 * 60 * 1000, max: 60 }), async (req, res) => {
     const b = req.body || {};
     if (![null, 'up', 'down'].includes(b.rating ?? null)) return res.status(400).json({ error: 'Unknown rating.' });
     const clip = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
-    const at = Date.parse(b.ts);
-    console.log(`[feedback] ${JSON.stringify({ rating: b.rating ?? null, reason: clip(b.reason, 1000), message: clip(b.message, 4000), ts: Number.isNaN(at) ? new Date().toISOString() : new Date(at).toISOString() })}`);
+    const row = { userId: req.user.id, messageId: clip(b.message_id, 80), rating: b.rating ?? null, reason: clip(b.reason, 1000), message: clip(b.message, 4000) };
+    try { await db.addFeedback(row); } catch (err) { console.error('[feedback] not saved', err.message); }
+    console.log(`[feedback] ${JSON.stringify({ ...row, ts: new Date().toISOString() })}`);
     res.json({ ok: true });
   });
 
   // One chat turn, streamed back as server sent events: text, goals, log, proposal, summary, error, done.
-  app.post('/api/chat', limiter({ windowMs: 10 * 60 * 1000, max: 40 }), async (req, res) => {
+  app.post('/api/chat', limiter({ windowMs: 10 * 60 * 1000, max: chatPerTenMinutes }), async (req, res) => {
     const body = req.body || {};
     if (!['planning', 'live', 'review'].includes(body.phase)) return res.status(400).json({ error: 'Unknown phase.' });
     if (!Array.isArray(body.days) || body.days.length !== 10) return res.status(400).json({ error: 'Need the 10 day mapping.' });
     if (body.message != null && typeof body.message !== 'string') return res.status(400).json({ error: 'Nothing to say.' });
     if (body.message && body.message.length > MAX_MESSAGE) return res.status(413).json({ error: 'That is a long one. Keep it under 2,000 characters and send it again.' });
-    const attached = checkAttachments(body.attachments);
+    // Attachments arrive as references to the person's own folder; the server reads them itself.
+    const attached = await storage.fetchAttachments(body.attachments, req.user.id).catch(() => ({ ok: false, status: 502, error: 'An attachment could not be read. Try again.' }));
     if (!attached.ok) return res.status(attached.status).json({ error: attached.error });
+    const check = checkAttachments(attached.list);
+    if (!check.ok) return res.status(check.status).json({ error: check.error });
+    body.attachments = attached.list;
     if (!body.message && !body.event && !attached.list.length) return res.status(400).json({ error: 'Nothing to say.' });
     if (!client) return res.status(503).json({ error: 'Claude is not set up on the server.' });
     // The day comes from the app's own date, so the limit resets at the person's midnight.
     const day = (String(body.today || '').match(/\d{4}-\d{2}-\d{2}/) || [new Date().toISOString().slice(0, 10)])[0];
-    const key = `${device(req, res)}:${day}`;
-    const used = turns.get(key) || 0;
-    if (used >= dailyTurns) return res.status(429).json({ error: 'That is all the chat for today. Everything else works by hand until tomorrow.', limit: 'daily' });
-    turns.set(key, used + 1);
-    if (turns.size > 5000) for (const k of turns.keys()) if (!k.endsWith(day)) turns.delete(k);
+    let allowed;
+    try { allowed = await allowTurn(db, req.user.id, day); } catch (err) { console.error('[chat] usage check failed', err.message); return res.status(503).json({ error: 'Deka cannot reach its records right now. Try again soon.' }); }
+    if (!allowed.ok) return res.status(429).json({ error: allowed.why === 'month' ? 'That is all the chat for this month. Everything else works by hand.' : 'That is all the chat for today. Everything else works by hand until tomorrow.', limit: allowed.why });
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -156,8 +120,9 @@ function createApp({ client, passcode = PASSCODE, dailyTurns = DAILY_TURNS } = {
     const ping = setInterval(() => { if (!res.writableEnded) res.write(': ping\n\n'); }, 15000);
     const abort = new AbortController();
     res.on('close', () => { if (!res.writableFinished) abort.abort(); });
+    const stats = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
     try {
-      await runChat(client, body, send, { signal: abort.signal, log: msg => console.log(`[chat] ${msg}`) });
+      await runChat(client, body, send, { signal: abort.signal, log: msg => console.log(`[chat] ${msg}`), stats });
     } catch (err) {
       if (!abort.signal.aborted) {
         console.error('[chat] API error', err.status || '', err.message);
@@ -167,7 +132,23 @@ function createApp({ client, passcode = PASSCODE, dailyTurns = DAILY_TURNS } = {
       clearInterval(ping);
       send('done', {});
       res.end();
+      const kind = body.event && body.event.kind ? body.event.kind : 'chat';
+      db.recordUsage({ userId: req.user.id, day, kind, model: MODEL, ...stats, cost: costOf(MODEL, stats) }).catch(err => console.error('[chat] usage not saved', err.message));
     }
+  });
+
+  // Deleting the account: the files first, then the user, and every row goes with it.
+  app.delete('/api/account', limiter({ windowMs: 10 * 60 * 1000, max: 5 }), async (req, res) => {
+    if (!storage.ready) return res.status(503).json({ error: 'Deka is not set up for that yet.' });
+    try {
+      await storage.emptyFolder(req.user.id);
+      await storage.deleteUser(req.user.id);
+    } catch (err) {
+      console.error('[account] delete failed', err.message);
+      return res.status(502).json({ error: 'The account could not be deleted. Try again.' });
+    }
+    console.log(`[account] deleted ${req.user.id}`);
+    res.json({ ok: true });
   });
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));

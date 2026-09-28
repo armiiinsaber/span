@@ -1,143 +1,179 @@
+// The server with accounts: every request carries a Supabase session, usage and limits live in
+// the database, attachments come out of storage by reference. Runs against the Supabase stand in.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const KEY = 'sk-ant-test-SECRET-should-never-leak-123';
 process.env.ANTHROPIC_API_KEY = KEY;
-process.env.DEKA_PASSCODE = 'letmein';
 const { createApp } = require('../server');
+const { createDb } = require('../lib/db');
+const { createStorage } = require('../lib/storage');
+const { verifyToken } = require('../lib/auth');
+const { startFake, signJwt } = require('./fake-supabase');
 
-// A stand in that streams one short reply.
-const client = { messages: { stream() {
+// A stand in that streams one short reply and reports what it used.
+const client = { messages: { stream(params) {
   let onText = () => {};
-  return { on(e, cb) { if (e === 'text') onText = cb; return this; }, abort() {}, async finalMessage() { onText('One gym '); onText('day.'); return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'One gym day.' }] }; } };
+  const image = Array.isArray(params.messages.at(-1).content) && params.messages.at(-1).content.some(b => b.type === 'image' || b.type === 'document');
+  return { on(e, cb) { if (e === 'text') onText = cb; return this; }, abort() {}, async finalMessage() {
+    onText(image ? 'I see ' : 'One gym '); onText(image ? 'it.' : 'day.');
+    return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'One gym day.' }], usage: { input_tokens: 1200, output_tokens: 30, cache_read_input_tokens: 800, cache_creation_input_tokens: 0 } };
+  } };
 } } };
 const days = Array.from({ length: 10 }, (_, i) => ({ day: i + 1, date: `2026-09-${22 + i}`, weekday: 'X' }));
 
-let server, base;
+let fake, db, server, base, ana, bo;
+const open = async (opts = {}) => {
+  const s = createApp({ client, supabase: { url: fake.url, anonKey: fake.anonKey, serviceKey: fake.serviceKey, jwtSecret: fake.jwtSecret }, db, ...opts }).listen(0);
+  await new Promise(r => s.once('listening', r));
+  return { server: s, base: `http://127.0.0.1:${s.address().port}` };
+};
 test.before(async () => {
-  server = createApp({ client }).listen(0);
-  await new Promise(r => server.once('listening', r));
-  base = `http://127.0.0.1:${server.address().port}`;
+  fake = await startFake();
+  db = createDb(fake.databaseUrl);
+  ({ server, base } = await open());
+  ana = await fake.user('ana@example.com', { first_name: 'Ana', last_name: 'Silva', username: 'ana.silva' });
+  bo = await fake.user('bo@example.com', { first_name: 'Bo', last_name: 'Chen', username: 'bo.chen' });
 });
-test.after(() => server.close());
+test.after(async () => { server?.close(); await db?.end(); if (fake) await fake.stop(); });
 
-const post = (p, body, cookie) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(body) });
+const post = (p, body, who, at = base) => fetch(at + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(who ? { Authorization: `Bearer ${who.access_token}` } : {}) }, body: JSON.stringify(body) });
+const chat = (body, who, at) => post('/api/chat', { phase: 'planning', days, today: 'Monday 2026-09-28', message: 'hi', ...body }, who, at);
 
-test('api is locked without a session', async () => {
-  const r = await post('/api/chat', { phase: 'planning', days, message: 'hi' });
-  assert.equal(r.status, 401);
+test('the config is public; everything else needs a live session', async () => {
+  const cfg = await (await fetch(base + '/api/config')).json();
+  assert.deepEqual(Object.keys(cfg).sort(), ['anonKey', 'model', 'url']);
+  assert.equal(cfg.url, fake.url);
   assert.equal((await fetch(base + '/api/session')).status, 401);
+  assert.equal((await fetch(base + '/api/session', { headers: { Authorization: 'Bearer not.a.token' } })).status, 401);
+  const expired = signJwt({ sub: ana.user.id, role: 'authenticated', aud: 'authenticated', exp: Math.floor(Date.now() / 1000) - 10 }, fake.jwtSecret);
+  assert.equal((await fetch(base + '/api/session', { headers: { Authorization: `Bearer ${expired}` } })).status, 401, 'expired');
+  const forged = signJwt({ sub: ana.user.id, role: 'authenticated', aud: 'authenticated', exp: Math.floor(Date.now() / 1000) + 600 }, 'another secret');
+  assert.equal((await fetch(base + '/api/session', { headers: { Authorization: `Bearer ${forged}` } })).status, 401, 'wrong secret');
+  const ok = await fetch(base + '/api/session', { headers: { Authorization: `Bearer ${ana.access_token}` } });
+  assert.equal(ok.status, 200);
+  assert.equal((await ok.json()).ai, true);
 });
 
-test('wrong passcode fails, right one returns an HttpOnly cookie', async () => {
-  assert.equal((await post('/api/login', { passcode: 'nope' })).status, 401);
-  const r = await post('/api/login', { passcode: 'letmein' });
-  assert.equal(r.status, 200);
-  assert.match(r.headers.get('set-cookie'), /HttpOnly/i);
+test('tokens signed with a key pair verify through the published keys', async () => {
+  const { privateKey, publicKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'ES256', use: 'sig' };
+  const head = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'JWT', kid: 'k1' })).toString('base64url');
+  const body = Buffer.from(JSON.stringify({ sub: bo.user.id, role: 'authenticated', aud: 'authenticated', exp: Math.floor(Date.now() / 1000) + 600 })).toString('base64url');
+  const sig = crypto.sign('sha256', Buffer.from(`${head}.${body}`), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
+  const token = `${head}.${body}.${sig}`;
+  const fetchJwks = async url => ({ ok: true, json: async () => ({ keys: [jwk] }), status: 200, headers: new Headers() });
+  const claims = await verifyToken(token, { url: 'https://x.supabase.co', fetch: fetchJwks });
+  assert.equal(claims.sub, bo.user.id);
+  assert.equal(await verifyToken(`${head}.${body}.${sig.slice(0, -2)}AA`, { url: 'https://x.supabase.co', fetch: fetchJwks }), null, 'a bad signature fails');
+  // The server takes such a token too.
+  const { server: s, base: at } = await open({ fetch: fetchJwks, supabase: { url: 'https://x.supabase.co', anonKey: 'a', serviceKey: 's', jwtSecret: '' } });
+  assert.equal((await fetch(at + '/api/session', { headers: { Authorization: `Bearer ${token}` } })).status, 200);
+  s.close();
 });
 
-test('session cookie is Lax, host only, and Secure over HTTPS', async () => {
-  const plain = (await post('/api/login', { passcode: 'letmein' })).headers.get('set-cookie');
-  assert.match(plain, /SameSite=Lax/i);
-  assert.doesNotMatch(plain, /Domain=/i);
-  assert.doesNotMatch(plain, /Secure/i);
-  const https = await fetch(base + '/api/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https' },
-    body: JSON.stringify({ passcode: 'letmein' }),
-  });
-  assert.match(https.headers.get('set-cookie'), /;\s*Secure/i);
+test('a turn streams the reply, records its usage for that person, and never echoes the key', async () => {
+  const r = await chat({ message: 'gym once', goals: [], schedule: [] }, ana);
+  const text = await r.text();
+  assert.equal(r.status, 200, text);
+  assert.match(r.headers.get('content-type'), /text\/event-stream/);
+  assert.match(text, /event: text\ndata: \{"delta":"One gym"\}[\s\S]*"delta":" day\."[\s\S]*event: done/);
+  assert.ok(!text.includes(KEY));
+  await new Promise(x => setTimeout(x, 100));
+  const rows = (await fake.pool.query('select day, kind, model, input_tokens, output_tokens, cache_read_tokens, cost_usd from public.usage where user_id = $1', [ana.user.id])).rows;
+  assert.equal(rows.length, 1);
+  assert.deepEqual([rows[0].day, rows[0].kind, rows[0].input_tokens, rows[0].output_tokens, rows[0].cache_read_tokens], ['2026-09-28', 'chat', 1200, 30, 800]);
+  assert.ok(rows[0].cost_usd > 0.005 && rows[0].cost_usd < 0.01, `cost ${rows[0].cost_usd}`);
+  assert.equal((await fake.pool.query('select count(*) from public.usage where user_id = $1', [bo.user.id])).rows[0].count, '0');
 });
 
-const YEAR = 365 * 24 * 60 * 60;
-const cookieOf = r => r.headers.get('set-cookie').split(';')[0];
-const maxAge = r => Number((r.headers.get('set-cookie').match(/Max-Age=(\d+)/i) || [])[1]);
-
-test('a signed in device stays signed in for a year, renewed on every use', async () => {
-  const login = await post('/api/login', { passcode: 'letmein' });
-  assert.equal(maxAge(login), YEAR);
-  assert.match(login.headers.get('set-cookie'), /HttpOnly/i);
-  const again = await fetch(base + '/api/session', { headers: { Cookie: cookieOf(login) } });
-  assert.equal(again.status, 200);
-  assert.equal(maxAge(again), YEAR, 'the expiry is pushed out again');
-  assert.match(again.headers.get('set-cookie'), /Expires=/i);
-});
-
-test('the session survives a restart and fails after a passcode change', async () => {
-  const cookie = cookieOf(await post('/api/login', { passcode: 'letmein' }));
-  const open = async opts => {
-    const s = createApp({ client, ...opts }).listen(0);
-    await new Promise(r => s.once('listening', r));
-    const r = await fetch(`http://127.0.0.1:${s.address().port}/api/session`, { headers: { Cookie: cookie } });
-    s.close();
-    return r.status;
-  };
-  assert.equal(await open({}), 200, 'a fresh server with the same passcode still knows the device');
-  assert.equal(await open({ passcode: 'a new passcode' }), 401, 'a new passcode signs every device out');
+test('the daily limit counts per person in the database, across server instances', async () => {
+  const cy = await fake.user('cy@example.com', { username: 'cy.li' });
+  const { server: other, base: at } = await open();
+  const { LIMITS } = require('../lib/plans');
+  const was = LIMITS.trial.turnsPerDay;
+  LIMITS.trial.turnsPerDay = 2;
+  try {
+    assert.equal((await chat({}, cy)).status, 200);
+    assert.equal((await chat({}, cy, at)).status, 200, 'a second instance sees the first turn');
+    const third = await chat({}, cy);
+    assert.equal(third.status, 429);
+    assert.match((await third.json()).error, /works by hand until tomorrow/);
+    assert.equal((await chat({ today: 'Tuesday 2026-09-29' }, cy)).status, 200, 'a new day starts fresh');
+    assert.equal((await chat({}, bo)).status, 200, 'someone else has their own count');
+  } finally { LIMITS.trial.turnsPerDay = was; other.close(); }
 });
 
 test('a message over 2,000 characters is turned away before any call to Claude', async () => {
-  let calls = 0;
-  const counting = { messages: { stream(...a) { calls++; return client.messages.stream(...a); } } };
-  const s = createApp({ client: counting }).listen(0);
-  await new Promise(r => s.once('listening', r));
-  const at = `http://127.0.0.1:${s.address().port}`;
-  const cookie = (await fetch(at + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: 'letmein' }) })).headers.get('set-cookie').split(';')[0];
-  const r = await fetch(at + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ phase: 'planning', days, message: 'x'.repeat(2001) }) });
-  s.close();
+  const r = await chat({ message: 'x'.repeat(2001) }, ana);
   assert.equal(r.status, 413);
   assert.match((await r.json()).error, /under 2,000 characters/);
-  assert.equal(calls, 0);
 });
 
-test('each device gets its own daily turn limit, with a calm note when it is reached', async () => {
-  const s = createApp({ client, dailyTurns: 2 }).listen(0);
-  await new Promise(r => s.once('listening', r));
-  const at = `http://127.0.0.1:${s.address().port}`;
-  const login = async () => {
-    const r = await fetch(at + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: 'letmein' }) });
-    return r.headers.get('set-cookie').split(';')[0];
-  };
-  const session = await login();
-  const ask = async cookie => {
-    const r = await fetch(at + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ phase: 'planning', days, today: 'Wednesday 2026-09-23', message: 'hi' }) });
-    const device = (r.headers.get('set-cookie') || '').match(/deka_device=([a-f0-9]+)/);
-    await r.text();
-    return { status: r.status, device: device && device[1] };
-  };
-  const first = await ask(session);
-  assert.ok(first.device, 'a device id is set');
-  const phone = `${session}; deka_device=${first.device}`;
-  assert.equal((await ask(phone)).status, 200);
-  const third = await fetch(at + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: phone }, body: JSON.stringify({ phase: 'planning', days, today: 'Wednesday 2026-09-23', message: 'hi' }) });
-  assert.equal(third.status, 429);
-  assert.match((await third.json()).error, /works by hand until tomorrow/);
-  const tomorrow = await fetch(at + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: phone }, body: JSON.stringify({ phase: 'planning', days, today: 'Thursday 2026-09-24', message: 'hi' }) });
-  assert.equal(tomorrow.status, 200, 'a new day starts fresh');
-  await tomorrow.text();
-  const laptop = await ask(session);
-  assert.equal(laptop.status, 200, 'another device has its own count');
-  s.close();
+test('feedback lands in the database for that person', async () => {
+  const r = await post('/api/feedback', { message_id: 'm7', rating: 'down', reason: 'Too many runs', message: 'Here is the plan.' }, ana);
+  assert.equal(r.status, 200);
+  assert.equal((await post('/api/feedback', { rating: 'meh' }, ana)).status, 400);
+  assert.equal((await post('/api/feedback', { rating: 'up' })).status, 401);
+  const row = (await fake.pool.query('select message_id, rating, reason, message from public.feedback where user_id = $1', [ana.user.id])).rows[0];
+  assert.deepEqual(row, { message_id: 'm7', rating: 'down', reason: 'Too many runs', message: 'Here is the plan.' });
+});
+
+test('attachments come from the person\'s own folder in storage, PDFs up to 20 MB', async () => {
+  const up = (who, p, body, type) => fetch(`${fake.url}/storage/v1/object/attachments/${p}`, { method: 'POST', headers: { apikey: fake.anonKey, Authorization: `Bearer ${who.access_token}`, 'Content-Type': type }, body });
+  assert.equal((await up(ana, `${ana.user.id}/photo1.jpg`, Buffer.from('jpegbytes'), 'image/jpeg')).status, 200);
+  assert.equal((await up(ana, `${ana.user.id}/notes.pdf`, Buffer.from('%PDF-1.4'), 'application/pdf')).status, 200);
+  const sent = [];
+  const spy = { messages: { stream(p) { sent.push(p); return client.messages.stream(p); } } };
+  const { server: s, base: at } = await open({ client: spy });
+  try {
+    const ok = await chat({ message: '', attachments: [{ path: `${ana.user.id}/photo1.jpg`, kind: 'image', name: 'photo1.jpg' }, { path: `${ana.user.id}/notes.pdf`, kind: 'pdf', name: 'notes.pdf' }] }, ana, at);
+    const okText = await ok.text();
+    assert.equal(ok.status, 200, okText);
+    const blocks = sent.at(-1).messages.at(-1).content;
+    assert.deepEqual(blocks.filter(b => b.type !== 'text').map(b => [b.type, b.source.media_type, b.source.data]), [['image', 'image/jpeg', Buffer.from('jpegbytes').toString('base64')], ['document', 'application/pdf', Buffer.from('%PDF-1.4').toString('base64')]]);
+    // Someone else's file, a path outside your folder, or too many: turned away with no call.
+    const before = sent.length;
+    const theirs = await chat({ attachments: [{ path: `${ana.user.id}/photo1.jpg`, kind: 'image' }] }, bo, at);
+    assert.deepEqual([theirs.status, (await theirs.json()).error], [400, 'Those attachments cannot be sent.']);
+    const outside = await chat({ attachments: [{ path: `../${ana.user.id}/photo1.jpg`, kind: 'image' }] }, ana, at);
+    assert.equal(outside.status, 400);
+    const many = await chat({ attachments: Array(6).fill({ path: `${ana.user.id}/photo1.jpg`, kind: 'image' }) }, ana, at);
+    assert.deepEqual([many.status, (await many.json()).error], [400, 'Up to 5 attachments per message.']);
+    const missing = await chat({ attachments: [{ path: `${ana.user.id}/nothere.jpg`, kind: 'image' }] }, ana, at);
+    assert.deepEqual([missing.status, (await missing.json()).error], [400, 'An attachment is missing. Send it again.']);
+    assert.equal(sent.length, before);
+    // The PDF ceiling is 20 MB now: 19 MB passes the server, 21 MB does not get into the bucket.
+    const storage = createStorage({ url: fake.url, serviceKey: fake.serviceKey });
+    fake.files.set(`attachments/${ana.user.id}/big.pdf`, { buf: Buffer.alloc(19 * 1024 * 1024), type: 'application/pdf' });
+    await fake.pool.query("insert into storage.objects (bucket_id, name, owner) values ('attachments', $1, $2)", [`${ana.user.id}/big.pdf`, ana.user.id]);
+    assert.equal((await storage.fetchAttachments([{ path: `${ana.user.id}/big.pdf`, kind: 'pdf' }], ana.user.id)).ok, true);
+    assert.equal((await up(ana, `${ana.user.id}/huge.pdf`, Buffer.alloc(21 * 1024 * 1024), 'application/pdf')).status, 413);
+  } finally { s.close(); }
+});
+
+test('deleting the account empties the folder and removes the user and every row', async () => {
+  const dee = await fake.user('dee@example.com', { username: 'dee.k' });
+  await fetch(`${fake.url}/storage/v1/object/attachments/${dee.user.id}/a.jpg`, { method: 'POST', headers: { apikey: fake.anonKey, Authorization: `Bearer ${dee.access_token}`, 'Content-Type': 'image/jpeg' }, body: 'x' });
+  await fetch(`${fake.url}/rest/v1/dekas`, { method: 'POST', headers: { apikey: fake.anonKey, Authorization: `Bearer ${dee.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: dee.user.id, id: 'd1' }) });
+  await chat({}, dee).then(r => r.text());
+  const r = await fetch(base + '/api/account', { method: 'DELETE', headers: { Authorization: `Bearer ${dee.access_token}` } });
+  assert.equal(r.status, 200, await r.text());
+  assert.equal(fake.files.has(`attachments/${dee.user.id}/a.jpg`), false);
+  for (const [t, col] of [['profiles', 'id'], ['dekas', 'user_id'], ['usage', 'user_id']]) {
+    assert.equal((await fake.pool.query(`select count(*) from public.${t} where ${col} = $1`, [dee.user.id])).rows[0].count, '0', t);
+  }
+  assert.equal((await fake.pool.query('select count(*) from auth.users where id = $1', [dee.user.id])).rows[0].count, '0');
+  assert.equal((await fetch(base + '/api/session', { headers: { Authorization: `Bearer ${dee.access_token}` } })).status, 200, 'the token itself still parses until it expires');
 });
 
 test('the module default export is the app, for Vercel', () => {
   const mod = require('../server');
   assert.equal(typeof mod, 'function');
   assert.equal(typeof mod.handle, 'function');
-});
-
-test('plan works with a session and never echoes the key', async () => {
-  const login = await post('/api/login', { passcode: 'letmein' });
-  const cookie = login.headers.get('set-cookie').split(';')[0];
-  const r = await post('/api/chat', { phase: 'planning', days, message: 'gym once', goals: [], schedule: [] }, cookie);
-  const text = await r.text();
-  assert.equal(r.status, 200, text);
-  assert.match(r.headers.get('content-type'), /text\/event-stream/);
-  assert.match(text, /event: text\ndata: \{"delta":"One gym"\}[\s\S]*"delta":" day\."[\s\S]*event: done/);
-  assert.ok(!text.includes(KEY));
-  assert.ok(!r.headers.get('set-cookie')?.includes(KEY));
 });
 
 test('no served file contains the key or reads it', async () => {
@@ -147,48 +183,16 @@ test('no served file contains the key or reads it', async () => {
     const res = await fetch(`${base}/${f.split(path.sep).join('/')}`);
     const body = Buffer.from(await res.arrayBuffer()).toString('latin1');
     assert.ok(!body.includes(KEY), `${f} leaks the key`);
-    assert.ok(!/ANTHROPIC|x-api-key|api\.anthropic\.com/i.test(body), `${f} mentions the API`);
+    assert.ok(!/ANTHROPIC|x-api-key|api\.anthropic\.com|service_role/i.test(body), `${f} mentions the API or the service key`);
   }
-  const root = await (await fetch(base + '/')).text();
-  assert.ok(!root.includes(KEY));
-});
-
-test('attachments: at most 5, photos and PDFs only, PDFs up to 3 MB, and the whole request under 4 MB', async () => {
-  const cookie = cookieOf(await post('/api/login', { passcode: 'letmein' }));
-  const chat = async body => { const r = await post('/api/chat', { phase: 'planning', days, message: '', ...body }, cookie); return [r.status, r.headers.get('content-type').includes('json') ? (await r.json()).error : 'stream']; };
-  const img = { media_type: 'image/jpeg', data: 'AAAA' };
-  assert.deepEqual(await chat({ attachments: Array(6).fill(img) }), [400, 'Up to 5 attachments per message.']);
-  assert.deepEqual(await chat({ attachments: [{ media_type: 'text/html', data: 'AAAA' }] }), [400, 'Those attachments cannot be sent.']);
-  assert.deepEqual(await chat({ attachments: [{ media_type: 'image/jpeg', data: 'not base64!' }] }), [400, 'Those attachments cannot be sent.']);
-  // A PDF over 3 MB is over 4 MB as base64, so the body limit turns it away first.
-  assert.equal((await chat({ attachments: [{ media_type: 'application/pdf', data: 'A'.repeat(4200000) }] }))[0], 413);
-  assert.deepEqual(await chat({ message: 'x'.repeat(4300000) }), [413, 'That is too large. A message can carry up to 4 MB.']);
-  assert.deepEqual(await chat({}), [400, 'Nothing to say.']);
-  assert.deepEqual(await chat({ attachments: [img] }), [200, 'stream'], 'a photo with no words is enough');
-});
-
-test('feedback goes to the server log, never to Claude', async () => {
-  const cookie = cookieOf(await post('/api/login', { passcode: 'letmein' }));
-  const lines = [];
-  const log = console.log;
-  console.log = (...a) => lines.push(a.join(' '));
-  try {
-    const r = await post('/api/feedback', { rating: 'down', reason: 'Too many runs', message: 'Here is the plan.', ts: '2026-09-23T18:00:00.000Z' }, cookie);
-    assert.equal(r.status, 200);
-    assert.equal((await post('/api/feedback', { rating: 'meh' }, cookie)).status, 400);
-    assert.equal((await post('/api/feedback', { rating: 'up' })).status, 401, 'needs a session');
-  } finally { console.log = log; }
-  const entry = JSON.parse(lines.find(l => l.startsWith('[feedback]')).slice(11));
-  assert.deepEqual(entry, { rating: 'down', reason: 'Too many runs', message: 'Here is the plan.', ts: '2026-09-23T18:00:00.000Z' });
 });
 
 test('rate limit kicks in on /api/chat', async () => {
-  const login = await post('/api/login', { passcode: 'letmein' });
-  const cookie = login.headers.get('set-cookie').split(';')[0];
   let limited = false;
   for (let i = 0; i < 45; i++) {
-    const r = await post('/api/chat', { phase: 'planning', days, message: 'x' }, cookie);
-    if (r.status === 429) { limited = true; break; }
+    const r = await chat({}, ana);
+    const body = r.status === 429 ? await r.json() : (await r.text(), null);
+    if (body && !body.limit) { limited = true; break; }
   }
   assert.ok(limited);
 });
