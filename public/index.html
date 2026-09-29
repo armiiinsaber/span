@@ -99,6 +99,7 @@ try {
   --paper: #F5F3EC; --paper-deep: #ECE9DF; --surface: #FCFBF7;
   --ink: #141310; --ink-soft: rgba(20,19,16,.76); --ink-faint: rgba(20,19,16,.3); --hairline: rgba(20,19,16,.14);
   --press: rgba(20,19,16,.06); --scrim: rgba(20,19,16,.28); --done-ink: #24350D;
+  --keyboard: #D1D3D9; --keyboard-line: rgba(20,19,16,.12);
   --body: #356E51; --people: #A4472F; --fun: #8A4EA3; --work: #3B679B; --mind: #83600E; --rest: #56648A;
   --glass: var(--paper); --glass-edge: rgba(255,255,255,.6); --glass-shine: inset 0 1px 0 rgba(255,255,255,.75);
   --glass-shadow: 0 8px 28px rgba(20,19,16,.12), 0 1px 3px rgba(20,19,16,.08);
@@ -113,6 +114,7 @@ try {
   --paper: #14130F; --paper-deep: #24221D; --surface: #1C1B17;
   --ink: #F5F3EC; --ink-soft: rgba(245,243,236,.7); --ink-faint: rgba(245,243,236,.34); --hairline: rgba(245,243,236,.16);
   --press: rgba(245,243,236,.08); --scrim: rgba(0,0,0,.5); --done-ink: #B8F06E;
+  --keyboard: #2C2C2E; --keyboard-line: rgba(255,255,255,.1);
   --body: #7FC19C; --people: #F0947B; --fun: #CFA3E6; --work: #92B8EA; --mind: #DDB866; --rest: #AAB6DA;
   --glass: #1C1B17; --glass-edge: rgba(255,255,255,.1); --glass-shine: inset 0 1px 0 rgba(255,255,255,.08);
   --glass-shadow: 0 8px 28px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.3);
@@ -126,6 +128,7 @@ try {
   --paper: #14130F; --paper-deep: #24221D; --surface: #1C1B17;
   --ink: #F5F3EC; --ink-soft: rgba(245,243,236,.7); --ink-faint: rgba(245,243,236,.34); --hairline: rgba(245,243,236,.16);
   --press: rgba(245,243,236,.08); --scrim: rgba(0,0,0,.5); --done-ink: #B8F06E;
+  --keyboard: #2C2C2E; --keyboard-line: rgba(255,255,255,.1);
   --body: #7FC19C; --people: #F0947B; --fun: #CFA3E6; --work: #92B8EA; --mind: #DDB866; --rest: #AAB6DA;
   --glass: #1C1B17; --glass-edge: rgba(255,255,255,.1); --glass-shine: inset 0 1px 0 rgba(255,255,255,.08);
   --glass-shadow: 0 8px 28px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.3);
@@ -591,6 +594,19 @@ input:autofill, input:autofill:hover, input:autofill:focus, input:autofill:activ
 }
 /* With the keyboard up the composer meets it: full width, rounded on top, flush on its edge. */
 body.kb .dock { bottom: var(--kb); left: 0; right: 0; max-width: none; border-radius: 26px 26px 0 0; border-bottom: 0; padding: 4px calc(8px + var(--safe-r)) 4px calc(8px + var(--safe-l)); }
+/* With the keyboard up the composer is part of the keyboard: the iOS keyboard's own surface, no
+   glass, a hairline on top and nothing at the bottom. Its surface carries on down under the form
+   accessory bar and the keyboard, taller than both together, so there is no bottom edge and the
+   keyboard's rounded corners sit on the composer's colour. It takes no taps and scrolls nothing,
+   and it goes the moment the keyboard does. */
+body.kb .dock {
+  background: var(--keyboard); -webkit-backdrop-filter: none; backdrop-filter: none;
+  border: 0; box-shadow: inset 0 1px 0 var(--keyboard-line);
+}
+body.kb .dock::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 100%;
+  height: 1400px; height: max(100lvh, 1400px); background: var(--keyboard); pointer-events: none;
+}
 /* One card, like Claude: the text on top, growing with it, and a row of buttons under it. */
 .dock-in { display: flex; flex-direction: column; }
 .dock-row { display: flex; align-items: center; gap: 2px; }

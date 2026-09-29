@@ -294,3 +294,88 @@ test('with the keyboard up: the empty chat stays centred in view, the tab bar sl
   } finally { await done(); }
 });
 
+// Reads the pixels of a PNG screenshot: 8 bit RGB or RGBA, not interlaced, as WebKit writes them.
+function readPng(buf) {
+  const zlib = require('zlib');
+  let pos = 8, width = 0, height = 0, channels = 4;
+  const idat = [];
+  while (pos < buf.length) {
+    const len = buf.readUInt32BE(pos), type = buf.toString('latin1', pos + 4, pos + 8), data = buf.subarray(pos + 8, pos + 8 + len);
+    if (type === 'IHDR') { width = data.readUInt32BE(0); height = data.readUInt32BE(4); channels = data[9] === 6 ? 4 : 3; }
+    if (type === 'IDAT') idat.push(data);
+    pos += 12 + len;
+  }
+  const raw = zlib.inflateSync(Buffer.concat(idat)), stride = width * channels, px = Buffer.alloc(height * stride);
+  for (let y = 0; y < height; y++) {
+    const f = raw[y * (stride + 1)], row = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let x = 0; x < stride; x++) {
+      const a = x >= channels ? px[y * stride + x - channels] : 0, b = y ? px[(y - 1) * stride + x] : 0, c = y && x >= channels ? px[(y - 1) * stride + x - channels] : 0;
+      const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+      const pred = [0, a, b, (a + b) >> 1, pa <= pb && pa <= pc ? a : pb <= pc ? b : c][f];
+      px[y * stride + x] = (row[x] + pred) & 255;
+    }
+  }
+  return { width, height, at: (x, y) => { const i = y * stride + x * channels; return [px[i], px[i + 1], px[i + 2]]; } };
+}
+const rgbOf = css => css.match(/\d+/g).slice(0, 3).map(Number);
+const near = (a, b, tol = 3) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
+
+test('with the keyboard up, the composer carries on under the keyboard: no strip, no edge, in light and dark', async t => {
+  if (why) return t.skip(why);
+  const { page, done } = await setup(true);
+  try {
+    await page.waitForSelector('#msg');
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(th => { document.documentElement.dataset.theme = th; }, theme);
+      // Keyboard down: the glass card above the tab bar, with no extension.
+      let st = await page.evaluate(() => { const d = document.getElementById('dock'); return { after: getComputedStyle(d, '::after').content, glass: getComputedStyle(d).webkitBackdropFilter || getComputedStyle(d).backdropFilter }; });
+      assert.ok(st.after === 'none' || st.after === 'normal', `${theme}: no extension with the keyboard down`);
+      assert.notEqual(st.glass, 'none', `${theme}: glass with the keyboard down`);
+      await page.focus('#msg');
+      await keyboard(page, { kb: 336 });
+      await page.waitForTimeout(450);
+      const m = await page.evaluate(() => {
+        const d = document.getElementById('dock'), cs = getComputedStyle(d), after = getComputedStyle(d, '::after'), r = d.getBoundingClientRect();
+        const below = document.elementFromPoint(r.left + r.width / 2, r.bottom + 60);
+        return {
+          dockBottom: r.bottom, dockTop: r.top, full: document.documentElement.clientHeight,
+          surface: cs.backgroundColor, extension: after.backgroundColor, extensionHeight: parseFloat(after.height), events: after.pointerEvents,
+          page: getComputedStyle(document.body).backgroundColor, keyboard: getComputedStyle(document.documentElement).getPropertyValue('--keyboard').trim(),
+          glass: cs.webkitBackdropFilter || cs.backdropFilter, borderBottom: cs.borderBottomWidth, radius: [cs.borderTopLeftRadius, cs.borderBottomLeftRadius],
+          tapsBelow: Boolean(below && below.closest('#dock')),
+          scroll: [document.documentElement.scrollHeight - document.documentElement.clientHeight, document.body.scrollHeight - document.body.clientHeight],
+        };
+      });
+      assert.equal(m.surface, m.extension, `${theme}: the extension is the composer's own colour`);
+      assert.deepEqual(rgbOf(m.surface), theme === 'dark' ? [44, 44, 46] : [209, 211, 217], `${theme}: the iOS keyboard surface`);
+      assert.ok(m.extensionHeight >= 336 + 45 && m.dockBottom + m.extensionHeight >= m.full + 336, `${theme}: taller than the keyboard and its bar`);
+      assert.equal(m.events, 'none', `${theme}: the extension takes no taps`);
+      assert.equal(m.tapsBelow, false, `${theme}: a tap below the composer does not land on it`);
+      assert.deepEqual(m.scroll, [0, 0], `${theme}: nothing scrolls because of it`);
+      assert.equal(m.glass, 'none', `${theme}: no glass with the keyboard up`);
+      assert.equal(m.borderBottom, '0px');
+      assert.deepEqual(m.radius, ['26px', '0px'], `${theme}: rounded on top only`);
+      // The pixels: from just inside the composer's bottom down to the bottom of the screen, where
+      // iOS draws its bar and keyboard, every sample is the keyboard surface, never the page.
+      const png = readPng(await page.screenshot());
+      const scale = png.width / 390, surface = rgbOf(m.surface), pageBg = rgbOf(m.page);
+      const seen = [];
+      for (const y of [m.dockBottom - 2, m.dockBottom, m.dockBottom + 1, m.dockBottom + 3, m.dockBottom + 45, m.dockBottom + 200, m.full - 2]) {
+        for (const x of [2, 60, 195, 330, 388]) {
+          const c = png.at(Math.min(png.width - 1, Math.round(x * scale)), Math.min(png.height - 1, Math.round(y * scale)));
+          seen.push(c);
+          assert.ok(near(c, surface), `${theme}: at ${x},${Math.round(y)} ${c} is the keyboard surface ${surface}`);
+          assert.ok(!near(c, pageBg, 1), `${theme}: at ${x},${Math.round(y)} no page background`);
+        }
+      }
+      // Keyboard down again: the extension goes with it, and the card is back above the tab bar.
+      await noKeyboard(page);
+      await page.waitForTimeout(450);
+      st = await page.evaluate(() => { const d = document.getElementById('dock'); return { after: getComputedStyle(d, '::after').content, kb: document.body.classList.contains('kb'), bottom: d.getBoundingClientRect().bottom, tabs: document.getElementById('tabs').getBoundingClientRect().top }; });
+      assert.equal(st.kb, false);
+      assert.ok(st.after === 'none' || st.after === 'normal', `${theme}: the extension is gone`);
+      assert.ok(st.bottom < st.tabs, `${theme}: the card floats above the tab bar again`);
+    }
+  } finally { await done(); }
+});
+
