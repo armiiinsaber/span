@@ -379,3 +379,64 @@ test('with the keyboard up, the composer carries on under the keyboard: no strip
   } finally { await done(); }
 });
 
+test('the color scheme is the resolved theme, before paint, on the root, the meta tag and every field', async t => {
+  if (why) return t.skip(why);
+  const { page, done } = await setup(true);
+  try {
+    await page.waitForSelector('#msg');
+    // What the head script set before the body existed.
+    await page.addInitScript(() => {
+      new MutationObserver((l, o) => { if (document.body) { window.__atBody = document.documentElement.style.colorScheme || 'none'; o.disconnect(); } }).observe(document, { childList: true, subtree: true });
+    });
+    const read = () => page.evaluate(() => {
+      const root = document.documentElement, cs = el => el && getComputedStyle(el).colorScheme;
+      return { atBody: window.__atBody, inline: root.style.colorScheme, root: cs(root), meta: document.querySelector('meta[name=color-scheme]').content, composer: cs(document.getElementById('msg')), time: cs(document.getElementById('checkinTime')) };
+    });
+    for (const system of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: system });
+      for (const choice of ['light', 'dark', 'system']) {
+        const want = choice === 'system' ? system : choice;
+        // The choice as a device would have it saved, then a fresh load.
+        await page.evaluate(choice => {
+          const set = Storage.prototype.setItem;
+          Storage.prototype.setItem = function () {};
+          const st = JSON.parse(localStorage.getItem('deka.v1'));
+          st.settings.theme = choice;
+          set.call(localStorage, 'deka.v1', JSON.stringify(st));
+          set.call(localStorage, 'deka.theme', choice);
+        }, choice);
+        await page.reload();
+        await page.waitForSelector('#msg');
+        let r = await read();
+        const where = `${choice} on a ${system} phone`;
+        assert.equal(r.atBody, want, `${where}: set before paint`);
+        assert.equal(r.inline, want, `${where}: on the root`);
+        assert.equal(r.root, want, `${where}: computed on the root`);
+        assert.equal(r.meta, want, `${where}: the meta tag`);
+        assert.equal(r.composer, want, `${where}: the composer`);
+        // And an input in Profile.
+        await page.click('[data-a=more]'); await page.click('#sheet [data-a=go-profile]');
+        await page.waitForSelector('#checkinTime');
+        r = await read();
+        assert.equal(r.time, want, `${where}: an input in Profile`);
+        await page.click('[data-a=back]');
+      }
+      // Match iPhone follows the phone when its appearance changes.
+      await page.emulateMedia({ colorScheme: system === 'light' ? 'dark' : 'light' });
+      await page.waitForTimeout(100);
+      const flipped = system === 'light' ? 'dark' : 'light';
+      const r = await read();
+      assert.deepEqual([r.inline, r.meta, r.composer], [flipped, flipped, flipped], `Match iPhone on a ${system} phone that turns ${flipped}`);
+    }
+    // Changing it in Profile changes it at once.
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.click('[data-a=more]'); await page.click('#sheet [data-a=go-profile]');
+    for (const [choice, want] of [['dark', 'dark'], ['light', 'light'], ['system', 'light']]) {
+      await page.click(`[data-a=theme][data-v=${choice}]`);
+      await page.waitForTimeout(250);
+      const r = await read();
+      assert.deepEqual([r.inline, r.root, r.meta, r.time], [want, want, want, want], `Profile set to ${choice}`);
+    }
+  } finally { await done(); }
+});
+

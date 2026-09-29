@@ -14,9 +14,15 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Deka">
 <script>
-/* The theme chosen on this device, set before anything paints. */
+/* The theme chosen on this device, set before anything paints. The color scheme is one value, the
+   theme as resolved (Match iPhone asks the system), never "light dark": iOS picks the keyboard's
+   appearance from it, so the keyboard follows Deka's theme rather than the phone's. */
 try {
   var t = localStorage.getItem('deka.theme');
+  var scheme = t === 'light' || t === 'dark' ? t : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.style.colorScheme = scheme;
+  document.documentElement.dataset.scheme = scheme;
+  document.querySelector('meta[name="color-scheme"]').content = scheme;
   if (t === 'light' || t === 'dark') {
     document.documentElement.dataset.theme = t;
     document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) { m.content = t === 'dark' ? '#14130F' : '#F5F3EC'; });
@@ -160,6 +166,10 @@ body {
 .say, .bubble .bt, .read { -webkit-user-select: text; user-select: text; }
 /* Every field selects, shows the caret and takes suggestions, whatever its ancestors say. */
 input, textarea, [contenteditable] { -webkit-user-select: text !important; user-select: text !important; -webkit-touch-callout: default; cursor: auto; }
+/* Fields name their scheme themselves, the page's resolved one, since WebKit reads it from the
+   focused field when it picks the keyboard's appearance. */
+input, textarea, [contenteditable] { color-scheme: var(--field-scheme, light); }
+:root[data-scheme="dark"] { --field-scheme: dark; }
 img, svg { -webkit-user-drag: none; }
 ::selection { background: color-mix(in srgb, var(--ink) 20%, transparent); color: var(--ink); }
 h1, h2, h3 { text-wrap: balance; font-weight: 400; margin: 0; }
@@ -2622,6 +2632,11 @@ function chrome() {
     m.content = t === 'light' || t === 'dark' ? (dark ? '#14130F' : '#F5F3EC') : (m.media.includes('dark') ? '#14130F' : '#F5F3EC');
   }
   document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content = t === 'dark' ? 'black' : 'default';
+  // One scheme, the resolved theme, so the iOS keyboard matches the composer.
+  const scheme = dark ? 'dark' : 'light';
+  document.documentElement.style.colorScheme = scheme;
+  document.documentElement.dataset.scheme = scheme;
+  document.querySelector('meta[name="color-scheme"]').content = scheme;
 }
 function applyTheme({ animate = false } = {}) {
   const t = S.settings.theme;
