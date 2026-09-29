@@ -172,3 +172,45 @@ test('the account sheet, the composer and the thumbs down field keep every word'
     await checkFields(page, [['#note-4', 'Slept well, legs heavy']]);
   } finally { await done(); }
 });
+
+test('autofilled fields look like any other field, in light and dark', async t => {
+  if (why) return t.skip(why);
+  const { page, done } = await setup(false);
+  try {
+    await page.waitForSelector('#email');
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(th => { document.documentElement.dataset.theme = th; }, theme);
+      const r = await page.evaluate(() => {
+        const rules = [];
+        for (const sheet of document.styleSheets) for (const rule of sheet.cssRules) if (rule.selectorText && /autofill/.test(rule.selectorText)) rules.push(rule);
+        const field = document.getElementById('email');
+        const out = { selectors: rules.map(x => x.selectorText), valid: [] };
+        for (const sel of ['input:-webkit-autofill', 'input:autofill']) { try { field.matches(sel); out.valid.push(sel); } catch {} }
+        // What an autofilled field gets: the same declarations, on a field in the same place.
+        const probe = field.cloneNode(); probe.id = 'probe'; field.parentNode.appendChild(probe);
+        out.fields = rules.map(rule => {
+          probe.style.cssText = rule.style.cssText;
+          const cs = getComputedStyle(probe);
+          return { shadow: cs.boxShadow, fill: cs.webkitTextFillColor, caret: cs.caretColor, border: `${cs.borderBottomStyle} ${cs.borderBottomWidth} ${cs.borderBottomColor}` };
+        });
+        probe.remove();
+        const plain = getComputedStyle(field);
+        out.page = getComputedStyle(document.body).backgroundColor;
+        out.ink = getComputedStyle(document.body).color;
+        out.border = `${plain.borderBottomStyle} ${plain.borderBottomWidth} ${plain.borderBottomColor}`;
+        return out;
+      });
+      assert.deepEqual(r.valid, ['input:-webkit-autofill', 'input:autofill'], 'WebKit knows both selectors');
+      assert.equal(r.selectors.length, 2, 'one rule for each, so neither can drop the other');
+      for (const sel of r.selectors) for (const state of ['', ':hover', ':focus', ':active']) assert.ok(sel.includes(`autofill${state},`) || sel.endsWith(`autofill${state}`), `${sel} covers ${state || 'rest'}`);
+      for (const f of r.fields) {
+        assert.ok(f.shadow.startsWith(r.page) && /inset/.test(f.shadow), `${theme}: the page color over the yellow, got ${f.shadow}`);
+        assert.equal(f.fill, r.ink, `${theme}: text in ink`);
+        assert.equal(f.caret, r.ink, `${theme}: caret in ink`);
+        assert.equal(f.border, r.border, `${theme}: the same underline`);
+      }
+      assert.equal(r.page, theme === 'dark' ? 'rgb(20, 19, 15)' : 'rgb(245, 243, 236)');
+    }
+  } finally { await done(); }
+});
+

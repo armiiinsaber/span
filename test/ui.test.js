@@ -1067,6 +1067,37 @@ test.describe('Deka app', { skip }, () => {
     await page.waitFor(`fetch('${fake.url}/rest/v1/profiles?select=theme&id=eq.${u.id}', { headers: { apikey: '${fake.anonKey}', Authorization: 'Bearer ' + JSON.parse(localStorage.getItem('deka.session')).access_token } }).then(r => r.json()).then(r => r[0].theme === 'light')`, 5000);
   });
 
+  test('sign up with an email that already has an account sends a sign in code instead of an error', async () => {
+    const w = await account('already@example.com', { first_name: 'Lee', last_name: 'Park', username: 'lee.park' });
+    await signedOut();
+    await click('[data-a=auth-go][data-v=signup]');
+    await page.waitFor("document.getElementById('first')");
+    await type('first', 'Lee'); await type('last', 'Park'); await type('username', 'lee.again');
+    await page.waitFor("/Available/.test(document.getElementById('note-username').textContent)");
+    await type('email', 'already@example.com'); await type('confirm', 'already@example.com');
+    await click('.auth [type=submit]');
+    await page.waitFor("document.getElementById('code')");
+    assert.deepEqual(await issues(), [], 'no error');
+    assert.equal(await text('.auth .auth-note'), 'You already have an account. We sent a code to sign in.');
+    assert.equal((await fake.pool.query("select count(*) from auth.users where email = 'already@example.com'")).rows[0].count, '1', 'no second account');
+    assert.equal((await fake.pool.query('select username from public.profiles where id = $1', [w.user.id])).rows[0].username, 'lee.park', 'the account is untouched');
+    await type('code', fake.codeFor('already@example.com'));
+    await page.waitFor("JSON.parse(localStorage.getItem('deka.session') || 'null')?.user?.id", 8000);
+    assert.equal(JSON.parse(await page.js("localStorage.getItem('deka.session')")).user.id, w.user.id, 'signed in to the account that was already there');
+    // A new email still makes a new account, with its details.
+    await signedOut();
+    await click('[data-a=auth-go][data-v=signup]');
+    await page.waitFor("document.getElementById('first')");
+    await type('first', 'Rio'); await type('last', 'Vale'); await type('username', 'rio.vale');
+    await page.waitFor("/Available/.test(document.getElementById('note-username').textContent)");
+    await type('email', 'rio@example.com'); await type('confirm', 'rio@example.com');
+    await click('.auth [type=submit]');
+    await page.waitFor("document.getElementById('code')");
+    assert.equal(await page.js("document.querySelector('.auth .auth-note')"), null);
+    assert.equal((await fake.pool.query("select p.username from public.profiles p join auth.users u on u.id = p.id where u.email = 'rio@example.com'")).rows[0].username, 'rio.vale');
+    who = null;
+  });
+
   test('sign in: an unknown email is told to sign up; a known one gets a code and everything comes down', async () => {
     const w = await account('known@example.com', { first_name: 'Noor', last_name: 'Haddad', username: 'noor.h' });
     await seed(liveState(4), 'deka.v1', { sameAccount: true }); await say('plan it'); await idle();

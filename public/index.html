@@ -518,6 +518,21 @@ html.theming, html.theming * { transition: background-color .2s ease, color .2s 
   padding: 10px 0; font-size: var(--t-body);
 }
 .input:focus { outline: none; border-bottom-width: 2px; padding-bottom: 9px; }
+/* Autofill paints fields yellow on iOS. An inset shadow in the page color covers it, the text and
+   caret keep the ink, and the underline stays. Two rules, since a browser that does not know one
+   of these selectors drops the whole rule it is in. */
+.sheet { --field-bg: var(--paper); }
+.sheet.large { --field-bg: var(--surface); }
+input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus, input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px var(--field-bg, var(--paper)) inset; box-shadow: 0 0 0 1000px var(--field-bg, var(--paper)) inset;
+  -webkit-text-fill-color: var(--ink); caret-color: var(--ink); background-clip: content-box;
+  transition: background-color 600000s 0s, color 600000s 0s;
+}
+input:autofill, input:autofill:hover, input:autofill:focus, input:autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px var(--field-bg, var(--paper)) inset; box-shadow: 0 0 0 1000px var(--field-bg, var(--paper)) inset;
+  -webkit-text-fill-color: var(--ink); caret-color: var(--ink); background-clip: content-box;
+  transition: background-color 600000s 0s, color 600000s 0s;
+}
 .login .input { text-align: center; letter-spacing: .2em; }
 .login .hint { margin: 4px 0 0; font-size: var(--t-subhead); color: var(--ink-soft); }
 /* Sign in and sign up: plain fields, a note under one only when something is wrong. */
@@ -526,6 +541,7 @@ html.theming, html.theming * { transition: background-color .2s ease, color .2s 
 .auth.start .display { font-size: calc(var(--t-large) * 1.5); margin-bottom: 32px; }
 .auth .display.small { margin-bottom: 20px; }
 .auth .lede { margin-bottom: 24px; }
+.auth .auth-note { margin: -12px auto 24px; max-width: 30ch; text-align: center; }
 .af { display: grid; gap: 4px; }
 .af-issue, .af-hint { margin: 0; font-size: var(--t-footnote); color: var(--ink-soft); }
 .af-issue { color: var(--people); }
@@ -1647,7 +1663,7 @@ function authView() {
   }
   if (a.screen === 'code') {
     return `<div class="auth center fade">${mark('medium')}<h1 class="display small">Check your&nbsp;email</h1>
-      <p class="lede">${nb(`A 6 digit code went to ${a.codeFor}.`)}</p>
+      <p class="lede">${nb(`A 6 digit code went to ${a.codeFor}.`)}</p>${a.note ? `<p class="af-hint auth-note" role="status">${nb(a.note)}</p>` : ''}
       <form data-form="code" novalidate>
         <div class="af"><label class="sr" for="code">Code</label><input class="input code" id="code" type="text" inputmode="numeric" autocomplete="one-time-code" autocorrect="off" spellcheck="false" placeholder="000000" value="${esc(a.code)}"></div>
         ${err}${submit}
@@ -1687,10 +1703,18 @@ function checkUsername(u) {
 }
 async function sendCode(email, { signup = false, data = {} } = {}) {
   const a = authUi();
-  a.busy = true; a.error = ''; paintForm();
+  a.busy = true; a.error = ''; a.note = ''; paintForm();
   try {
-    await sb('/auth/v1/otp', { method: 'POST', body: { email, create_user: signup, ...(signup ? { data } : {}) }, auth: false });
-    a.screen = 'code'; a.codeFor = email; a.code = ''; a.mode = signup ? 'signup' : 'signin';
+    // Signing up with an email that already has an account, confirmed or not: no error, just a
+    // sign in code. Supabase answers a sign in only request for an unknown email with a 422.
+    let known = false;
+    if (signup) {
+      try { await sb('/auth/v1/otp', { method: 'POST', body: { email, create_user: false }, auth: false }); known = true; }
+      catch (err) { if (err.status !== 422) throw err; }
+    }
+    if (!known) await sb('/auth/v1/otp', { method: 'POST', body: { email, create_user: signup, ...(signup ? { data } : {}) }, auth: false });
+    a.screen = 'code'; a.codeFor = email; a.code = ''; a.mode = signup && !known ? 'signup' : 'signin';
+    if (known) a.note = 'You already have an account. We sent a code to sign in.';
   } catch (err) {
     a.error = err.status === 422 && !signup ? 'No account with that email. Create one below.' : err.status === 429 ? 'Too many tries. Wait a few minutes.' : err.status === 503 ? err.message : !navigator.onLine ? 'You are offline.' : 'The code could not be sent. Try again.';
   }
