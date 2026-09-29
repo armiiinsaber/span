@@ -54,13 +54,13 @@ async function arrive(page, sel, how, text) {
 }
 const HOWS = ['type', 'paste', 'replace', 'compose'];
 
-async function setup(keysSignedIn) {
+async function setup(keysSignedIn, { empty = false } = {}) {
   const fake = await startFake();
   const db = createDb(fake.databaseUrl);
   const server = createApp({ client: mock, db, chatPerTenMinutes: 1000, supabase: { url: fake.url, anonKey: fake.anonKey, serviceKey: fake.serviceKey, jwtSecret: fake.jwtSecret } }).listen(0);
   await new Promise(r => server.once('listening', r));
   const base = `http://127.0.0.1:${server.address().port}/`;
-  const context = await browser.newContext({ ...devices['iPhone 15'] });
+  const context = await browser.newContext({ ...devices['iPhone 15'], viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   await page.goto(base);
   const config = { url: fake.url, anonKey: fake.anonKey };
@@ -68,12 +68,15 @@ async function setup(keysSignedIn) {
     const who = await fake.user('typing@example.com', { first_name: 'Ana', last_name: 'Silva', username: 'ana.typing' });
     const d = new Date(); d.setDate(d.getDate() - 3);
     const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const state = { v: 1, seen: true, next: null, spans: [], owner: who.user.id, settings: { checkin: '23:59', theme: 'light' },
+    const state = empty ? { v: 1, seen: true, next: null, spans: [], owner: who.user.id, settings: { checkin: '23:59', theme: 'light' }, current: null } : { v: 1, seen: true, next: null, spans: [], owner: who.user.id, settings: { checkin: '23:59', theme: 'light' },
       current: { id: 'c1', start, status: 'live', notes: {}, log: [], chat: [], summary: '', summarizedUpTo: 0, checked: [], checkin: {}, intentions: [{ id: 'run', name: 'Run', type: 'do', tag: '', target: 3 }], occurrences: [{ intention_id: 'run', day: 4, done: false, detail: '' }] } };
+    // The page already open saves its own state a moment later; stop it before writing ours.
     await page.evaluate(({ config, session, state }) => {
-      localStorage.setItem('deka.config', JSON.stringify(config));
-      localStorage.setItem('deka.session', JSON.stringify(session));
-      localStorage.setItem('deka.v1', JSON.stringify(state));
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function () {};
+      set.call(localStorage, 'deka.config', JSON.stringify(config));
+      set.call(localStorage, 'deka.session', JSON.stringify(session));
+      set.call(localStorage, 'deka.v1', JSON.stringify(state));
     }, { config, session: { access_token: who.access_token, refresh_token: who.refresh_token, expires_at: who.expires_at, user: { id: who.user.id, email: who.user.email } }, state });
   } else await page.evaluate(config => localStorage.setItem('deka.config', JSON.stringify(config)), config);
   await page.goto(base);
@@ -211,6 +214,83 @@ test('autofilled fields look like any other field, in light and dark', async t =
       }
       assert.equal(r.page, theme === 'dark' ? 'rgb(20, 19, 15)' : 'rgb(245, 243, 236)');
     }
+  } finally { await done(); }
+});
+
+// A keyboard, as WebKit sees one: the visual viewport shrinks, and iOS may also pan it down by
+// offsetTop to keep the composer in view. The layout viewport stays as it was.
+const keyboard = (page, { kb = 336, pan = 0 } = {}) => page.evaluate(({ kb, pan }) => {
+  const vv = window.visualViewport, full = document.documentElement.clientHeight;
+  Object.defineProperty(vv, 'height', { configurable: true, get: () => full - kb });
+  Object.defineProperty(vv, 'offsetTop', { configurable: true, get: () => pan });
+  vv.dispatchEvent(new Event('resize'));
+}, { kb, pan });
+const noKeyboard = page => page.evaluate(() => {
+  const vv = window.visualViewport;
+  delete vv.height; delete vv.offsetTop;
+  document.activeElement && document.activeElement.blur();
+  vv.dispatchEvent(new Event('resize'));
+});
+const layout = page => page.evaluate(() => {
+  const r = el => el.getBoundingClientRect();
+  const vv = window.visualViewport, dock = r(document.getElementById('dock')), tabs = document.getElementById('tabs');
+  const empty = document.querySelector('.chat-empty.float');
+  const e = empty && r(empty.querySelector('.mk')), h = empty && r(empty.querySelector('h1'));
+  return {
+    kb: document.body.classList.contains('kb'),
+    visibleTop: vv.offsetTop, visibleBottom: vv.offsetTop + vv.height,
+    dockTop: dock.top, dockBottom: dock.bottom,
+    tabs: getComputedStyle(tabs).visibility, tabsTop: r(tabs).top,
+    empty: empty ? { top: e.top, bottom: h.bottom, mid: (e.top + h.bottom) / 2, shown: getComputedStyle(empty).display !== 'none' && h.height > 0 } : null,
+    header: r(document.querySelector('.bar')).bottom,
+  };
+});
+
+test('with the keyboard up: the empty chat stays centred in view, the tab bar slides away, the composer sits on the keyboard', async t => {
+  if (why) return t.skip(why);
+  const { page, done } = await setup(true, { empty: true });
+  try {
+    await page.waitForSelector('.chat-empty.float');
+    // No keyboard: centred between the header and the composer, tabs in place.
+    let l = await layout(page);
+    assert.equal(l.kb, false);
+    assert.equal(l.tabs, 'visible');
+    assert.ok(Math.abs(l.empty.mid - (l.header + l.dockTop) / 2) < 24, `centred above the composer: ${l.empty.mid} in ${l.header} to ${l.dockTop}`);
+    // The composer is one card: the text field on top, the plus on the left and send on the right below it.
+    const card = await page.evaluate(() => {
+      const r = sel => document.querySelector(sel).getBoundingClientRect();
+      const ta = r('#msg'), plus = r('#dock [data-a=attach]'), send = r('#dock .send');
+      return { textAbove: ta.bottom <= plus.top + 1 && ta.bottom <= send.top + 1, plusLeft: plus.left < ta.left + 24, sendRight: send.right > ta.right - 24, sizes: [plus.width, plus.height, send.width, send.height].map(Math.round), wide: ta.width > 250 };
+    });
+    assert.deepEqual(card, { textAbove: true, plusLeft: true, sendRight: true, sizes: [44, 44, 44, 44], wide: true });
+    for (const pan of [0, 336]) {
+      await page.focus('#msg');
+      await keyboard(page, { pan });
+      await page.waitForTimeout(450);
+      l = await layout(page);
+      assert.equal(l.kb, true, `pan ${pan}: the keyboard is seen`);
+      assert.equal(l.tabs, 'hidden', `pan ${pan}: the tab bar slides away`);
+      assert.ok(Math.abs(l.dockBottom - l.visibleBottom) <= 1, `pan ${pan}: the composer sits on the keyboard, ${l.dockBottom} against ${l.visibleBottom}`);
+      assert.ok(l.empty.shown && l.empty.top >= l.visibleTop && l.empty.bottom <= l.dockTop, `pan ${pan}: the mark and line stay in view`);
+      assert.ok(Math.abs(l.empty.mid - (l.visibleTop + 12 + l.dockTop) / 2) < 24, `pan ${pan}: centred in what is left`);
+      // Typing keeps it flush as the field grows.
+      await page.fill('#msg', 'one\ntwo\nthree\nfour');
+      await page.evaluate(() => document.getElementById('msg').dispatchEvent(new Event('input', { bubbles: true })));
+      await page.waitForTimeout(100);
+      l = await layout(page);
+      assert.ok(Math.abs(l.dockBottom - l.visibleBottom) <= 1, `pan ${pan}: still flush as the text grows`);
+      await page.fill('#msg', '');
+      await noKeyboard(page);
+      await page.waitForTimeout(450);
+      l = await layout(page);
+      assert.equal(l.kb, false);
+      assert.equal(l.tabs, 'visible', `pan ${pan}: the tab bar comes back`);
+      assert.ok(l.dockBottom < l.tabsTop, 'the composer floats above the tab bar again');
+    }
+    // The first message sent: the mark and line go.
+    await page.fill('#msg', 'at least six runs');
+    await page.click('#dock .send');
+    await page.waitForFunction(() => !document.querySelector('.chat-empty'));
   } finally { await done(); }
 });
 

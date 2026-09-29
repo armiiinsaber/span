@@ -615,11 +615,13 @@ test.describe('Deka app', { skip }, () => {
       Object.defineProperty(vv, 'offsetTop', { configurable: true, get: () => 0 });
       vv.dispatchEvent(new Event('resize'));
       const send = document.querySelector('#dock .send').getBoundingClientRect();
-      return { bottom: Math.round(document.getElementById('dock').getBoundingClientRect().bottom), limit: h, send: send.bottom, tabs: getComputedStyle(document.getElementById('tabs')).display };
+      return { bottom: Math.round(document.getElementById('dock').getBoundingClientRect().bottom), limit: h, send: send.bottom, tabs: getComputedStyle(document.getElementById('tabs')).visibility };
     })()`);
-    assert.ok(r.bottom <= r.limit, `composer bottom ${r.bottom} is above the keyboard at ${r.limit}`);
+    assert.equal(r.bottom, r.limit, `composer bottom ${r.bottom} sits on the keyboard at ${r.limit}`);
     assert.ok(r.send <= r.limit);
-    assert.equal(r.tabs, 'none');
+    await sleep(450);
+    assert.equal(await page.js("getComputedStyle(document.getElementById('tabs')).visibility"), 'hidden', 'the tab bar has slid away');
+    await page.go();
   });
 
   test('no horizontal scroll, 44px targets and 16px inputs at every width', async () => {

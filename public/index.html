@@ -287,6 +287,18 @@ body.toasting main { padding-bottom: calc(var(--tabs-top) + var(--dock-h) + 108p
 .msg-error { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--t-subhead); }
 .chat-empty { text-align: center; padding: 40px 0 16px; }
 .chat-empty .mk { margin-bottom: 18px; }
+/* An empty chat: the mark and one line, centred in the space above the composer. With the keyboard
+   up they stay in view, centred in what is left, and shrink if that is tight. */
+.chat-empty.float {
+  position: fixed; left: var(--pad-l); right: var(--pad-r); z-index: 1; padding: 0;
+  top: calc(var(--safe-t) + var(--tap) + 16px);
+  bottom: calc(var(--tabs-top) + var(--dock-h) + 8px);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  container-type: size; pointer-events: none;
+}
+body.kb .chat-empty.float { top: calc(var(--vv-top) + 12px); bottom: calc(var(--kb) + var(--dock-h)); transition: top .25s var(--ease), bottom .25s var(--ease); }
+.chat-empty.float .mk { width: min(48px, 22cqh); height: min(48px, 22cqh); margin-bottom: min(18px, 6cqh); }
+.chat-empty.float .display { font-size: min(var(--t-title1), 13cqh); max-width: 16ch; }
 .day-sep { text-align: center; font-size: var(--t-footnote); font-weight: 600; color: var(--ink-soft); padding: 4px 0; }
 
 /* Cards in the chat */
@@ -577,12 +589,15 @@ input:autofill, input:autofill:hover, input:autofill:focus, input:autofill:activ
   border-radius: 26px; padding: 4px;
   box-shadow: var(--glass-shine), var(--glass-shadow);
 }
-body.kb .dock { bottom: calc(var(--kb) + 8px); }
+/* With the keyboard up the composer meets it: full width, rounded on top, flush on its edge. */
+body.kb .dock { bottom: var(--kb); left: 0; right: 0; max-width: none; border-radius: 26px 26px 0 0; border-bottom: 0; padding: 4px calc(8px + var(--safe-r)) 4px calc(8px + var(--safe-l)); }
+/* One card, like Claude: the text on top, growing with it, and a row of buttons under it. */
 .dock-in { display: flex; flex-direction: column; }
-.dock-row { display: flex; align-items: flex-end; gap: 2px; }
+.dock-row { display: flex; align-items: center; gap: 2px; }
+.dock-row .grow { flex: 1; }
 .dock textarea {
   flex: 1; min-width: 0; resize: none; max-height: 9.5rem; overflow-y: auto;
-  border: 0; background: transparent; padding: 10px 0; min-height: var(--tap);
+  border: 0; background: transparent; padding: 10px 12px 2px; min-height: var(--tap);
   font-family: var(--sans); font-size: var(--t-body); line-height: 1.4;
 }
 .dock textarea:focus { outline: none; }
@@ -639,7 +654,10 @@ nav.tabs {
   max-width: 440px; margin: 0 auto; height: var(--tabs-h); padding: 4px; border-radius: 31px;
   box-shadow: var(--glass-shine), var(--glass-shadow);
 }
-body.kb nav.tabs, body.no-tabs nav.tabs, body.no-tabs .dock { display: none; }
+body.no-tabs nav.tabs, body.no-tabs .dock { display: none; }
+/* While the keyboard is up the tab bar slides away under it, and comes back when it goes. */
+nav.tabs { transition: transform .35s var(--ease), opacity .25s var(--ease); }
+body.kb nav.tabs { transform: translateY(calc(100% + 24px)); opacity: 0; pointer-events: none; visibility: hidden; transition: transform .3s var(--ease), opacity .2s var(--ease), visibility 0s .3s; }
 nav.tabs .in { height: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
 nav.tabs button { position: relative; height: 100%; border-radius: 27px; display: grid; place-items: center; color: var(--ink-soft); transition: color .3s var(--ease), background .35s var(--spring), transform .3s var(--spring); }
 nav.tabs button:active { transform: scale(.94); }
@@ -1808,14 +1826,11 @@ async function deleteAccount() {
 
 function chatSpan() { if (!S.current) S.current = newSpan(todayIso()); return S.current; }
 
-function chatEmpty(span) {
-  const p = phase();
-  if (p === 'planning') {
-    return `<div class="chat-empty fade">${mark('medium')}<h1 class="display small">What do the next 10&nbsp;days&nbsp;hold?</h1>
-      <p class="lede">Tell Deka your goals. As many as you&nbsp;like.</p></div>`;
-  }
-  return `<div class="chat-empty fade">${mark('medium')}<h1 class="display small">Day ${Math.min(dayNum(span), 10)}</h1>
-    <p class="lede">Ask Deka to move, add or drop&nbsp;anything.</p></div>`;
+// float: nothing else in the chat, so it centres itself above the composer.
+function chatEmpty(span, { float = true } = {}) {
+  const cls = `chat-empty fade${float ? ' float' : ''}`;
+  if (phase() === 'planning') return `<div class="${cls}">${mark('medium')}<h1 class="display small">What do the next 10&nbsp;days&nbsp;hold?</h1></div>`;
+  return `<div class="${cls}">${mark('medium')}<h1 class="display small">Day ${Math.min(dayNum(span), 10)}</h1></div>`;
 }
 
 const paragraphs = t => esc(t);
@@ -2225,7 +2240,7 @@ function chatView() {
   const msgs = span.chat;
   if (!msgs.length && !ui.turn) return `<div class="chat" id="chat" role="log" data-span="${span.id}">${chatEmpty(span)}</div>`;
   // A new deka that came with only the review of the last one still opens with the first question.
-  if (onlyRecap(span) && !ui.turn) return `<h1 class="sr">Chat with Deka</h1><div class="chat" id="chat" role="log" data-span="${span.id}">${msgs.map(m => msgView(m)).join('')}${chatEmpty(span)}</div>`;
+  if (onlyRecap(span) && !ui.turn) return `<h1 class="sr">Chat with Deka</h1><div class="chat" id="chat" role="log" data-span="${span.id}">${msgs.map(m => msgView(m)).join('')}${chatEmpty(span, { float: false })}</div>`;
   return `<h1 class="sr">Chat with Deka</h1><div class="chat" id="chat" role="log" data-span="${span.id}">${msgs.map(m => msgView(m)).join('')}</div>`;
 }
 
@@ -2396,9 +2411,9 @@ function renderDock() {
     const mic = SR ? `<button class="icon-btn" type="button" data-a="mic" aria-label="Speak">${I.mic}</button>` : '';
     $dock.innerHTML = `<form class="dock-in" data-form="msg" autocomplete="off">
       <div class="tray" id="tray" aria-label="Attachments" hidden></div>
-      <div class="dock-row"><button class="icon-btn" type="button" data-a="attach" aria-label="Add photos or files" aria-haspopup="menu">${icon('ui_plus')}</button>
       <label class="sr" for="msg">Message Deka</label>
       <textarea id="msg" rows="1" enterkeyhint="send"></textarea>
+      <div class="dock-row"><button class="icon-btn" type="button" data-a="attach" aria-label="Add photos or files" aria-haspopup="menu">${icon('ui_plus')}</button><span class="grow"></span>
       ${mic}<button class="icon-btn send" type="submit" aria-label="Send" disabled>${I.up}</button></div></form>
       <p class="offline" id="offline" hidden>Offline. Messages send when you are back.</p>
       <p class="offline" id="tooLong" role="status" hidden>Keep it under 2,000 characters.</p>
@@ -3663,14 +3678,45 @@ $sc.addEventListener('scroll', () => {
 
 /* Keyboard: keep the composer and the sheet above it */
 const vv = window.visualViewport;
+/* The keyboard. iOS shrinks the visual viewport by the keyboard's height and often pans it down to
+   keep the focused field in view, and in Safari innerHeight can follow the visual viewport too. So
+   the keyboard is the layout viewport's height (the root's clientHeight, which the keyboard never
+   changes) less the visual viewport's height, and where the visible area ends in layout terms is
+   offsetTop plus height. --kb is the distance from that end to the layout bottom: the composer and
+   sheets sit on it. --vv-top and --vv-h place what must stay in view. */
+let fullH = 0;
+const textFocused = () => Boolean(document.activeElement && document.activeElement.matches('input, textarea, [contenteditable]'));
 function onViewport() {
   if (!vv) return;
-  const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-  document.documentElement.style.setProperty('--kb', `${Math.round(kb)}px`);
-  document.body.classList.toggle('kb', kb > 80);
+  const root = document.documentElement;
+  if (!textFocused()) fullH = Math.max(vv.height, root.clientHeight);
+  const layoutH = Math.max(root.clientHeight, fullH);
+  const keyboard = layoutH - vv.height;
+  const open = keyboard > 120;
+  const gap = open ? Math.max(0, layoutH - vv.height - vv.offsetTop) : 0;
+  root.style.setProperty('--kb', `${Math.round(gap)}px`);
+  root.style.setProperty('--vv-top', `${Math.round(open ? vv.offsetTop : 0)}px`);
+  root.style.setProperty('--vv-h', `${Math.round(open ? vv.height : layoutH)}px`);
+  document.body.classList.toggle('kb', open);
+  // Typing in the composer: the tab bar slides away.
+  document.body.classList.toggle('typing', open && document.activeElement && document.activeElement.id === 'msg');
   setDockHeight();
 }
-if (vv) { vv.addEventListener('resize', onViewport); vv.addEventListener('scroll', onViewport); }
+// iOS moves the keyboard in over about a third of a second, firing resize and scroll only now and
+// then; following it frame by frame for a moment after focus changes keeps the composer on it.
+let followUntil = 0;
+function follow() {
+  onViewport();
+  if (performance.now() < followUntil) requestAnimationFrame(follow);
+}
+function followKeyboard() { const going = performance.now() < followUntil; followUntil = performance.now() + 900; if (!going) requestAnimationFrame(follow); }
+if (vv) {
+  vv.addEventListener('resize', onViewport);
+  vv.addEventListener('scroll', onViewport);
+  document.addEventListener('focusin', e => { if (e.target.matches && e.target.matches('input, textarea')) followKeyboard(); });
+  document.addEventListener('focusout', () => followKeyboard());
+  onViewport();
+}
 
 /* Sheet: a grabber and detents. Drag the grabber or the top of the sheet: up to large, down to
    medium, down again to dismiss. A quick flick counts as much as a long drag. */
