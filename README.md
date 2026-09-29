@@ -118,10 +118,12 @@ Set these in the Vercel project under Settings, Environment Variables, for Produ
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Server only. Never sent to the browser. |
 | `SUPABASE_URL` | yes | The project URL, like `https://abcdefgh.supabase.co`. Sent to the browser through `/api/config`. |
-| `SUPABASE_ANON_KEY` | yes | The public key (anon, or the newer publishable key). Sent to the browser; row level security is what protects the data. |
-| `SUPABASE_SERVICE_ROLE_KEY` | yes | Server only, never sent anywhere. Reads attachments for Claude, empties a folder and deletes a user. |
+| `SUPABASE_PUBLISHABLE_KEY` | yes | The publishable key (`sb_publishable_...`). Sent to the browser; row level security is what protects the data. For a project on the legacy keys, set `SUPABASE_ANON_KEY` to the anon key instead. |
+| `SUPABASE_SECRET_KEY` | yes | The secret key (`sb_secret_...`). Server only, never sent anywhere. Reads attachments for Claude, empties a folder and deletes a user. For legacy keys, set `SUPABASE_SERVICE_ROLE_KEY` instead. |
 | `DATABASE_URL` | yes | Server only. The Postgres connection string from the project's Connect dialog, the transaction pooler on port 6543. Usage and feedback. |
 | `SUPABASE_JWT_SECRET` | older projects | Server only. Only for a project that still signs sessions with the legacy JWT secret; new projects publish keys instead and need nothing here. |
+
+Both key formats work. New keys are not JWTs, so Deka sends them only in the `apikey` header, and `Authorization` carries the signed in person's session or nothing; legacy JWT keys also go in `Authorization`, as Supabase expects for them. At startup and on `/api/config`, the server refuses to send the browser a secret key or a legacy service_role key, and logs a configuration error, as it does when the public and secret variables hold the same value.
 | `CLAUDE_MODEL` | no | Defaults to `claude-opus-5-5`. |
 | `CLAUDE_EFFORT` | no | `low` (default), `medium`, `high`. In real runs low planned as well as medium, with the first word sooner and about 17% less cost; see `test/real-runs/README.md`. |
 | `DEKA_MOCK` | no | Local only. `1` plans with a scripted stand in when there is no key. Ignored in production. |
@@ -170,7 +172,7 @@ Everything Deka needs from Supabase, click by click. Do these in order; the firs
 **1. The project, in Canada.**
 1. Go to supabase.com, sign in, and press New project.
 2. Name it `deka`, set a database password (keep it; it is part of `DATABASE_URL`), and for Region choose Canada (Central), which is `ca-central-1`. Press Create new project and wait for it to finish setting up.
-3. In the left bar open Project Settings (the gear), then API. Copy the Project URL and the anon public key. Under Project Settings, API keys, reveal and copy the service_role key. Under Project Settings, JWT keys, note whether the project uses a legacy JWT secret; new projects use signing keys and need nothing more.
+3. In the left bar open Project Settings (the gear), then Data API, and copy the Project URL. Open Project Settings, API Keys: copy the publishable key (`sb_publishable_...`), then create or reveal a secret key (`sb_secret_...`) and copy it. On a project that still shows only the Legacy API Keys tab, copy the anon and service_role keys there instead. Under Project Settings, JWT Keys, note whether the project signs sessions with a legacy JWT secret; with signing keys, nothing more is needed.
 4. Open Connect at the top of the dashboard, choose Transaction pooler, and copy the connection string; put the database password in it. That is `DATABASE_URL`.
 
 **2. The database, from setup.sql.**
@@ -204,7 +206,7 @@ Everything Deka needs from Supabase, click by click. Do these in order; the firs
 4. In Supabase, Authentication, Sign In / Providers, Apple: turn it on, enter the Services ID as the Client ID, and generate the secret key with the Team ID, Key ID and the `.p8` contents (Supabase's Apple page has a generator, and the secret expires every six months, so set a reminder). Save.
 5. Domain verification: Apple verifies the domain through the return URL and Services ID configuration above; no file needs hosting for the web flow. If Apple asks for a verification file for an email relay, add `apple-developer-domain-association.txt` under `public/.well-known/` and redeploy.
 
-**6. Vercel.** In the project, Settings, Environment Variables, set for Production and Preview: `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, and `SUPABASE_JWT_SECRET` only if the project uses the legacy secret. Remove `DEKA_PASSCODE`; the passcode gate is gone. Redeploy.
+**6. Vercel.** In the project, Settings, Environment Variables, set for Production and Preview: `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` (or `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` on legacy keys), `DATABASE_URL`, and `SUPABASE_JWT_SECRET` only if the project uses the legacy secret. Remove `DEKA_PASSCODE`; the passcode gate is gone. Redeploy.
 
 **Old devices.** A device that signed in with the passcode opens on the sign in screen. Its data is still on the device, and the first sign in uploads all of it into the account, so nothing is lost; there is nothing to do on the server side to keep old sessions.
 

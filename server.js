@@ -11,20 +11,22 @@ const { verifyToken } = require('./lib/auth');
 const { createDb, allowTurn } = require('./lib/db');
 const { createStorage } = require('./lib/storage');
 const { costOf } = require('./lib/plans');
+const { checkKeys } = require('./lib/keys');
 
 const PORT = process.env.PORT || 3000;
 // Hard limits, checked before any call to Claude.
 const MAX_MESSAGE = 2000;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
-// Everything Supabase, from the environment. The service role key stays in this process.
+// Everything Supabase, from the environment. The new key names come first, the legacy ones after.
+// anonKey is the public key the browser gets; serviceKey is the secret key, which stays here.
 const SUPABASE = {
   url: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
-  anonKey: process.env.SUPABASE_ANON_KEY || '',
-  serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  anonKey: process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '',
+  serviceKey: process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   jwtSecret: process.env.SUPABASE_JWT_SECRET || '',
 };
-if (!SUPABASE.url || !SUPABASE.anonKey) console.warn('SUPABASE_URL and SUPABASE_ANON_KEY are not set. Nobody can sign in until they are.');
+if (!SUPABASE.url || !SUPABASE.anonKey) console.warn('SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY are not set. Nobody can sign in until they are.');
 
 // Fixed window limiter, in memory. Enough for one instance; the daily limit lives in the database.
 function limiter({ windowMs, max }) {
@@ -48,6 +50,9 @@ function limiter({ windowMs, max }) {
 // chatPerTenMinutes: the per address limit on chat, lowered or raised in tests.
 function createApp({ client, supabase = SUPABASE, db = createDb(process.env.DATABASE_URL), storage = createStorage(supabase), fetch: fetchImpl = fetch, chatPerTenMinutes = 40 } = {}) {
   const app = express();
+  // A secret key, or a legacy service_role key, never goes to the browser; a bad setup is said out loud.
+  const keys = checkKeys({ publicKey: supabase.anonKey, secretKey: supabase.serviceKey });
+  for (const e of keys.errors) console.error(`[config] ${e}`);
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
@@ -64,12 +69,19 @@ function createApp({ client, supabase = SUPABASE, db = createDb(process.env.DATA
   });
 
   // What the app needs to talk to Supabase itself: the project URL and the public key.
-  app.get('/api/config', (req, res) => res.json({ url: supabase.url, anonKey: supabase.anonKey, model: MODEL }));
+  // anonKey is the publishable key, or the legacy anon key. The name stays for devices that cached it.
+  app.get('/api/config', (req, res) => {
+    if (supabase.anonKey && !keys.publicKey) {
+      for (const e of keys.errors) console.error(`[config] ${e}`);
+      return res.status(503).json({ error: 'Deka is not set up correctly.' });
+    }
+    res.json({ url: supabase.url, anonKey: keys.publicKey, model: MODEL });
+  });
 
   // Everything else under /api needs a signed in person.
   app.use('/api', async (req, res, next) => {
     const token = (req.headers.authorization || '').replace(/^Bearer /, '');
-    const claims = token ? await verifyToken(token, { url: supabase.url, secret: supabase.jwtSecret, fetch: fetchImpl }) : null;
+    const claims = token ? await verifyToken(token, { url: supabase.url, secret: supabase.jwtSecret, apikey: keys.publicKey, fetch: fetchImpl }) : null;
     if (!claims) return res.status(401).json({ error: 'Signed out.' });
     req.user = { id: claims.sub, email: claims.email || '' };
     next();

@@ -170,6 +170,48 @@ test('deleting the account empties the folder and removes the user and every row
   assert.equal((await fetch(base + '/api/session', { headers: { Authorization: `Bearer ${dee.access_token}` } })).status, 200, 'the token itself still parses until it expires');
 });
 
+test('a secret key, a service_role key, or the same key twice: the browser gets no key and the log says why', async () => {
+  const { signJwt: sign } = require('./fake-supabase');
+  const serviceJwt = sign({ role: 'service_role', iss: 'supabase', exp: Math.floor(Date.now() / 1000) + 3600 }, 'x'.repeat(32));
+  const anonJwt = sign({ role: 'anon', iss: 'supabase', exp: Math.floor(Date.now() / 1000) + 3600 }, 'x'.repeat(32));
+  const cases = [
+    ['a secret key in the public variable', { anonKey: 'sb_secret_abc123', serviceKey: 'sb_secret_other' }, 503, /is a secret key \(sb_secret_\)/],
+    ['the legacy service_role key in the public variable', { anonKey: serviceJwt, serviceKey: serviceJwt + 'x' }, 503, /legacy service_role key/],
+    ['the same value in both', { anonKey: 'sb_publishable_same', serviceKey: 'sb_publishable_same' }, 200, /hold the same value/],
+    ['a secret key in both', { anonKey: 'sb_secret_both', serviceKey: 'sb_secret_both' }, 503, /is a secret key[\s\S]*hold the same value/],
+  ];
+  for (const [what, keys, status, said] of cases) {
+    const lines = [];
+    const err = console.error;
+    console.error = (...a) => lines.push(a.join(' '));
+    try {
+      const { server: s, base: at } = await open({ supabase: { url: fake.url, jwtSecret: '', ...keys } });
+      const startup = lines.join('\n');
+      const r = await fetch(at + '/api/config');
+      const body = await r.text();
+      s.close();
+      assert.match(startup, said, `${what}: logged at startup`);
+      assert.equal(r.status, status, `${what}: /api/config status`);
+      for (const k of Object.values(keys)) if (k.startsWith('sb_secret_') || k === serviceJwt) assert.ok(!body.includes(k), `${what}: no secret in /api/config`);
+      if (status === 503) assert.ok(lines.length > 1, `${what}: logged again when asked`);
+      for (const l of lines) for (const k of Object.values(keys)) assert.ok(!l.includes(k), `${what}: the log never shows a key`);
+    } finally { console.error = err; }
+  }
+  // The right keys, new or legacy, go out as they are, with nothing logged.
+  for (const keys of [{ anonKey: 'sb_publishable_ok', serviceKey: 'sb_secret_ok' }, { anonKey: anonJwt, serviceKey: serviceJwt }]) {
+    const lines = [];
+    const err = console.error;
+    console.error = (...a) => lines.push(a.join(' '));
+    try {
+      const { server: s, base: at } = await open({ supabase: { url: fake.url, jwtSecret: '', ...keys } });
+      const cfg = await (await fetch(at + '/api/config')).json();
+      s.close();
+      assert.equal(cfg.anonKey, keys.anonKey);
+      assert.deepEqual(lines, []);
+    } finally { console.error = err; }
+  }
+});
+
 test('the module default export is the app, for Vercel', () => {
   const mod = require('../server');
   assert.equal(typeof mod, 'function');

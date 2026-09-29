@@ -1238,7 +1238,15 @@ async function loadConfig() {
   return cfg;
 }
 const fail = (message, status, code) => Object.assign(new Error(message), { status, code });
-const sbHeaders = (auth, extra = {}) => ({ apikey: cfg.anonKey, Authorization: `Bearer ${auth && session ? session.access_token : cfg.anonKey}`, ...extra });
+// The key goes in apikey. Authorization carries the signed in person's token when there is one.
+// Without one, a new publishable key (sb_publishable_) is not a JWT and must not go in Authorization
+// (Supabase docs, "Understanding API keys"); a legacy anon key is a JWT and still goes there too.
+const newKey = k => /^sb_(publishable|secret)_/.test(k || '');
+const sbHeaders = (auth, extra = {}) => ({
+  apikey: cfg.anonKey,
+  ...(auth && session ? { Authorization: `Bearer ${session.access_token}` } : newKey(cfg.anonKey) ? {} : { Authorization: `Bearer ${cfg.anonKey}` }),
+  ...extra,
+});
 // A token lasts an hour. The refresh token renews it, and the session lives as long as it is used.
 let refreshing = null;
 async function freshSession() {

@@ -3,7 +3,12 @@
 // Every query runs as the role the request's token names, so row level security is the real thing.
 // Codes are never emailed: codeFor(email) hands the test the 6 digit code.
 //
-//   const fake = await startFake(); ... await fake.stop();
+// keys: 'legacy' gives JWT anon and service_role keys and sessions signed with a shared secret,
+// as older projects have. 'new' gives sb_publishable_ and sb_secret_ keys, which go only in the
+// apikey header, and sessions signed with a key pair published at /auth/v1/.well-known/jwks.json.
+// Like Supabase, a key sent as a Bearer token that is not a valid JWT gets a 401.
+//
+//   const fake = await startFake({ keys: 'new' }); ... await fake.stop();
 
 const path = require('path');
 const fs = require('fs');
@@ -47,10 +52,35 @@ async function startPostgres(port) {
   return { pool, stop: async () => { await pool.end(); await pg.stop(); fs.rmSync(dir, { recursive: true, force: true }); }, url: `postgres://postgres:postgres@127.0.0.1:${port}/postgres` };
 }
 
-async function startFake({ pgPort = 54300 + Math.floor(Math.random() * 200) } = {}) {
+async function startFake({ pgPort = 54300 + Math.floor(Math.random() * 200), keys = 'legacy' } = {}) {
   const db = await startPostgres(pgPort);
   const { pool } = db;
-  const anonKey = 'anon-test-key', serviceKey = 'service-test-key', jwtSecret = 'deka-test-jwt-secret-with-at-least-32-chars';
+  const jwtSecret = 'deka-test-jwt-secret-with-at-least-32-chars';
+  const far = Math.floor(Date.now() / 1000) + 10 * 365 * 86400;
+  const anonKey = keys === 'new' ? `sb_publishable_${crypto.randomBytes(12).toString('hex')}` : signJwt({ role: 'anon', iss: 'supabase', exp: far }, jwtSecret);
+  const serviceKey = keys === 'new' ? `sb_secret_${crypto.randomBytes(12).toString('hex')}` : signJwt({ role: 'service_role', iss: 'supabase', exp: far }, jwtSecret);
+  // New projects sign sessions with a key pair and publish the public half.
+  const pair = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const jwk = { ...pair.publicKey.export({ format: 'jwk' }), kid: 'deka-test-key', alg: 'ES256', use: 'sig' };
+  const signSession = payload => {
+    if (keys !== 'new') return signJwt(payload, jwtSecret);
+    const head = b64url(JSON.stringify({ alg: 'ES256', typ: 'JWT', kid: jwk.kid }));
+    const body = b64url(JSON.stringify(payload));
+    const sig = crypto.sign('sha256', Buffer.from(`${head}.${body}`), { key: pair.privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
+    return `${head}.${body}.${sig}`;
+  };
+  const readSession = token => {
+    if (keys !== 'new') return readJwt(token, jwtSecret);
+    const [h, b, sg] = String(token || '').split('.');
+    if (!h || !b || !sg) return null;
+    try {
+      if (JSON.parse(Buffer.from(h, 'base64url').toString()).alg !== 'ES256') return null;
+      if (!crypto.verify('sha256', Buffer.from(`${h}.${b}`), { key: pair.publicKey, dsaEncoding: 'ieee-p1363' }, Buffer.from(sg, 'base64url'))) return null;
+      const claims = JSON.parse(Buffer.from(b, 'base64url').toString());
+      return claims.exp && claims.exp < Date.now() / 1000 ? null : claims;
+    } catch { return null; }
+  };
+  const seen = { bearerKey: 0 };
   const codes = new Map(), refresh = new Map(), authCodes = new Map();
   let base = '';
   const oauth = { email: 'sam.rivera@example.com', full_name: 'Sam Rivera' };
@@ -69,16 +99,27 @@ async function startFake({ pgPort = 54300 + Math.floor(Math.random() * 200) } = 
       return out;
     } catch (e) { await c.query('rollback').catch(() => {}); throw e; } finally { c.release(); }
   }
+  // Who a request is, the way the Supabase gateway decides it.
   function claimsOf(req) {
+    const key = req.headers.apikey || '';
     const auth = (req.headers.authorization || '').replace(/^Bearer /, '');
-    if (auth && auth === serviceKey) return { role: 'service_role' };
-    if (auth && auth !== anonKey) { const c = readJwt(auth, jwtSecret); if (c) return c; return null; }
-    if (req.headers.apikey === anonKey || auth === anonKey) return { role: 'anon' };
-    return null;
+    if (keys === 'new') {
+      if (key !== anonKey && key !== serviceKey) return null;
+      if (auth) {
+        // Only a user's session belongs here. A key in Authorization is not a JWT: 401.
+        if (auth === anonKey || auth === serviceKey) seen.bearerKey += 1;
+        return readSession(auth);
+      }
+      return { role: key === serviceKey ? 'service_role' : 'anon' };
+    }
+    // Legacy: the JWT in Authorization, or the apikey when there is none, says the role.
+    if (key && key !== anonKey && key !== serviceKey) return null;
+    const c = readJwt(auth || key, jwtSecret);
+    return c && ['anon', 'service_role', 'authenticated'].includes(c.role) ? c : null;
   }
   const session = async user => {
     const exp = Math.floor(Date.now() / 1000) + 3600;
-    const access_token = signJwt({ sub: user.id, email: user.email, role: 'authenticated', aud: 'authenticated', iss: `${base}/auth/v1`, exp, iat: exp - 3600, session_id: crypto.randomUUID() }, jwtSecret);
+    const access_token = signSession({ sub: user.id, email: user.email, role: 'authenticated', aud: 'authenticated', iss: `${base}/auth/v1`, exp, iat: exp - 3600, session_id: crypto.randomUUID() });
     const refresh_token = crypto.randomBytes(12).toString('hex');
     refresh.set(refresh_token, user.id);
     return { access_token, token_type: 'bearer', expires_in: 3600, expires_at: exp, refresh_token, user: { id: user.id, email: user.email, user_metadata: user.raw_user_meta_data } };
@@ -104,6 +145,14 @@ async function startFake({ pgPort = 54300 + Math.floor(Math.random() * 200) } = 
   app.use(express.json({ limit: '4mb' }));
 
   /* GoTrue */
+  // The published signing keys: public, no key needed.
+  app.get('/auth/v1/.well-known/jwks.json', (req, res) => res.json({ keys: keys === 'new' ? [jwk] : [] }));
+  // Every other GoTrue call needs a valid key, and a key in Authorization only when it is a JWT.
+  app.use('/auth/v1', (req, res, next) => {
+    if (req.path.startsWith('/authorize') || req.path === '/logout') return next();
+    if (!claimsOf(req)) return res.status(401).json({ message: 'Invalid API key or JWT' });
+    next();
+  });
   app.post('/auth/v1/otp', async (req, res) => {
     const { email, create_user = true, data = {} } = req.body || {};
     if (!email) return res.status(400).json({ error_code: 'validation_failed', msg: 'email is required' });
@@ -293,7 +342,7 @@ async function startFake({ pgPort = 54300 + Math.floor(Math.random() * 200) } = 
   await new Promise(r => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
   return {
-    url: base, anonKey, serviceKey, jwtSecret, pool, router: app, oauth, files,
+    url: base, anonKey, serviceKey, jwtSecret: keys === 'new' ? '' : jwtSecret, keys, seen, pool, router: app, oauth, files, sign: signSession,
     databaseUrl: db.url,
     codeFor: email => codes.get(email),
     // A signed in user for tests, with the profile the trigger made.
