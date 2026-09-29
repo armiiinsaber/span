@@ -154,8 +154,9 @@ body {
   -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: default;
 }
 .scroller { position: absolute; inset: 0; overflow-x: clip; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
-.say, .bubble .bt, .read, input, textarea { -webkit-user-select: text; user-select: text; }
-input, textarea { cursor: auto; -webkit-touch-callout: default; }
+.say, .bubble .bt, .read { -webkit-user-select: text; user-select: text; }
+/* Every field selects, shows the caret and takes suggestions, whatever its ancestors say. */
+input, textarea, [contenteditable] { -webkit-user-select: text !important; user-select: text !important; -webkit-touch-callout: default; cursor: auto; }
 img, svg { -webkit-user-drag: none; }
 ::selection { background: color-mix(in srgb, var(--ink) 20%, transparent); color: var(--ink); }
 h1, h2, h3 { text-wrap: balance; font-weight: 400; margin: 0; }
@@ -898,7 +899,7 @@ function markChanges() {
 
 let pushing = false, pushTimer = null;
 function pushSoon() { clearTimeout(pushTimer); pushTimer = setTimeout(() => pushNow().catch(() => {}), 700); }
-function syncState(v) { if (ui.syncing !== v) { ui.syncing = v; if (ui.sub === 'profile') render(); } }
+function syncState(v) { if (ui.syncing !== v) { ui.syncing = v; if (ui.sub === 'profile' && !document.activeElement?.matches('input, textarea')) render(); } }
 // Sends the outbox, table by table. Rows and bare deletions go in separate calls, since one
 // call's rows must all carry the same columns.
 async function pushNow() {
@@ -1573,61 +1574,105 @@ function authIssues(f, { names = true } = {}) {
   if (f.confirm.trim().toLowerCase() !== f.email.trim().toLowerCase() || !f.confirm.trim()) out.confirm = "Emails don't match.";
   return out;
 }
-const field = (id, label, value, { type = 'text', hint = '', issue = '', auto = 'off', extra = '' } = {}) =>
-  `<div class="af"><label class="sr" for="${id}">${label}</label><input class="input" id="${id}" type="${type}" value="${esc(value)}" placeholder="${label}" autocomplete="${auto}" ${extra}>${issue ? `<p class="af-issue" role="alert">${nb(issue)}</p>` : hint ? `<p class="af-hint">${nb(hint)}</p>` : ''}</div>`;
+// The attributes that let iOS autofill and suggest the right thing in each field.
+const FIELD = {
+  first: { label: 'First name', attrs: 'type="text" autocomplete="given-name" autocapitalize="words"' },
+  last: { label: 'Last name', attrs: 'type="text" autocomplete="family-name" autocapitalize="words"' },
+  username: { label: 'Username', attrs: 'type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="20"' },
+  email: { label: 'Email', attrs: 'type="email" autocomplete="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"' },
+  confirm: { label: 'Confirm email', attrs: 'type="email" autocomplete="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"' },
+};
+// A field is drawn once. Its note below (a problem, or "Available.") is filled in by paintForm,
+// which never touches the input itself.
+const field = (id, value) => `<div class="af"><label class="sr" for="${id}">${FIELD[id].label}</label><input class="input" id="${id}" ${FIELD[id].attrs} value="${esc(value)}" placeholder="${FIELD[id].label}"><p class="af-note" id="note-${id}" hidden></p></div>`;
+// Usernames are kept lowercase, but only once typing is done: on blur and on submit.
+const normName = v => String(v || '').trim().toLowerCase();
+const codeDigits = v => String(v || '').replace(/\D/g, '').slice(0, 6);
+// What each form shows around its fields: the notes, whether it can be sent, the button's words.
+function formState(kind, st) {
+  const f = st.form || {}, a = authUi();
+  if (kind === 'signin') return { notes: {}, ok: EMAIL.test((f.email || '').trim()), label: st.busy ? 'Sending the code' : 'Continue' };
+  if (kind === 'code') return { notes: {}, ok: codeDigits(st.code).length === 6, label: st.busy ? 'Checking' : 'Continue' };
+  const u = normName(f.username);
+  const names = kind !== 'username' || !((S.profile && S.profile.first) || '').trim();
+  const emails = kind === 'signup';
+  const issues = authIssues({ first: f.first || '', last: f.last || '', username: u, email: emails ? f.email : 'x@y.z', confirm: emails ? f.confirm : 'x@y.z' }, { names });
+  const same = kind === 'account' && u === (S.profile && S.profile.username);
+  const notes = {};
+  for (const k of ['first', 'last', 'username', 'email', 'confirm']) {
+    if (st.touched[k] && issues[k]) notes[k] = ['issue', issues[k]];
+    else if (k === 'username' && !issues.username && !same && a.taken[u] === false) notes[k] = ['hint', 'Available.'];
+    else notes[k] = null;
+  }
+  const label = kind === 'signup' ? (st.busy ? 'Sending the code' : 'Create account') : kind === 'account' ? 'Save' : 'Continue';
+  return { notes, ok: !Object.keys(issues).length && (same || a.taken[u] === false), label };
+}
+// Updates the notes, the error and the button of the form on screen, in place.
+function paintForm() {
+  const form = document.querySelector('#sheet form[data-form=account]') || $main.querySelector('.auth form');
+  if (!form) return;
+  const kind = form.dataset.form;
+  const st = kind === 'account' ? ui.sheet : authUi();
+  if (!st) return;
+  const { notes, ok, label } = formState(kind, st);
+  for (const [id, note] of Object.entries(notes)) {
+    const el = form.querySelector(`#note-${id}`);
+    if (!el) continue;
+    const cls = note ? (note[0] === 'issue' ? 'af-note af-issue' : 'af-note af-hint') : 'af-note';
+    const html = note ? nb(note[1]) : '';
+    if (el.className !== cls) el.className = cls;
+    if (el.innerHTML !== html) el.innerHTML = html;
+    el.hidden = !note;
+    if (note && note[0] === 'issue') el.setAttribute('role', 'alert'); else el.removeAttribute('role');
+  }
+  const err = form.querySelector('.af-error');
+  if (err) { const html = st.error ? nb(st.error) : ''; if (err.innerHTML !== html) err.innerHTML = html; err.hidden = !st.error; }
+  const btn = form.querySelector('[type=submit]');
+  if (btn) { btn.disabled = !ok || Boolean(st.busy); if (btn.textContent !== label) btn.textContent = label; }
+}
 const oauthButtons = () => `<div class="oauth">
   <button type="button" class="apple-btn" data-a="oauth" data-v="apple"><svg viewBox="0 0 384 512" aria-hidden="true"><path fill="currentColor" d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>Sign in with Apple</button>
   <button type="button" class="google-btn" data-a="oauth" data-v="google"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Sign in with Google</button></div>`;
+// Each screen draws its fields once; paintForm fills in the notes and the button right after.
 function authView() {
   const a = authUi(), f = a.form;
-  const err = a.error ? `<p class="af-issue" role="alert">${nb(a.error)}</p>` : '';
-  const busy = a.busy ? ' disabled' : '';
+  const err = '<p class="af-issue af-error" role="alert" hidden></p>';
+  const submit = '<button class="btn primary block" type="submit" disabled></button>';
   if (a.screen === 'signup') {
-    const issues = authIssues(f);
-    const show = k => (a.touched[k] ? issues[k] || '' : '');
-    const ok = !Object.keys(issues).length && a.taken[f.username] === false;
     return `<div class="auth center fade">${mark('medium')}<h1 class="display small">Create your&nbsp;account</h1>
       <form data-form="signup" novalidate>
-        ${field('first', 'First name', f.first, { auto: 'given-name', issue: show('first') })}
-        ${field('last', 'Last name', f.last, { auto: 'family-name', issue: show('last') })}
-        ${field('username', 'Username', f.username, { auto: 'username', issue: show('username'), hint: a.taken[f.username] === false ? 'Available.' : '', extra: 'autocapitalize="none" spellcheck="false" maxlength="20"' })}
-        ${field('email', 'Email', f.email, { type: 'email', auto: 'email', issue: show('email'), extra: 'autocapitalize="none" inputmode="email"' })}
-        ${field('confirm', 'Confirm email', f.confirm, { type: 'email', auto: 'off', issue: show('confirm'), extra: 'autocapitalize="none" inputmode="email"' })}
-        ${err}<button class="btn primary block" type="submit"${ok && !a.busy ? '' : ' disabled'}>${a.busy ? 'Sending the code' : 'Create account'}</button>
+        ${field('first', f.first)}${field('last', f.last)}${field('username', f.username)}${field('email', f.email)}${field('confirm', f.confirm)}
+        ${err}${submit}
         <button type="button" class="link" data-a="auth-go" data-v="start">I have an account</button></form></div>`;
   }
   if (a.screen === 'code') {
     return `<div class="auth center fade">${mark('medium')}<h1 class="display small">Check your&nbsp;email</h1>
       <p class="lede">${nb(`A 6 digit code went to ${a.codeFor}.`)}</p>
       <form data-form="code" novalidate>
-        <div class="af"><label class="sr" for="code">Code</label><input class="input code" id="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" placeholder="000000" value="${esc(a.code)}"${busy}></div>
-        ${err}<button class="btn primary block" type="submit"${a.code.length === 6 && !a.busy ? '' : ' disabled'}>${a.busy ? 'Checking' : 'Continue'}</button>
-        <button type="button" class="link" data-a="auth-resend"${busy}>Send a new code</button>
+        <div class="af"><label class="sr" for="code">Code</label><input class="input code" id="code" type="text" inputmode="numeric" autocomplete="one-time-code" autocorrect="off" spellcheck="false" placeholder="000000" value="${esc(a.code)}"></div>
+        ${err}${submit}
+        <button type="button" class="link" data-a="auth-resend">Send a new code</button>
         <button type="button" class="link" data-a="auth-go" data-v="${a.mode === 'signup' ? 'signup' : 'start'}">Back</button></form></div>`;
   }
   if (a.screen === 'username') {
     // After Apple or Google: only what the provider did not give.
-    const p = S.profile || {};
-    const needNames = !(p.first || '').trim();
-    const issues = authIssues({ ...f, email: 'x@y.z', confirm: 'x@y.z' }, { names: needNames });
-    const show = k => (a.touched[k] ? issues[k] || '' : '');
-    const ok = !Object.keys(issues).length && a.taken[f.username] === false;
+    const needNames = !((S.profile && S.profile.first) || '').trim();
     return `<div class="auth center fade">${mark('medium')}<h1 class="display small">Pick a&nbsp;username</h1>
       <form data-form="username" novalidate>
-        ${needNames ? field('first', 'First name', f.first, { auto: 'given-name', issue: show('first') }) + field('last', 'Last name', f.last, { auto: 'family-name', issue: show('last') }) : ''}
-        ${field('username', 'Username', f.username, { auto: 'username', issue: show('username'), hint: a.taken[f.username] === false ? 'Available.' : '', extra: 'autocapitalize="none" spellcheck="false" maxlength="20"' })}
-        ${err}<button class="btn primary block" type="submit"${ok && !a.busy ? '' : ' disabled'}>Continue</button>
+        ${needNames ? field('first', f.first) + field('last', f.last) : ''}${field('username', f.username)}
+        ${err}${submit}
         <button type="button" class="link" data-a="sign-out">Sign out</button></form></div>`;
   }
   return `<div class="auth start center fade">${mark('large')}<h1 class="display">Deka</h1>
     <form data-form="signin" novalidate>
-      ${field('email', 'Email', f.email, { type: 'email', auto: 'email', extra: 'autocapitalize="none" inputmode="email"' })}
-      ${err}<button class="btn primary block" type="submit"${EMAIL.test(f.email.trim()) && !a.busy ? '' : ' disabled'}>${a.busy ? 'Sending the code' : 'Continue'}</button>
+      ${field('email', f.email)}
+      ${err}${submit}
       ${oauthButtons()}
       <button type="button" class="link" data-a="auth-go" data-v="signup">New here? Create an&nbsp;account</button></form></div>`;
 }
 let takenTimer = null;
 // Asks the database whether the username is free, a moment after typing stops.
+// The answer only ever changes the note and the button; the field is left alone.
 function checkUsername(u) {
   const a = authUi();
   clearTimeout(takenTimer);
@@ -1637,33 +1682,34 @@ function checkUsername(u) {
       const taken = await sb('/rest/v1/rpc/username_taken', { method: 'POST', body: { u }, auth: false });
       a.taken[u] = taken === true && u !== (S.profile && S.profile.username);
     } catch { a.taken[u] = false; }
-    if (ui.auth === a) render();
-  }, 350);
+    paintForm();
+  }, 400);
 }
 async function sendCode(email, { signup = false, data = {} } = {}) {
   const a = authUi();
-  a.busy = true; a.error = ''; render();
+  a.busy = true; a.error = ''; paintForm();
   try {
     await sb('/auth/v1/otp', { method: 'POST', body: { email, create_user: signup, ...(signup ? { data } : {}) }, auth: false });
     a.screen = 'code'; a.codeFor = email; a.code = ''; a.mode = signup ? 'signup' : 'signin';
   } catch (err) {
     a.error = err.status === 422 && !signup ? 'No account with that email. Create one below.' : err.status === 429 ? 'Too many tries. Wait a few minutes.' : err.status === 503 ? err.message : !navigator.onLine ? 'You are offline.' : 'The code could not be sent. Try again.';
   }
-  a.busy = false; render();
-  if (a.screen === 'code') $('code')?.focus();
+  a.busy = false;
+  if (a.screen === 'code' && !document.getElementById('code')) { render(); $('code')?.focus(); } else paintForm();
 }
 async function verifyCode() {
   const a = authUi();
-  a.busy = true; a.error = ''; render();
+  if (a.busy) return;
+  a.busy = true; a.error = ''; paintForm();
   try {
-    const x = await sb('/auth/v1/verify', { method: 'POST', body: { type: 'email', email: a.codeFor, token: a.code }, auth: false });
+    const x = await sb('/auth/v1/verify', { method: 'POST', body: { type: 'email', email: a.codeFor, token: codeDigits(a.code) }, auth: false });
     setSession(x);
     await afterSignIn();
     return;
   } catch (err) {
     a.error = err.status === 403 || err.status === 401 ? 'That code is not right, or it expired.' : !navigator.onLine ? 'You are offline.' : 'Could not check the code. Try again.';
   }
-  a.busy = false; render();
+  a.busy = false; paintForm();
 }
 // Apple and Google, through Supabase, with a code exchange when they send us back.
 const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -1700,14 +1746,14 @@ async function afterSignIn() {
 function needsUsername() { return signedIn() && S.profile && !S.profile.username; }
 async function saveUsername() {
   const a = authUi(), f = a.form;
-  a.busy = true; a.error = ''; render();
-  const body = { username: f.username, ...(!(S.profile.first || '').trim() ? { first_name: f.first.trim(), last_name: f.last.trim() } : {}), updated_at: new Date().toISOString() };
+  a.busy = true; a.error = ''; paintForm();
+  const body = { username: normName(f.username), ...(!(S.profile.first || '').trim() ? { first_name: f.first.trim(), last_name: f.last.trim() } : {}), updated_at: new Date().toISOString() };
   try {
     const rows = await rest('profiles', `id=eq.${userId()}`, { method: 'PATCH', body, headers: { Prefer: 'return=representation' } });
     if (rows && rows[0]) applyProfile(rows[0], { force: true });
     ui.auth = null;
-  } catch (err) { a.error = err.status === 409 ? 'Taken.' : 'Could not save. Try again.'; a.busy = false; }
-  render();
+    render();
+  } catch (err) { a.error = err.status === 409 ? 'Taken.' : 'Could not save. Try again.'; a.busy = false; paintForm(); }
 }
 async function signOut({ quiet = false } = {}) {
   const was = session;
@@ -2279,20 +2325,15 @@ function profileView() {
 // Edit name and username, in a sheet.
 function accountSheet(sh) {
   const f = sh.form;
-  const issues = authIssues({ ...f, email: 'x@y.z', confirm: 'x@y.z' });
-  const show = k => (sh.touched[k] ? issues[k] || '' : '');
-  const same = f.username === (S.profile && S.profile.username);
-  const ok = !Object.keys(issues).length && (same || authUi().taken[f.username] === false);
   return `<form class="form" data-form="account" novalidate>
-    ${field('first', 'First name', f.first, { auto: 'given-name', issue: show('first') })}
-    ${field('last', 'Last name', f.last, { auto: 'family-name', issue: show('last') })}
-    ${field('username', 'Username', f.username, { auto: 'username', issue: show('username'), hint: !same && authUi().taken[f.username] === false ? 'Available.' : '', extra: 'autocapitalize="none" spellcheck="false" maxlength="20"' })}
-    ${sh.error ? `<p class="af-issue" role="alert">${nb(sh.error)}</p>` : ''}
-    <button class="btn primary block" type="submit"${ok && !sh.busy ? '' : ' disabled'}>Save</button></form>`;
+    ${field('first', f.first)}${field('last', f.last)}${field('username', f.username)}
+    <p class="af-issue af-error" role="alert" hidden></p>
+    <button class="btn primary block" type="submit" disabled>Save</button></form>`;
 }
 async function saveAccount() {
   const sh = ui.sheet, f = sh.form;
-  sh.busy = true; sh.error = ''; renderSheet();
+  f.username = normName(f.username);
+  sh.busy = true; sh.error = ''; paintForm();
   try {
     const rows = await rest('profiles', `id=eq.${userId()}`, { method: 'PATCH', body: { first_name: f.first.trim(), last_name: f.last.trim(), username: f.username, updated_at: new Date().toISOString() }, headers: { Prefer: 'return=representation' } });
     if (rows && rows[0]) applyProfile(rows[0], { force: true });
@@ -2304,7 +2345,7 @@ async function saveAccount() {
       ui.sheet = null; render(); toast('Saved. It syncs when you are online.');
       return;
     }
-    sh.error = err.status === 409 ? 'Taken.' : 'Could not save. Try again.'; sh.busy = false; renderSheet();
+    sh.error = err.status === 409 ? 'Taken.' : 'Could not save. Try again.'; sh.busy = false; paintForm();
   }
 }
 
@@ -2313,7 +2354,9 @@ async function saveAccount() {
 function renderBar() {
   const brand = `<span class="brand" role="img" aria-label="Deka">${mark('header')}<span class="mark" aria-hidden="true">Deka</span></span>`;
   if (ui.checking) { $bar.innerHTML = ''; return; }
-  if (!signedIn() || needsUsername() || !S.seen || !S.settings.theme) { $bar.innerHTML = brand; return; }
+  // Signing in or up: Deka shows once, as the large mark and name on the screen itself.
+  if (!signedIn() || needsUsername()) { $bar.innerHTML = ''; return; }
+  if (!S.seen || !S.settings.theme) { $bar.innerHTML = brand; return; }
   const left = ui.sub
     ? `<button class="back" data-a="back" aria-label="Back">${I.back}</button>`
     : brand;
@@ -2427,6 +2470,7 @@ function renderSheet() {
     <div id="sheetBody">${body}</div></div></div>`;
   $main.inert = true; $tabs.inert = true; $dock.inert = true;
   sheetDetent();
+  if (sh.kind === 'account') paintForm();
 }
 
 function sheetDays(sh) {
@@ -2488,9 +2532,9 @@ function render() {
   renderBar();
   let kept = false;
   if (ui.checking) $main.innerHTML = pendingView();
-  else if (out) $main.innerHTML = authView();
+  else if (out) { $main.innerHTML = authView(); paintForm(); }
   else if (ui.status) $main.innerHTML = waitingView(ui.status);
-  else if (name) { authUi().screen = 'username'; $main.innerHTML = authView(); }
+  else if (name) { authUi().screen = 'username'; $main.innerHTML = authView(); paintForm(); }
   else if (ask) $main.innerHTML = themeView();
   else if (ui.status) $main.innerHTML = waitingView(ui.status);
   else if (intro) $main.innerHTML = introView();
@@ -3459,13 +3503,14 @@ document.addEventListener('submit', e => {
   if (kind === 'signup') {
     const a = authUi(), f = a.form;
     a.touched = { first: 1, last: 1, username: 1, email: 1, confirm: 1 };
-    if (Object.keys(authIssues(f)).length || a.taken[f.username] !== false) { render(); return; }
-    sendCode(f.email.trim(), { signup: true, data: { first_name: f.first.trim(), last_name: f.last.trim(), username: f.username } });
+    const st = formState('signup', a);
+    if (!st.ok) { paintForm(); return; }
+    sendCode(f.email.trim(), { signup: true, data: { first_name: f.first.trim(), last_name: f.last.trim(), username: normName(f.username) } });
     return;
   }
-  if (kind === 'code') { if (authUi().code.length === 6) verifyCode(); return; }
-  if (kind === 'username') { const a = authUi(); a.touched = { first: 1, last: 1, username: 1 }; if (a.taken[a.form.username] === false) saveUsername(); else render(); return; }
-  if (kind === 'account') { const sh = ui.sheet; sh.touched = { first: 1, last: 1, username: 1 }; saveAccount(); return; }
+  if (kind === 'code') { if (codeDigits(authUi().code).length === 6) verifyCode(); return; }
+  if (kind === 'username') { const a = authUi(); a.touched = { first: 1, last: 1, username: 1 }; if (formState('username', a).ok) saveUsername(); else paintForm(); return; }
+  if (kind === 'account') { const sh = ui.sheet; sh.touched = { first: 1, last: 1, username: 1 }; if (formState('account', sh).ok) saveAccount(); else paintForm(); return; }
   if (kind === 'sheet') { if (ui.sheet && ui.sheet.kind === 'new') addFromSheet(); else closeSheet(); return; }
   if (kind === 'feedback') {
     const sh = ui.sheet, msg = sh && msgById(sh.mid);
@@ -3490,22 +3535,33 @@ document.addEventListener('submit', e => {
 });
 
 let noteTimer = null;
+/* Sign in, sign up and the account sheet. The value is only read here, never written back, and the
+   input is never redrawn, so iOS suggestions, autofill, paste and composing all land whole. The
+   notes and the button around the field follow along. Tidying (lowercase, trim) waits for blur. */
+let composing = false;
+const authField = t => t && ['first', 'last', 'username', 'email', 'confirm', 'code'].includes(t.id) && t.closest('form[data-form]');
+function fieldChanged(t, isComposing) {
+  const st = t.closest('#sheet') ? ui.sheet : authUi();
+  if (!st) return;
+  if (t.id === 'code') st.code = t.value;
+  else st.form[t.id] = t.value;
+  if (isComposing || composing) return;
+  if (t.id !== 'code') st.touched[t.id] = true;
+  if (t.id === 'username') checkUsername(normName(t.value));
+  paintForm();
+  if (t.id === 'code' && codeDigits(t.value).length === 6) verifyCode();
+}
+document.addEventListener('compositionstart', () => { composing = true; });
+document.addEventListener('compositionend', e => { composing = false; if (authField(e.target)) fieldChanged(e.target, false); });
+document.addEventListener('focusout', e => {
+  const t = e.target;
+  if (!authField(t) || composing) return;
+  const tidy = t.id === 'username' ? normName(t.value) : t.id === 'email' || t.id === 'confirm' ? t.value.trim() : t.value;
+  if (tidy !== t.value) { t.value = tidy; fieldChanged(t, false); }
+});
 document.addEventListener('input', e => {
   const t = e.target;
-  // Sign up, sign in and the account sheet check each field as it is typed.
-  if (['first', 'last', 'username', 'email', 'confirm', 'code'].includes(t.id) && t.closest('[data-form]')) {
-    const inSheet = Boolean(t.closest('#sheet'));
-    const a = inSheet ? ui.sheet : authUi();
-    if (t.id === 'code') { a.code = t.value.replace(/\D/g, '').slice(0, 6); if (t.value !== a.code) t.value = a.code; const go = document.querySelector('main [type=submit]'); if (go) go.disabled = a.code.length !== 6 || a.busy; if (a.code.length === 6) verifyCode(); return; }
-    if (t.id === 'username') { const v = t.value.toLowerCase().replace(/[^a-z0-9._]/g, '').slice(0, 20); if (v !== t.value) t.value = v; a.form.username = v; checkUsername(v); }
-    else a.form[t.id] = t.value;
-    a.touched[t.id] = true;
-    // Redraw around the field without losing the cursor.
-    const at = t.selectionStart, id = t.id;
-    if (inSheet) renderSheet(); else render();
-    const again = $(id); if (again) { again.focus({ preventScroll: true }); try { again.setSelectionRange(at, at); } catch {} }
-    return;
-  }
+  if (authField(t)) { fieldChanged(t, e.isComposing); return; }
   if (t.id === 'msg') {
     autosize(t);
     if (!$('tooLong').hidden && t.value.trim().length <= 2000) { $('tooLong').hidden = true; setDockHeight(); }

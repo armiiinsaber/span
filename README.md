@@ -139,7 +139,9 @@ vercel dev                # http://localhost:3000
 npm test
 ```
 
-`npm test` includes browser tests of the mobile flows in `test/ui.test.js`. They need Chrome (or set `CHROME_PATH`) and Node 22 or newer, and skip themselves otherwise.
+`npm test` includes browser tests of the mobile flows in `test/ui.test.js`. They need Chrome (or set `CHROME_PATH`) and Node 22 or newer, and skip themselves otherwise. `test/webkit.test.js` types into every field in Safari's engine with an iPhone profile (keystrokes, a pasted email, an autocorrect suggestion, IME composition); it needs `npx playwright install webkit` once and skips without it.
+
+Fields are drawn once and never redrawn or rewritten while someone types, so iOS suggestions, autofill and composing land whole. Live checks only update the note under a field and the button; tidying a username or an email waits for blur or submit.
 
 `vercel dev` runs the app the way Vercel does: files in `public/` are served as static files and `server.js` runs as the function. Without the CLI, `npm run dev` serves the same thing with plain Node.
 

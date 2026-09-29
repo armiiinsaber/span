@@ -1012,7 +1012,7 @@ test.describe('Deka app', { skip }, () => {
   /* Accounts */
 
   const type = (id, value) => page.js(`(() => { const e = document.getElementById(${JSON.stringify(id)}); e.value = ${JSON.stringify(value)}; e.dispatchEvent(new Event('input', { bubbles: true })); })()`);
-  const issues = () => page.js("[...document.querySelectorAll('.af-issue')].map(e => e.textContent.replace(/\\u00a0/g, ' '))");
+  const issues = () => page.js("[...document.querySelectorAll('.af-issue:not([hidden])')].map(e => e.textContent.replace(/\\u00a0/g, ' '))");
   const rowsOf = async (table, uid) => (await fake.pool.query(`select * from public.${table} where user_id = $1 and not deleted order by id`, [uid])).rows;
   const signedOut = () => seed(null, 'deka.v1', { signedOut: true });
   let migrated = null;
@@ -1024,8 +1024,14 @@ test.describe('Deka app', { skip }, () => {
     assert.deepEqual(await page.js("[...document.querySelectorAll('.auth input')].map(i => i.placeholder)"), ['First name', 'Last name', 'Username', 'Email', 'Confirm email']);
     assert.equal(await page.js("document.querySelector('.auth [type=submit]').disabled"), true);
     await type('first', 'Kai'); await type('last', 'Moreau');
+    // What is typed stays as typed; the note says what is wrong, and blur makes it lowercase.
     await type('username', 'Kai Moreau!');
-    assert.equal(await page.js("document.getElementById('username').value"), 'kaimoreau', 'lowercase, only letters, numbers, dots and underscores');
+    assert.equal(await page.js("document.getElementById('username').value"), 'Kai Moreau!');
+    assert.deepEqual(await issues(), ['Letters, numbers, dots and underscores, 3 to 20.']);
+    await type('username', 'Kai.Moreau');
+    assert.deepEqual(await issues(), []);
+    await page.js("(() => { const u = document.getElementById('username'); u.focus(); u.blur(); })()");
+    assert.equal(await page.js("document.getElementById('username').value"), 'kai.moreau');
     await type('username', 'ab');
     assert.deepEqual(await issues(), ['Letters, numbers, dots and underscores, 3 to 20.']);
     await fake.user('taken@example.com', { username: 'kai.taken' });
