@@ -143,9 +143,10 @@ function createApp({ client, supabase = SUPABASE, db = createDb(process.env.DATA
     } finally {
       clearInterval(ping);
       send('done', {});
-      res.end();
+      // The turn is counted before the response ends, so the next request always sees it.
       const kind = body.event && body.event.kind ? body.event.kind : 'chat';
-      db.recordUsage({ userId: req.user.id, day, kind, model: MODEL, ...stats, cost: costOf(MODEL, stats) }).catch(err => console.error('[chat] usage not saved', err.message));
+      await db.recordUsage({ userId: req.user.id, day, kind, model: MODEL, ...stats, cost: costOf(MODEL, stats) }).catch(err => console.error('[chat] usage not saved', err.message));
+      res.end();
     }
   });
 
