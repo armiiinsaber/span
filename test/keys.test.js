@@ -22,35 +22,60 @@ const CHROME = process.env.CHROME_PATH || [
 const skip = !CHROME || typeof WebSocket === 'undefined' ? 'needs Chrome and Node 22 or newer' : false;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function openChrome() {
+// Starts Chrome and opens a page over the DevTools protocol. Every step has a time limit and a
+// clear error, and a start that fails is retried with a fresh Chrome, so a slow machine running
+// other test files at once never leaves a test waiting forever or a Chrome behind.
+const within = (p, ms, what) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`timed out: ${what}`)), ms))]);
+async function launchChrome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'deka-keys-'));
   const proc = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' });
-  let port;
-  for (let i = 0; i < 100 && !port; i++) { try { port = fs.readFileSync(path.join(dir, 'DevToolsActivePort'), 'utf8').split('\n')[0]; } catch { await sleep(100); } }
-  const v = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
-  const ws = new WebSocket(v.webSocketDebuggerUrl);
-  let id = 0; const pending = new Map();
-  ws.onmessage = e => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } };
-  await new Promise(r => { ws.onopen = r; });
-  const send = (method, params = {}, sessionId) => new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params, sessionId })); });
-  const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' });
-  const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true });
-  const S = (m, p) => send(m, p, sessionId);
-  await S('Page.enable'); await S('Runtime.enable'); await S('Network.enable');
-  await S('Network.setBypassServiceWorker', { bypass: true });
-  await S('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
-  const js = async expr => {
-    const r = await S('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
-    if (r.result.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || 'page error');
-    return r.result.result.value;
+  let ws = null;
+  const kill = async () => {
+    try { ws && ws.close(); } catch {}
+    if (proc.exitCode === null) { const gone = new Promise(r => proc.once('exit', r)); proc.kill(); await within(gone, 5000, 'Chrome to quit').catch(() => proc.kill('SIGKILL')); }
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   };
-  const waitFor = async (expr, ms = 8000) => {
-    const t0 = Date.now();
-    while (Date.now() - t0 < ms) { if (await js(`Boolean(${expr})`).catch(() => false)) return; await sleep(40); }
-    throw new Error(`timed out waiting for ${expr}`);
-  };
-  const close = async () => { ws.close(); const gone = new Promise(r => proc.once('exit', r)); proc.kill(); await gone; fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); };
-  return { S, js, waitFor, close };
+  try {
+    // The file names the port once its second line, the browser's path, is written too.
+    let port;
+    for (let i = 0; i < 150 && !port; i++) {
+      try { const lines = fs.readFileSync(path.join(dir, 'DevToolsActivePort'), 'utf8').split('\n'); if (lines.length > 1 && lines[1]) port = lines[0]; } catch {}
+      if (!port) await sleep(100);
+    }
+    if (!port) throw new Error('Chrome did not open its DevTools port');
+    const v = await within(fetch(`http://127.0.0.1:${port}/json/version`).then(r => r.json()), 5000, 'the DevTools address');
+    ws = new WebSocket(v.webSocketDebuggerUrl);
+    let id = 0; const pending = new Map();
+    ws.onmessage = e => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } };
+    await within(new Promise((ok, no) => { ws.onopen = ok; ws.onerror = () => no(new Error('the DevTools socket failed')); }), 5000, 'the DevTools socket');
+    const send = (method, params = {}, sessionId) => within(new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params, sessionId })); }), 15000, method);
+    const created = await send('Target.createTarget', { url: 'about:blank' });
+    if (!created.result) throw new Error(`Target.createTarget: ${JSON.stringify(created.error || created)}`);
+    const attached = await send('Target.attachToTarget', { targetId: created.result.targetId, flatten: true });
+    if (!attached.result) throw new Error(`Target.attachToTarget: ${JSON.stringify(attached.error || attached)}`);
+    const S = (m, p) => send(m, p, attached.result.sessionId);
+    await S('Page.enable'); await S('Runtime.enable'); await S('Network.enable');
+    await S('Network.setBypassServiceWorker', { bypass: true });
+    await S('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
+    const js = async expr => {
+      const r = await S('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
+      if (r.result.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || 'page error');
+      return r.result.result.value;
+    };
+    const waitFor = async (expr, ms = 8000) => {
+      const t0 = Date.now();
+      while (Date.now() - t0 < ms) { if (await js(`Boolean(${expr})`).catch(() => false)) return; await sleep(40); }
+      throw new Error(`timed out waiting for ${expr}`);
+    };
+    return { S, js, waitFor, close: kill };
+  } catch (err) { await kill(); throw err; }
+}
+async function openChrome() {
+  let last;
+  for (let tries = 0; tries < 3; tries++) {
+    try { return await launchChrome(); } catch (err) { last = err; }
+  }
+  throw last;
 }
 
 for (const keys of ['new', 'legacy']) {

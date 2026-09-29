@@ -52,8 +52,20 @@ async function startPostgres(port) {
   return { pool, stop: async () => { await pool.end(); await pg.stop(); fs.rmSync(dir, { recursive: true, force: true }); }, url: `postgres://postgres:postgres@127.0.0.1:${port}/postgres` };
 }
 
-async function startFake({ pgPort = 54300 + Math.floor(Math.random() * 200), keys = 'legacy' } = {}) {
-  const db = await startPostgres(pgPort);
+// A port nobody is using right now, from the system, so test files running side by side never
+// start two databases on the same one.
+const freePort = () => new Promise((ok, fail) => {
+  const srv = require('net').createServer();
+  srv.once('error', fail);
+  srv.listen(0, '127.0.0.1', () => { const { port } = srv.address(); srv.close(() => ok(port)); });
+});
+
+async function startFake({ pgPort, keys = 'legacy' } = {}) {
+  let db = null;
+  for (let tries = 0; !db; tries++) {
+    try { db = await startPostgres(pgPort || await freePort()); }
+    catch (err) { if (pgPort || tries >= 2) throw err; }
+  }
   const { pool } = db;
   const jwtSecret = 'deka-test-jwt-secret-with-at-least-32-chars';
   const far = Math.floor(Date.now() / 1000) + 10 * 365 * 86400;
