@@ -54,13 +54,14 @@ async function arrive(page, sel, how, text) {
 }
 const HOWS = ['type', 'paste', 'replace', 'compose'];
 
-async function setup(keysSignedIn, { empty = false } = {}) {
+// desktop: a window with a mouse and a physical keyboard. noClient: a server with no Claude set up.
+async function setup(keysSignedIn, { empty = false, desktop = false, noClient = false } = {}) {
   const fake = await startFake();
   const db = createDb(fake.databaseUrl);
-  const server = createApp({ client: mock, db, chatPerTenMinutes: 1000, supabase: { url: fake.url, anonKey: fake.anonKey, serviceKey: fake.serviceKey, jwtSecret: fake.jwtSecret } }).listen(0);
+  const server = createApp({ client: noClient ? null : mock, db, chatPerTenMinutes: 1000, anthropicKey: noClient ? '' : 'sk-ant-test', databaseUrl: fake.databaseUrl, supabase: { url: fake.url, anonKey: fake.anonKey, serviceKey: fake.serviceKey, jwtSecret: fake.jwtSecret } }).listen(0);
   await new Promise(r => server.once('listening', r));
   const base = `http://127.0.0.1:${server.address().port}/`;
-  const context = await browser.newContext({ ...devices['iPhone 15'], viewport: { width: 390, height: 844 } });
+  const context = await browser.newContext(desktop ? { viewport: { width: 1280, height: 800 }, hasTouch: false, isMobile: false } : { ...devices['iPhone 15'], viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   await page.goto(base);
   const config = { url: fake.url, anonKey: fake.anonKey };
@@ -437,6 +438,112 @@ test('the color scheme is the resolved theme, before paint, on the root, the met
       const r = await read();
       assert.deepEqual([r.inline, r.root, r.meta, r.time], [want, want, want, want], `Profile set to ${choice}`);
     }
+  } finally { await done(); }
+});
+
+const sentCount = page => page.evaluate(() => document.querySelectorAll('.msg.user').length);
+
+test('on a phone the return key makes a new line and only the send button sends', async t => {
+  if (why) return t.skip(why);
+  const { page, done } = await setup(true, { empty: true });
+  try {
+    await page.waitForSelector('#msg');
+    assert.equal(await page.evaluate(() => matchMedia('(hover: none) and (pointer: coarse)').matches), true, 'a touch screen');
+    assert.equal(await page.getAttribute('#msg', 'enterkeyhint'), 'enter', 'return, not a send arrow');
+    await page.click('#msg');
+    await page.keyboard.type('one');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('two');
+    assert.equal(await page.inputValue('#msg'), 'one\ntwo');
+    assert.equal(await sentCount(page), 0, 'return never sends');
+    await page.click('#dock .send');
+    await page.waitForFunction(() => document.querySelector('.msg.user .bt'));
+    assert.equal(await page.evaluate(() => document.querySelector('.msg.user .bt').textContent), 'one\ntwo');
+    await page.waitForFunction(() => document.querySelector('.msg.deka') && !document.querySelector('#chat[aria-busy]'), null, { timeout: 8000 });
+  } finally { await done(); }
+});
+
+test('with a physical keyboard Enter sends and Shift Enter makes a new line, and composing never sends', async t => {
+  if (why) return t.skip(why);
+  const { page, done } = await setup(true, { empty: true, desktop: true });
+  try {
+    await page.waitForSelector('#msg');
+    assert.equal(await page.evaluate(() => matchMedia('(hover: hover) and (pointer: fine)').matches), true, 'a mouse and a keyboard');
+    assert.equal(await page.getAttribute('#msg', 'enterkeyhint'), 'send');
+    await page.click('#msg');
+    await page.keyboard.type('first line');
+    await page.keyboard.press('Shift+Enter');
+    await page.keyboard.type('second');
+    assert.equal(await page.inputValue('#msg'), 'first line\nsecond');
+    assert.equal(await sentCount(page), 0);
+    // An input method confirming a word with Enter: no send, while composing or on its 229 key.
+    const composed = await page.evaluate(() => {
+      const t = document.getElementById('msg');
+      t.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      const a = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, isComposing: true });
+      t.dispatchEvent(a);
+      t.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: 'x' }));
+      const b = new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, bubbles: true, cancelable: true });
+      t.dispatchEvent(b);
+      return [a.defaultPrevented, b.defaultPrevented];
+    });
+    assert.deepEqual(composed, [false, false]);
+    await page.waitForTimeout(100);
+    assert.equal(await sentCount(page), 0, 'composing never sends');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('.msg.user .bt'));
+    assert.equal(await page.evaluate(() => document.querySelector('.msg.user .bt').textContent), 'first line\nsecond');
+    assert.equal(await page.inputValue('#msg'), '');
+    await page.waitForFunction(() => document.querySelector('.msg.deka') && !document.querySelector('#chat[aria-busy]'), null, { timeout: 8000 });
+  } finally { await done(); }
+});
+
+test('the composer grows a line at a time to about 8 lines, then scrolls, flush on the keyboard', async t => {
+  if (why) return t.skip(why);
+  const { page, done } = await setup(true, { empty: true });
+  try {
+    await page.waitForSelector('#msg');
+    await page.focus('#msg');
+    await keyboard(page, { kb: 336 });
+    await page.waitForTimeout(300);
+    const heights = [];
+    for (let n = 1; n <= 12; n++) {
+      await page.fill('#msg', Array.from({ length: n }, (_, i) => `line ${i + 1}`).join('\n'));
+      await page.evaluate(() => document.getElementById('msg').dispatchEvent(new Event('input', { bubbles: true })));
+      await page.waitForTimeout(60);
+      const m = await page.evaluate(() => {
+        const t = document.getElementById('msg'), d = document.getElementById('dock').getBoundingClientRect(), vv = window.visualViewport;
+        return { h: t.clientHeight, scrolls: t.scrollHeight > t.clientHeight + 1, overflow: getComputedStyle(t).overflowY, flush: Math.abs(d.bottom - (vv.offsetTop + vv.height)) <= 1 };
+      });
+      heights.push(m.h);
+      assert.equal(m.flush, true, `${n} lines: still on the keyboard`);
+      if (n <= 8) assert.equal(m.scrolls, false, `${n} lines: all showing`);
+      else assert.deepEqual([m.scrolls, m.overflow], [true, 'auto'], `${n} lines: scrolls inside`);
+    }
+    for (let i = 1; i < 8; i++) assert.ok(heights[i] > heights[i - 1], `line ${i + 1} grows it`);
+    for (let i = 8; i < 12; i++) assert.equal(heights[i], heights[7], `line ${i + 1} does not`);
+    const lh = await page.evaluate(() => parseFloat(getComputedStyle(document.getElementById('msg')).lineHeight));
+    assert.ok(Math.abs(heights[2] - heights[1] - lh) <= 1, `each line adds one line height, ${lh} px`);
+    assert.ok(Math.abs(heights[7] - (lh * 8 + 12)) <= 2, `8 lines tall at most, got ${heights[7]}`);
+  } finally { await done(); }
+});
+
+test('a setup error stays short, and Details lists which setting fails, with no values', async t => {
+  if (why) return t.skip(why);
+  const { page, done } = await setup(true, { empty: true, noClient: true });
+  try {
+    await page.waitForSelector('#msg');
+    await page.fill('#msg', 'plan it');
+    await page.click('#dock .send');
+    await page.waitForSelector('.msg-error');
+    assert.equal(await page.evaluate(() => document.querySelector('.msg-error span').textContent), 'Deka is not set up yet.');
+    await page.click('.msg-error [data-a=setup-details]');
+    await page.waitForSelector('#sheet .list.health li');
+    const rows = await page.evaluate(() => [...document.querySelectorAll('#sheet .list.health li')].map(li => [li.querySelector('.hn').textContent, li.querySelector('.hv').firstChild.textContent, li.querySelector('.hd').textContent.replace(/ /g, ' ')]));
+    assert.deepEqual(rows.map(r => r[0]), ['ANTHROPIC_API_KEY', 'SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY', 'DATABASE_URL']);
+    assert.deepEqual(rows[0], ['ANTHROPIC_API_KEY', 'Fail', 'missing']);
+    assert.ok(rows.slice(1).every(r => r[1] === 'Pass'), JSON.stringify(rows));
+    assert.equal(await page.evaluate(() => document.getElementById('sheetTitle').textContent), 'Setup');
   } finally { await done(); }
 });
 

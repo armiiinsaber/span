@@ -123,6 +123,8 @@ Set these in the Vercel project under Settings, Environment Variables, for Produ
 | `DATABASE_URL` | yes | Server only. The Postgres connection string from the project's Connect dialog, the transaction pooler on port 6543. Usage and feedback. |
 | `SUPABASE_JWT_SECRET` | older projects | Server only. Only for a project that still signs sessions with the legacy JWT secret; new projects publish keys instead and need nothing here. |
 
+**Checking the setup.** `GET /api/health`, for a signed in person, lists each required setting as pass or fail with a short reason and never a value: `ANTHROPIC_API_KEY` (present, and a free test call to the models list works), `SUPABASE_URL`, the publishable and secret keys (present and the right kind), and `DATABASE_URL` (present, no placeholder like `[YOUR-PASSWORD]`, and a test query connects). Whenever a request fails because of the setup, the server logs one line naming each failing setting, like `[setup] DATABASE_URL: still has a placeholder, like [YOUR-PASSWORD]`, and the chat shows "Deka is not set up yet." with a quiet Details link to the same list.
+
 Both key formats work. New keys are not JWTs, so Deka sends them only in the `apikey` header, and `Authorization` carries the signed in person's session or nothing; legacy JWT keys also go in `Authorization`, as Supabase expects for them. At startup and on `/api/config`, the server refuses to send the browser a secret key or a legacy service_role key, and logs a configuration error, as it does when the public and secret variables hold the same value.
 | `CLAUDE_MODEL` | no | Defaults to `claude-opus-5-5`. |
 | `CLAUDE_EFFORT` | no | `low` (default), `medium`, `high`. In real runs low planned as well as medium, with the first word sooner and about 17% less cost; see `test/real-runs/README.md`. |
@@ -140,6 +142,8 @@ npm test
 ```
 
 `npm test` includes browser tests of the mobile flows in `test/ui.test.js`. They need Chrome (or set `CHROME_PATH`) and Node 22 or newer, and skip themselves otherwise. `test/webkit.test.js` types into every field in Safari's engine with an iPhone profile (keystrokes, a pasted email, an autocorrect suggestion, IME composition); it needs `npx playwright install webkit` once and skips without it.
+
+In the composer, a phone or tablet's return key makes a new line and only the send button sends; with a physical keyboard and a mouse, Enter sends and Shift Enter makes a new line. This is read from the `hover` and `pointer` media queries, and nothing sends while an input method is composing. The composer grows to about 8 lines, then scrolls.
 
 Fields are drawn once and never redrawn or rewritten while someone types, so iOS suggestions, autofill and composing land whole. Live checks only update the note under a field and the button; tidying a username or an email waits for blur or submit.
 

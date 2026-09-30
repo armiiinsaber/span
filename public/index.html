@@ -298,6 +298,11 @@ body.toasting main { padding-bottom: calc(var(--tabs-top) + var(--dock-h) + 108p
 .say { font-size: var(--t-body); line-height: 1.55; white-space: pre-line; overflow-wrap: anywhere; margin: 0; }
 .say .waking { color: var(--ink-soft); font-size: var(--t-subhead); margin-left: 6px; }
 .msg-error { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--t-subhead); }
+.list.health .setting { align-items: flex-start; }
+.list.health .hn { font-size: var(--t-footnote); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: normal; overflow-wrap: anywhere; padding-top: 2px; }
+.list.health .hv { text-align: right; font-weight: 600; white-space: normal; }
+.list.health .hv.fail { color: var(--people); }
+.list.health .hd { display: block; font-weight: 400; font-size: var(--t-footnote); color: var(--ink-soft); max-width: 16ch; margin-left: auto; }
 .chat-empty { text-align: center; padding: 40px 0 16px; }
 .chat-empty .mk { margin-bottom: 18px; }
 /* An empty chat: the mark and one line, centred in the space above the composer. With the keyboard
@@ -622,7 +627,7 @@ body.kb .dock::after {
 .dock-row { display: flex; align-items: center; gap: 2px; }
 .dock-row .grow { flex: 1; }
 .dock textarea {
-  flex: 1; min-width: 0; resize: none; max-height: 9.5rem; overflow-y: auto;
+  flex: none; width: 100%; min-width: 0; resize: none; max-height: calc(1.4em * 8 + 12px); overflow-y: auto; overscroll-behavior: contain;
   border: 0; background: transparent; padding: 10px 12px 2px; min-height: var(--tap);
   font-family: var(--sans); font-size: var(--t-body); line-height: 1.4;
 }
@@ -1932,7 +1937,7 @@ function msgView(msg, { readonly = false } = {}) {
   const live = ui.turn && ui.turn.msg === msg;
   const text = live ? ui.turn.shown : msg.text;
   const cards = (msg.cards || []).map((c, i) => cardView(msg, c, i, readonly)).join('');
-  const err = msg.error && !readonly ? `<div class="msg-error" role="alert"><span>${esc(msg.error)}</span><button class="link" data-a="retry" data-m="${msg.id}">Try again</button></div>` : '';
+  const err = msg.error && !readonly ? `<div class="msg-error" role="alert"><span>${esc(msg.error)}</span>${msg.errorKind === 'setup' ? '<button class="link" data-a="setup-details">Details</button>' : ''}<button class="link" data-a="retry" data-m="${msg.id}">Try again</button></div>` : '';
   return `<div class="msg deka" id="m-${msg.id}"${live ? ' aria-busy="true"' : ''}><p class="say"><span class="t">${paragraphs(text)}</span>${live ? `${mark('inline', true)}<span class="waking" hidden>Waking up</span><span class="sr">Deka is thinking</span>` : ''}</p><div class="cards">${cards}</div>${err}${live ? '' : actsView(msg, readonly)}</div>`;
 }
 
@@ -2395,6 +2400,19 @@ function accountSheet(sh) {
     <p class="af-issue af-error" role="alert" hidden></p>
     <button class="btn primary block" type="submit" disabled>Save</button></form>`;
 }
+// Which server settings pass and which fail, from /api/health. Names and reasons only, no values.
+async function setupDetails() {
+  ui.sheet = { kind: 'health', checks: null, error: '' };
+  renderSheet(); focusSheet();
+  try { ui.sheet.checks = (await api('/api/health')).checks; }
+  catch (err) { if (ui.sheet && ui.sheet.kind === 'health') ui.sheet.error = err.status === 401 ? 'Sign in to see the details.' : 'The details could not be loaded.'; }
+  if (ui.sheet && ui.sheet.kind === 'health') renderSheet();
+}
+function healthSheet(sh) {
+  if (sh.error) return `<p class="quiet">${nb(sh.error)}</p>`;
+  if (!sh.checks) return '<p class="quiet">Checking</p>';
+  return `<ul class="list health">${sh.checks.map(c => `<li class="setting"><span class="hn">${esc(c.name)}</span><span class="hv ${c.ok ? 'pass' : 'fail'}">${c.ok ? 'Pass' : 'Fail'}<span class="hd">${nb(c.detail)}</span></span></li>`).join('')}</ul>`;
+}
 async function saveAccount() {
   const sh = ui.sheet, f = sh.form;
   f.username = normName(f.username);
@@ -2438,7 +2456,7 @@ function renderDock() {
     $dock.innerHTML = `<form class="dock-in" data-form="msg" autocomplete="off">
       <div class="tray" id="tray" aria-label="Attachments" hidden></div>
       <label class="sr" for="msg">Message Deka</label>
-      <textarea id="msg" rows="1" enterkeyhint="send"></textarea>
+      <textarea id="msg" rows="1" enterkeyhint="${touchKeys() ? 'enter' : 'send'}"></textarea>
       <div class="dock-row"><button class="icon-btn" type="button" data-a="attach" aria-label="Add photos or files" aria-haspopup="menu">${icon('ui_plus')}</button><span class="grow"></span>
       ${mic}<button class="icon-btn send" type="submit" aria-label="Send" disabled>${I.up}</button></div></form>
       <p class="offline" id="offline" hidden>Offline. Messages send when you are back.</p>
@@ -2466,10 +2484,19 @@ function setDockHeight() {
   document.documentElement.style.setProperty('--dock-h', `${h}px`);
 }
 
+// Grows a line at a time up to its max height, about 8 lines, then scrolls inside itself.
 function autosize(t) {
   t.style.height = 'auto';
-  t.style.height = `${Math.min(t.scrollHeight, 152)}px`;
+  const max = parseFloat(getComputedStyle(t).maxHeight) || 202;
+  t.style.height = `${Math.min(t.scrollHeight, max)}px`;
 }
+/* The return key. On a touch screen with no pointer that hovers (a phone or a tablet) it is a new
+   line, and only the send button sends, so iOS shows return rather than a send arrow. With a
+   physical keyboard and a pointer, Enter sends and Shift Enter is a new line, like Claude. Read from
+   the pointer and hover media queries, not the user agent. */
+const touchMedia = matchMedia('(hover: none) and (pointer: coarse)');
+const touchKeys = () => touchMedia.matches;
+touchMedia.addEventListener?.('change', () => { const t = $('msg'); if (t) t.enterKeyHint = touchKeys() ? 'enter' : 'send'; });
 
 let toastTimer = null;
 // hard: the toast keeps its time even while touched, for an Undo that must end.
@@ -2509,12 +2536,14 @@ function renderSheet() {
     body = `<ul class="menu"><li><button data-a="go-profile">Profile${I.chev}</button></li><li><button data-a="go-past">Past dekas${I.chev}</button></li>${canEnd() ? `<li><button data-a="new-deka">New deka${I.chev}</button></li>` : ''}</ul>`;
   } else if (sh.kind === 'newdeka') {
     body = newDekaSheet(sh);
+  } else if (sh.kind === 'health') {
+    body = healthSheet(sh);
   } else if (sh.kind === 'account') {
     body = accountSheet(sh);
   } else {
     body = intentionSheet(sh);
   }
-  const title = sh.kind === 'day' ? `Day ${sh.day}<span class="sheet-sub">${sh.day === dayNum(S.current) ? 'Today' : fmt(dayDate(S.current, sh.day))}</span>` : sh.kind === 'more' ? 'More' : sh.kind === 'newdeka' ? 'New deka' : sh.kind === 'account' ? 'Your name' : sh.kind === 'feedback' ? 'Feedback' : sh.kind === 'new' ? 'New&nbsp;goal' : 'Edit';
+  const title = sh.kind === 'day' ? `Day ${sh.day}<span class="sheet-sub">${sh.day === dayNum(S.current) ? 'Today' : fmt(dayDate(S.current, sh.day))}</span>` : sh.kind === 'more' ? 'More' : sh.kind === 'newdeka' ? 'New deka' : sh.kind === 'account' ? 'Your name' : sh.kind === 'health' ? 'Setup' : sh.kind === 'feedback' ? 'Feedback' : sh.kind === 'new' ? 'New&nbsp;goal' : 'Edit';
   const shellKey = `${sh.kind}|${sh.iid || sh.day || ''}`;
   const body0 = $('sheetBody');
   if (body0 && $sheet.dataset.key === shellKey) {
@@ -2936,6 +2965,7 @@ async function startTurn(span, text, event, ask, user = null, opts = {}) {
     clearTimeout(wakeTimer);
     // Undone while it was running: the deka it belonged to is gone.
     if (turn.dropped) return;
+    if (err.status === 503) msg.errorKind = 'setup';
     msg.error = err.status === 401 ? 'Signed out. Sign in again.' : err.note ? err.note : err.status === 503 ? 'Deka is not set up yet.' : err.status === 429 ? 'Too many messages. Wait a few minutes.' : navigator.onLine === false ? 'You are offline.' : 'Deka did not answer.';
     msg.retry = { text, event };
   }
@@ -3527,6 +3557,7 @@ document.addEventListener('click', e => {
       break;
     }
     case 'retry': retryReply(chatSpan().chat.find(m => m.id === el.dataset.m), { failed: true }); break;
+    case 'setup-details': setupDetails(); break;
     case 'regen': retryReply(chatSpan().chat.find(m => m.id === el.dataset.m)); break;
     case 'copy': { const m = msgById(el.dataset.m); if (m) copyReply(m); break; }
     case 'copy-user': { const m = msgById(el.dataset.m); closeLayer(); if (m) copyText(m.text).then(ok => ok && toast('Copied.')); break; }
@@ -3589,6 +3620,7 @@ document.addEventListener('submit', e => {
     return;
   }
   const ta = $('msg');
+  if (composing) return;
   const text = ta.value.trim();
   // Too long to send: say so and keep the text, so it can be cut down.
   $('tooLong').hidden = text.length <= 2000;
@@ -3667,7 +3699,8 @@ function flashSaved(id) {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey && e.target.id === 'msg') {
+  // Never while composing: the Enter that confirms a word in an input method is not a send.
+  if (e.key === 'Enter' && e.target.id === 'msg' && !e.shiftKey && !touchKeys() && !e.isComposing && e.keyCode !== 229 && !composing) {
     e.preventDefault();
     e.target.closest('form').requestSubmit();
   }
