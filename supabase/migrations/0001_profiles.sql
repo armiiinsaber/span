@@ -8,7 +8,7 @@ create table if not exists public.profiles (
   username text,
   email text,
   theme text,
-  checkin_time text not null default '20:00',
+  checkin_time text,
   plan text not null default 'trial',
   trial_ends_at timestamptz not null default now() + interval '10 days',
   deleted boolean not null default false,
@@ -19,6 +19,10 @@ create table if not exists public.profiles (
   constraint profiles_plan check (plan in ('trial', 'standard', 'pro'))
 );
 create unique index if not exists profiles_username_key on public.profiles (username);
+-- A new account has no check in time until a device sets one, so signing in never replaces the
+-- time a device already had. Safe on a project set up before this.
+alter table public.profiles alter column checkin_time drop not null;
+alter table public.profiles alter column checkin_time drop default;
 
 alter table public.profiles enable row level security;
 drop policy if exists "profiles: own row" on public.profiles;

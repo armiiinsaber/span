@@ -1247,8 +1247,10 @@ test.describe('Deka app', { skip }, () => {
     const m1 = (await stored()).current.chat.find(m => m.id === 'm1');
     assert.ok(m1.attachments.every(a => a.path && a.path.startsWith(`${uid}/`)), JSON.stringify(m1.attachments));
     assert.deepEqual([...fake.files.keys()].filter(k => k.includes(uid)).sort(), [`attachments/${uid}/att1.jpg`, `attachments/${uid}/att2.pdf`]);
-    // The local copy stays, as the cache.
+    // The local copy stays, as the cache, and the device's check in time went up rather than being replaced.
     assert.equal((await stored()).spans.length, 2);
+    assert.equal((await stored()).settings.checkin, '23:59');
+    assert.equal((await fake.pool.query('select checkin_time from public.profiles where id = $1', [uid])).rows[0].checkin_time, '23:59');
     assert.equal(await page.js("new Promise(r => { const q = indexedDB.open('deka'); q.onsuccess = () => { const g = q.result.transaction('files').objectStore('files').count(); g.onsuccess = () => r(g.result); }; })"), 2);
   });
 

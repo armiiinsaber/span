@@ -47,6 +47,7 @@ async function startPostgres(port) {
   await pg.initialise();
   await pg.start();
   const pool = new Pool({ host: '127.0.0.1', port, user: 'postgres', password: 'postgres', database: 'postgres', max: 8 });
+  pool.on('error', () => {});
   await pool.query(fs.readFileSync(path.join(__dirname, 'supabase-shim.sql'), 'utf8'));
   await pool.query(fs.readFileSync(path.join(ROOT, 'supabase', 'setup.sql'), 'utf8'));
   return { pool, stop: async () => { await pool.end(); await pg.stop(); fs.rmSync(dir, { recursive: true, force: true }); }, url: `postgres://postgres:postgres@127.0.0.1:${port}/postgres` };
