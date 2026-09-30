@@ -59,3 +59,13 @@ test('days with nothing on them are treated as free, and done sessions only coun
   const done = scorePlan({ goals: [walk, date, boys], sessions: at(filler).concat([{ goal_id: 'date', day: 3, locked: true }, { goal_id: 'boys', day: 4, locked: true }]), days, from: 5 });
   assert.deepEqual(done, []);
 });
+
+test('hours count in the load, and the evening before a fixed commitment stays light', () => {
+  const prep = g('prep', { category: 'work', energy: 'heavy', hours: 3 });
+  const venn = g('venn', { type: 'fixed', category: 'work', day: 6, name: 'Venn interview' });
+  // Two things on day 2 either way: an ordinary session is fine, three hours of prep is not.
+  assert.ok(!keys([g('light1')], [['light1', 2]]).includes('load-2'), 'an ordinary second session does not flag');
+  assert.ok(keys([prep], [['prep', 2]]).includes('load-2'), 'three hours of prep weighs like two');
+  assert.ok(keys([venn, date], [['venn', 6], ['date', 5]]).includes('fixed-eve-6'));
+  assert.ok(!keys([venn, date], [['venn', 6], ['date', 3]]).includes('fixed-eve-6'));
+});

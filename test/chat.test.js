@@ -51,7 +51,7 @@ test('a malformed proposal goes back once with errors, and only the fixed one re
   assert.equal(retry.is_error, true);
   assert.match(retry.content, /twice on day 3/);
   assert.equal(client.calls[0].tool_choice.type, 'auto');
-  assert.deepEqual(client.calls[0].tools.map(t => t.name), ['update_goals', 'log_day', 'propose_schedule', 'suggest_trim', 'mark_off_topic']);
+  assert.deepEqual(client.calls[0].tools.map(t => t.name), ['update_goals', 'log_day', 'propose_schedule', 'suggest_trim', 'mark_off_topic', 'update_brief']);
 });
 
 test('two invalid calls end the turn with an error and nothing applied', async () => {
@@ -69,11 +69,25 @@ test('goals then a proposal in one turn are judged together', async () => {
   assert.deepEqual(ev.filter(e => ['goals', 'proposal'].includes(e[0])).map(e => e[0]), ['goals', 'proposal']);
 });
 
-test('review turns cannot log days, and older messages ask for a summary', async () => {
+test('review turns cannot log days; the brief, not a summary, carries what came before', async () => {
   const client = scripted([{ text: 'Ok.' }]);
   await collect(client, body({ phase: 'review', event: { kind: 'review' }, message: null, to_summarize: [{ role: 'user', text: 'old' }] }));
-  assert.deepEqual(client.calls[0].tools.map(t => t.name), ['update_goals', 'propose_schedule', 'suggest_trim', 'show_status', 'mark_off_topic', 'save_summary']);
+  assert.deepEqual(client.calls[0].tools.map(t => t.name), ['update_goals', 'propose_schedule', 'suggest_trim', 'show_status', 'mark_off_topic', 'update_brief']);
   assert.match(client.calls[0].messages.at(-1).content, /Event: review/);
+  assert.doesNotMatch(client.calls[0].messages.at(-1).content, /older_messages_to_summarize/);
+});
+
+test('the context carries the brief and only the last 10 messages', () => {
+  const messages = Array.from({ length: 30 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', text: `message ${i}` }));
+  const msgs = buildMessages(body({ messages, brief: { rules: ['Day 4 free', 'Prep 3 hours a day until Oct 6'], questions: ['How many pages are left?'] } }));
+  const all = msgs.map(m => (typeof m.content === 'string' ? m.content : '')).join('\n');
+  assert.doesNotMatch(all, /message 19\b/);
+  assert.match(all, /message 20[\s\S]*message 29/);
+  const ctx = JSON.parse(msgs.at(-1).content.match(/<deka>\n(.*)\n<\/deka>/)[1]);
+  assert.deepEqual(ctx.brief, { rules: ['Day 4 free', 'Prep 3 hours a day until Oct 6'], questions: ['How many pages are left?'] });
+  // An app from before the brief still gets its summary read.
+  const old = JSON.parse(buildMessages(body({ summary: 'They keep day 4 free.' })).at(-1).content.match(/<deka>\n(.*)\n<\/deka>/)[1]);
+  assert.equal(old.brief.earlier, 'They keep day 4 free.');
 });
 
 test('the conversation alternates roles and ends with the context and the new message', () => {

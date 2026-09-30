@@ -118,3 +118,56 @@ test('resolve_trim answers only the open trim, the way the buttons do', () => {
   const moved = working({ phase: 'planning', goals: goals().map(g => g.id === 'run' ? { ...g, target: 5 } : g), schedule: [], open_trim: trim });
   assert.match(errs(runTool('resolve_trim', { choice: 'use' }, moved)), /at 5 now/);
 });
+
+// Fixed commitments and goals with hours and a window.
+const work = { icon: 'laptop', category: 'work', energy: 'heavy', social: 'no', fun: 'no', time_of_day: 'any', weekend: 'no' };
+const none = { day: 0, time: '', hours: 0, until_day: 0, until_goal: '' };
+const venn = { op: 'add', id: 'venn', name: 'Venn interview', type: 'fixed', tag: '', target: 1, ...work, ...none, day: 6, time: '15:00' };
+const prep = { op: 'add', id: 'prep', name: 'Interview prep', type: 'do', tag: '', target: 6, ...work, ...none, hours: 3, until_goal: 'venn' };
+
+test('a fixed commitment keeps its day and time, and stays put in every plan', () => {
+  const w = planning();
+  const r = runTool('update_goals', { changes: [venn] }, w);
+  assert.equal(r.ok, true, errs(r));
+  assert.deepEqual([w.goals[2].type, w.goals[2].day, w.goals[2].time, w.goals[2].target], ['fixed', 6, '15:00', 1]);
+  assert.deepEqual(w.schedule.map(o => [o.goal_id, o.day]), [['venn', 6]], 'placed on its day at once');
+  // A plan may leave it out; it is added. It may not move it.
+  const ok = runTool('propose_schedule', { occurrences: [[1, 'run'], [3, 'run'], [5, 'run'], [2, 'gym'], [7, 'gym']].map(([day, goal_id]) => ({ goal_id, day, detail: '' })), summary: 'Spread out' }, w);
+  assert.equal(ok.ok, true, errs(ok));
+  assert.deepEqual(ok.event.occurrences.filter(o => o.goal_id === 'venn').map(o => [o.day, o.detail]), [[6, '15:00']]);
+  const moved = runTool('propose_schedule', { occurrences: [{ goal_id: 'venn', day: 4, detail: '' }, ...[1, 3, 5].map(day => ({ goal_id: 'run', day, detail: '' })), ...[2, 7].map(day => ({ goal_id: 'gym', day, detail: '' }))], summary: 'x' }, planning());
+  assert.equal(moved.ok, false);
+  // Wrong shapes are turned away.
+  const bad = c => errs(runTool('update_goals', { changes: [{ ...venn, id: 'x', ...c }] }, planning()));
+  assert.match(bad({ day: 0 }), /needs its day/);
+  assert.match(bad({ time: '3pm' }), /HH:MM/);
+  assert.match(bad({ target: 2 }), /its target is 1/);
+  assert.match(errs(runTool('update_goals', { changes: [{ ...prep, id: 'y', day: 3 }] }, planning())), /not a fixed commitment, so its day is 0/);
+  // A fixed commitment can be on day 10, but nothing else can.
+  assert.equal(runTool('update_goals', { changes: [{ ...venn, id: 'late', day: 10 }] }, planning()).ok, true);
+});
+
+test('a goal with hours and a window: sessions only inside it, and a target that fits', () => {
+  const w = working({ phase: 'live', current_day: 2, goals: [], schedule: [] });
+  const r = runTool('update_goals', { changes: [venn, { ...prep, target: 5 }] }, w);
+  assert.equal(r.ok, true, errs(r));
+  assert.deepEqual([w.goals[1].hours, w.goals[1].until_goal], [3, 'venn']);
+  // Days 2 to 6 is five days: a sixth session does not fit.
+  assert.match(errs(runTool('update_goals', { changes: [venn, { ...prep, target: 6 }] }, working({ phase: 'live', current_day: 2, goals: [], schedule: [] }))), /6 sessions to place but only 5 days from day 2 to day 6/);
+  const after = runTool('propose_schedule', { occurrences: [2, 3, 4, 5, 7].map(day => ({ goal_id: 'prep', day, detail: '' })), summary: 'Prep' }, w);
+  assert.match(errs(after), /day 7, after its window ends on day 6/);
+  const inside = runTool('propose_schedule', { occurrences: [2, 3, 4, 5, 6].map(day => ({ goal_id: 'prep', day, detail: '' })), summary: 'Prep every day' }, w);
+  assert.equal(inside.ok, true, errs(inside));
+  // until_day works the same, and until_goal must name a fixed commitment.
+  assert.match(errs(runTool('update_goals', { changes: [{ ...prep, until_goal: 'run' }] }, planning())), /must be the id of a fixed commitment/);
+  assert.equal(runTool('update_goals', { changes: [{ ...prep, until_goal: '', until_day: 7, target: 7 }] }, planning()).ok, true);
+});
+
+test('update_brief keeps the rules and open questions, short', () => {
+  const w = planning();
+  const r = runTool('update_brief', { rules: ['Day 4 free', 'Prep 3 hours a day until Oct 6 — mornings'], questions: ['How many pages are left?'] }, w);
+  assert.equal(r.ok, true, errs(r));
+  assert.deepEqual(r.event, { type: 'brief', rules: ['Day 4 free', 'Prep 3 hours a day until Oct 6, mornings'], questions: ['How many pages are left?'] });
+  assert.match(errs(runTool('update_brief', { rules: Array(9).fill('x'), questions: [] }, w)), /at most 8/);
+  assert.match(errs(runTool('update_brief', { rules: [], questions: Array(4).fill('q?') }, w)), /at most 3/);
+});
