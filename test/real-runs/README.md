@@ -1,6 +1,26 @@
 # Real runs
 
-## Latest: accounts, scenarios 1, 2, 19 and 20 once, on Opus 5.5 at low effort
+## Latest: the brief and fixed commitments, scenarios 1, 2, 19, 23 and 24 twice, on Opus 5.5 at low effort
+
+In `brief/`, run on 2026-09-30 after the brief replaced the summary and only the last 10 messages go to Deka. Scenario 23 is the two interviews message word for word, on a deka that starts October 1 with runs, gym and reading already in. Scenario 24 is 25 turns of adding, changing and dropping goals and rules, then "Plan it."
+
+| Scenario | Run 1 | Run 2 |
+|---|---|---|
+| 1 full dump | pass | pass |
+| 2 book and trim | pass | pass |
+| 19 rambling | pass | fail |
+| 23 interviews | fail | pass |
+| 24 long chat | pass | pass* |
+
+Scenario 23 was right in both runs: Venn fixed on day 6 at 3 PM, DoorDash on day 8, three hours of prep on days 1 to 6 and one other session at most on each prep day, against two on the free days. Both briefs read "Prep 3 hours a day until Oct 6" and asked one question, the DoorDash time. Run 1 failed only on length: one reply was 42 words, over the 40 allowed.
+
+Scenario 19 run 2 said "Here's a lighter version" and sent no trim with it.
+
+Scenario 24 kept every rule through the fold in both runs (no gym Monday, mom on weekends, day 6 free, no runs on day 1, date night on a Friday or Saturday), dropped music and yoga, and planned a clean schedule. *Run 2 was marked as a fail by a check that only knew the word weekend; its brief said "Mom only on Saturday or Sunday". The check now takes both, and nothing else failed.
+
+Spend was $1.93, and the usage table matched.
+
+## Earlier: accounts, scenarios 1, 2, 19 and 20 once, on Opus 5.5 at low effort
 
 In `accounts/`, run on 2026-09-28 after accounts replaced the passcode. Every turn went through a signed in test account on the Supabase stand in (a real Postgres with setup.sql, row level security on), with the photo in scenario 20 uploaded to the account's folder in the bucket and fetched by the server from there, and each turn written to the usage table.
 

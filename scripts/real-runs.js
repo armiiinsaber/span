@@ -55,6 +55,13 @@ const dayMap = start => Array.from({ length: 10 }, (_, i) => ({ day: i + 1, date
 
 const IDENTITY = ['icon', 'category', 'energy', 'social', 'fun', 'time_of_day', 'weekend'];
 const identity = g => Object.fromEntries(IDENTITY.filter(k => g[k] != null).map(k => [k, g[k]]));
+// A fixed commitment's day and time, and a goal's hours and window, as the app keeps them.
+const TIMING = ['day', 'time', 'hours', 'until_day', 'until_goal'];
+const timingFrom = c => Object.fromEntries(TIMING.filter(k => c[k] != null && c[k] !== '' && c[k] !== 0).map(k => [k, c[k]]));
+function placeFixed(span, g) {
+  span.occurrences = span.occurrences.filter(o => !(o.intention_id === g.id && !o.done && !o.missed && o.day !== g.day));
+  if (!span.occurrences.some(o => o.intention_id === g.id && o.day === g.day)) span.occurrences.push({ intention_id: g.id, day: g.day, done: false, detail: g.time || '' });
+}
 
 let uidN = 0;
 const uid = () => `u${++uidN}`;
@@ -104,19 +111,19 @@ class App {
       today: `${weekday(this.today)} ${this.today}`,
       current_day: p === 'live' ? this.dayNum(span) : null,
       days: dayMap(target.start),
-      goals: target.intentions.map(g => ({ id: g.id, name: g.name, type: g.type, tag: g.tag || '', target: g.target, ...identity(g) })),
+      goals: target.intentions.map(g => ({ id: g.id, name: g.name, type: g.type, tag: g.tag || '', target: g.target, ...identity(g), ...timingFrom(g) })),
       schedule: target.occurrences.map(o => ({ goal_id: o.intention_id, day: o.day, status: occStatus(o), detail: o.detail || '' })),
       notes: target === span ? span.notes : {},
-      summary: span.summary || '',
+      brief: span.brief || { rules: [], questions: [] },
       past: this.S.spans.slice(0, 3).map(s => this.summary(s)),
-      messages: all.slice(-30),
+      messages: all.slice(-10),
       message: text || null,
       event: event || null,
       off_topic_streak: span.offStreak || 0,
     };
     const trimCard = this.latestTrim(span);
     if (trimCard && !trimCard.trim.choice) body.open_trim = { trims: trimCard.trim.trims };
-    if (older.length) body.to_summarize = older;
+
     const which = target === this.S.next ? 'next' : 'current';
     const open = span.chat.flatMap(m => m.cards || []).filter(c => c.type === 'proposal' && c.status === 'open' && (c.target || 'current') === which).pop();
     if (open) body.open_card = { changes: open.changes, sessions: open.occurrences.map(o => ({ goal_id: o.goal_id, day: o.day, detail: o.detail || '' })) };
@@ -158,13 +165,16 @@ class App {
     const lines = [];
     for (const c of changes) {
       if (c.op === 'add') {
-        if (!span.intentions.some(g => g.id === c.id)) span.intentions.push({ id: c.id, name: c.name, type: c.type, tag: c.tag || '', target: c.target, ...identity(c) });
-        lines.push(`Added ${c.name}, ${c.target} ${c.target === 1 ? 'time' : 'times'}`);
+        if (!span.intentions.some(g => g.id === c.id)) span.intentions.push({ id: c.id, name: c.name, type: c.type, tag: c.tag || '', target: c.target, ...identity(c), ...timingFrom(c) });
+        const added = span.intentions.find(g => g.id === c.id);
+        if (added.type === 'fixed') placeFixed(span, added);
+        lines.push(c.type === 'fixed' ? `Added ${c.name}, fixed on day ${c.day}${c.time ? ` at ${c.time}` : ''}` : `Added ${c.name}, ${c.target} ${c.target === 1 ? 'time' : 'times'}${c.hours ? `, ${c.hours} h each` : ''}${c.until_goal ? `, until ${c.until_goal}` : c.until_day ? `, until day ${c.until_day}` : ''}`);
       } else if (c.op === 'edit') {
         const g = span.intentions.find(x => x.id === c.id);
         if (!g) continue;
         const was = g.target;
-        Object.assign(g, { name: c.name, type: c.type, tag: c.tag || '', target: c.target, ...identity(c) });
+        Object.assign(g, { name: c.name, type: c.type, tag: c.tag || '', target: c.target, ...identity(c), ...timingFrom(c) });
+        if (g.type === 'fixed') placeFixed(span, g);
         lines.push(was !== c.target ? `${c.name} now ${c.target} ${c.target === 1 ? 'time' : 'times'}` : `Updated ${c.name}`);
       } else if (c.op === 'remove') {
         span.intentions = span.intentions.filter(g => g.id !== c.id);
@@ -196,7 +206,7 @@ class App {
       const need = Math.max(0, g.target - doneOf(span, g.id));
       if (card.occurrences.filter(o => o.goal_id === g.id).length !== need) return false;
     }
-    return card.occurrences.every(o => span.intentions.some(g => g.id === o.goal_id) && o.day >= from && o.day <= 9 &&
+    return card.occurrences.every(o => span.intentions.some(g => g.id === o.goal_id) && o.day >= from && (o.day <= 9 || (span.intentions.find(g => g.id === o.goal_id) || {}).type === 'fixed') &&
       !span.occurrences.some(x => x.intention_id === o.goal_id && x.day === o.day && (x.done || x.missed)));
   }
 
@@ -357,6 +367,7 @@ async function turn(ctx, text, event, ask, files = []) {
         card.trim = { trims: d.trims, reason: d.reason, choice: null };
       }
       else if (ev === 'off_topic') msg.offTopic = true;
+      else if (ev === 'brief') { span.brief = { rules: d.rules, questions: d.questions }; msg.brief = span.brief; msg.cards.push({ type: 'brief', rules: d.rules, questions: d.questions }); }
       else if (ev === 'summary') { span.summary = d.summary; span.summarizedUpTo = Math.max(0, summarizeTo); msg.cards.push({ type: 'summary', summary: d.summary }); }
       else if (ev === 'goals') msg.cards.push({ type: 'goals', lines: app.applyGoals(target === 'next' ? app.S.next : span, d.changes), changes: d.changes });
       else if (ev === 'log') { app.applyLog(span, d); msg.cards.push({ type: 'log', day: d.day, entries: d.entries }); }
@@ -1054,6 +1065,115 @@ async function run(n) {
       f.push(...planChecks(a, span, card.occurrences).filter(x => x !== 'no date night goal').map(x => `plan: ${x}`));
       notes.push(`plan check: ${card.flags.length ? card.flags.join(' | ') : 'clean'}`);
     });
+
+    // Fixed commitments and hours of prep a day, in the person's own words.
+    await scenario('23 interviews', async (f, notes) => {
+      // Thursday October 1 is day 1, so October 6 is day 6 (Tuesday) and October 8 is day 8.
+      const a = new App('2026-10-01'); ctx.app = a;
+      const cur = a.S.current;
+      const G = (id, name, type, target, icon, category, energy) => ({ id, name, type, tag: '', target, icon, category, energy, social: 'no', fun: 'no', time_of_day: 'any', weekend: 'no' });
+      cur.intentions = [G('run', 'Run', 'do', 4, 'run', 'body', 'heavy'), G('gym', 'Gym', 'do', 3, 'gym', 'body', 'heavy'), G('read', 'Read', 'do', 4, 'book', 'mind', 'light')];
+      cur.chat.push({ id: uid(), role: 'user', text: 'Four runs, gym three times and read four times.', cards: [] }, { id: uid(), role: 'deka', text: 'Got it. Anything else, or shall I plan it?', cards: [] });
+      let t = await say('I have a problem solving interview with Venn on October 6 at 3 PM. I would have to prepare for that at least three hours a day, including today until then. I have another interview with DoorDash on October 8. No preparation needed for that one, but I have that on that day.');
+      f.push(...turnChecks(t));
+      let card = lastProposal(t);
+      if (!card) { t = await say('Plan it.'); f.push(...turnChecks(t).map(x => `plan: ${x}`)); card = lastProposal(t); }
+      const goals = cur.intentions;
+      notes.push(`goals: ${goals.map(g => `${g.id} ${g.type}${g.day ? ` day ${g.day}` : ''}${g.time ? ` ${g.time}` : ''}${g.hours ? ` ${g.hours} h` : ''}${g.until_goal ? ` until ${g.until_goal}` : g.until_day ? ` until day ${g.until_day}` : ''} x${g.target}`).join(', ')}`);
+      const venn = goals.find(g => /venn/i.test(`${g.id} ${g.name}`)), dash = goals.find(g => /door/i.test(`${g.id} ${g.name}`));
+      if (!venn || venn.type !== 'fixed' || venn.day !== 6 || venn.time !== '15:00') f.push('Venn is not fixed on day 6 at 15:00');
+      if (!dash || dash.type !== 'fixed' || dash.day !== 8) f.push('DoorDash is not fixed on day 8');
+      const prep = goals.find(g => g.type !== 'fixed' && /prep/i.test(`${g.id} ${g.name}`));
+      if (!prep) { f.push('no prep goal'); return; }
+      if (!(prep.hours >= 3)) f.push(`prep is ${prep.hours || 0} hours a session, not 3`);
+      if (!card) { f.push('no plan'); return; }
+      const prepDays = card.occurrences.filter(o => o.goal_id === prep.id).map(o => o.day).sort((x, y) => x - y);
+      notes.push(`prep on days ${prepDays.join(', ')}`);
+      const through5 = [1, 2, 3, 4, 5], through6 = [1, 2, 3, 4, 5, 6];
+      if (String(prepDays) !== String(through5) && String(prepDays) !== String(through6)) f.push(`prep is on days ${prepDays.join(', ')}, not every day from today through day 5 or 6`);
+      for (const fx of [venn, dash].filter(Boolean)) if (!card.occurrences.some(o => o.goal_id === fx.id && o.day === fx.day)) f.push(`${fx.id} is not on day ${fx.day} in the plan`);
+      // Lighter loads: fewer other sessions on prep days than on the days without prep.
+      const other = d => card.occurrences.filter(o => o.day === d && o.goal_id !== prep.id && !goals.find(g => g.id === o.goal_id && g.type === 'fixed')).length;
+      const free = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(d => !prepDays.includes(d));
+      const avg = ds => ds.reduce((n, d) => n + other(d), 0) / (ds.length || 1);
+      notes.push(`other sessions a day: ${prepDays.map(d => `day ${d} ${other(d)}`).join(', ')}; without prep ${free.map(d => `day ${d} ${other(d)}`).join(', ')}`);
+      if (avg(prepDays) > avg(free)) f.push(`prep days are not lighter: ${avg(prepDays).toFixed(1)} other sessions against ${avg(free).toFixed(1)}`);
+      for (const d of prepDays) if (other(d) > 2) f.push(`day ${d} has ${other(d)} other sessions on top of 3 hours of prep`);
+      const heavyEve = card.occurrences.filter(o => o.day === 5 && ['run', 'gym'].includes(o.goal_id)).length;
+      if (heavyEve > 1) f.push('day 5, the day before Venn, holds both a run and the gym');
+      // The brief: the prep rule, dates that are right, at most one question.
+      const brief = cur.brief || { rules: [], questions: [] };
+      notes.push(`brief: ${brief.rules.join(' / ') || '(none)'}${brief.questions.length ? `; waiting on: ${brief.questions.join(' / ')}` : ''}`);
+      if (!brief.rules.some(r => /prep|prepar/i.test(r) && /3|three/i.test(r))) f.push('the brief has no rule for three hours of prep a day');
+      for (const r of brief.rules) if (/oct(ober)? ?(\d+)/i.test(r) && ![5, 6, 8].includes(Number(r.match(/oct(?:ober)? ?(\d+)/i)[1]))) f.push(`a brief rule names the wrong date: ${r}`);
+      if (brief.questions.length > 1) f.push(`${brief.questions.length} open questions`);
+    });
+
+    // A long chat: every decision must hold after the messages that made it have folded away.
+    await scenario('24 long chat', async (f, notes) => {
+      // Friday October 2 is day 1: days 2, 3 and 9 are the weekend, day 4 is a Monday.
+      const a = new App('2026-10-02'); ctx.app = a;
+      const cur = a.S.current;
+      const script = [
+        "Over the next few messages I'll tell you what I want this deka. Don't plan until I say plan it.",
+        'Four runs.',
+        'Gym three times, but never on a Monday.',
+        'See my mom twice, only on weekends.',
+        'I want to finish my book, about 90 pages left.',
+        'Keep day 6 completely free.',
+        'Make music three evenings.',
+        'Make that six runs, not four.',
+        'One date night.',
+        'Three sober nights.',
+        "Drop the music, I'm too busy for it.",
+        'Add two coffees with friends.',
+        'Gym four times instead of three.',
+        "No runs on day 1, I'm travelling that day.",
+        "What's a good pace for easy runs?",
+        'Actually my book has 120 pages left.',
+        'Add yoga twice.',
+        'Change the coffees to just one.',
+        'Is that too much?',
+        'Keep the date night on a Friday or Saturday.',
+        'Add one call with my sister.',
+        'Remove the yoga.',
+        'Three sober nights is right, keep it.',
+        'Anything else I should think about?',
+        'Plan it.',
+      ];
+      let last = null;
+      for (const [i, text] of script.entries()) {
+        last = await say(text);
+        if (last.error) f.push(`turn ${i + 1}: ${last.error}`);
+        if (last.invalid.length) f.push(`turn ${i + 1}: a call failed validation`);
+        if (last.rawDashes) f.push(`turn ${i + 1}: dash in the reply`);
+      }
+      const goals = cur.intentions;
+      const by = re => goals.find(g => re.test(`${g.id} ${g.name}`));
+      notes.push(`goals: ${goals.map(g => `${g.id} x${g.target}`).join(', ')}`);
+      const want = [['runs', /\brun/i, 6], ['gym', /gym/i, 4], ['mom', /mom/i, 2], ['date night', /date/i, 1], ['sober nights', /sober/i, 3], ['coffee', /coffee/i, 1], ['sister call', /sister/i, 1]];
+      for (const [label, re, n] of want) { const g = by(re); if (!g) f.push(`no ${label}`); else if (g.target !== n) f.push(`${label} is ${g.target}, not ${n}`); }
+      if (!by(/book|read/i)) f.push('no book goal');
+      if (by(/music/i)) f.push('music is still there after it was dropped');
+      if (by(/yoga/i)) f.push('yoga is still there after it was removed');
+      const brief = cur.brief || { rules: [], questions: [] };
+      notes.push(`brief: ${brief.rules.join(' / ') || '(none)'}${brief.questions.length ? `; waiting on: ${brief.questions.join(' / ')}` : ''}`);
+      const rule = (label, re) => { if (!brief.rules.some(r => re.test(r))) f.push(`the brief lost: ${label}`); };
+      rule('no gym on Mondays', /monday/i);
+      rule('mom only on weekends', /mom[\s\S]*(weekend|saturday|sunday)|weekend[\s\S]*mom/i);
+      rule('day 6 free', /day 6|oct(ober)? 7/i);
+      rule('no runs on day 1', /run[\s\S]*(day 1\b|oct(ober)? 2\b|travel)|(day 1\b|travel)[\s\S]*run/i);
+      if (brief.rules.some(r => /music|yoga/i.test(r))) f.push('the brief still carries something they dropped');
+      const card = lastProposal(last);
+      if (!card) { f.push('no plan after plan it'); return; }
+      const on = (re, d) => card.occurrences.some(o => o.day === d && re.test(o.goal_id + ' ' + ((goals.find(g => g.id === o.goal_id) || {}).name || '')));
+      if (on(/gym/i, 4)) f.push('gym on day 4, a Monday');
+      for (const o of card.occurrences.filter(o => /mom/i.test(o.goal_id))) if (![2, 3, 9].includes(o.day)) f.push(`mom on day ${o.day}, not a weekend`);
+      if (card.occurrences.some(o => o.day === 6)) f.push('day 6 is not free');
+      if (on(/\brun/i, 1)) f.push('a run on day 1, a travel day');
+      for (const o of card.occurrences.filter(o => /date/i.test(o.goal_id))) if (![1, 2, 8, 9].includes(o.day)) f.push(`date night on day ${o.day}, not a Friday or Saturday`);
+      notes.push(`plan check: ${card.flags.length ? card.flags.join(' | ') : 'clean'}`);
+    });
   } finally {
     server.close();
   }
@@ -1143,6 +1263,7 @@ function transcript(r, s) {
     out.push(`**Deka**: ${t.reply || '(no text)'}`, '');
     for (const c of t.cards) {
       if (c.type === 'goals') out.push(`> Goals: ${c.lines.join('; ')}`);
+      if (c.type === 'brief') out.push(`> Brief: ${c.rules.join(' / ') || '(no rules)'}${c.questions.length ? `; waiting on: ${c.questions.join(' / ')}` : ''}`);
       if (c.type === 'log') out.push(`> Logged day ${c.day}: ${c.entries.map(e => `${e.goal_id} ${e.status}${e.moved_from ? ` (from day ${e.moved_from})` : ''}`).join(', ')}`);
       if (c.type === 'proposal') {
         out.push(`> Card: ${c.summary || (c.changes || []).join(' / ')}${c.flags && c.flags.length ? ` (plan check: ${c.flags.length} left${c.score && c.score.retried ? `, ${c.score.first} before the retry` : ''})` : c.score && c.score.retried ? ` (plan check: ${c.score.first} fixed on retry)` : ''}`);
@@ -1158,7 +1279,7 @@ function transcript(r, s) {
 }
 
 (async () => {
-  console.log(`Deka real runs: ${RUNS} x 22 scenarios on ${MODEL}`);
+  console.log(`Deka real runs: ${RUNS} x 24 scenarios on ${MODEL}`);
   FAKE = await startFake();
   DB = createDb(FAKE.databaseUrl);
   const runs = await Promise.all(Array.from({ length: RUNS }, (_, i) => run(i + 1)));
