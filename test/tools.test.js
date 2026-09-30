@@ -165,7 +165,7 @@ test('a goal with hours and a window: sessions only inside it, and a target that
 
 test('update_brief keeps the rules and open questions, short', () => {
   const w = planning();
-  const r = runTool('update_brief', { rules: ['Day 4 free', 'Prep 3 hours a day until Oct 6 — mornings'], questions: ['How many pages are left?'] }, w);
+  const r = runTool('update_brief', { rules: ['Day 4 free', 'Prep 3 hours a day until Oct 6 \u2014 mornings'], questions: ['How many pages are left?'] }, w);
   assert.equal(r.ok, true, errs(r));
   assert.deepEqual(r.event, { type: 'brief', rules: ['Day 4 free', 'Prep 3 hours a day until Oct 6, mornings'], questions: ['How many pages are left?'] });
   assert.match(errs(runTool('update_brief', { rules: Array(9).fill('x'), questions: [] }, w)), /at most 8/);
