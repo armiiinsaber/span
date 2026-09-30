@@ -297,6 +297,40 @@ body.toasting main { padding-bottom: calc(var(--tabs-top) + var(--dock-h) + 108p
 .msg.deka { align-self: stretch; }
 .say { font-size: var(--t-body); line-height: 1.55; white-space: pre-line; overflow-wrap: anywhere; margin: 0; }
 .say .waking { color: var(--ink-soft); font-size: var(--t-subhead); margin-left: 6px; }
+/* The brief: pinned under the status bar, one quiet line until tapped. */
+.brief-slot { position: sticky; top: calc(var(--safe-t) + 6px); z-index: 6; margin: 0 0 10px; }
+.brief-slot:empty { display: none; }
+.brief { border-radius: 18px; box-shadow: var(--glass-shine), var(--glass-shadow); overflow: hidden; }
+.brief-line { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--tap); padding: 0 14px 0 16px; font-size: var(--t-subhead); font-weight: 600; text-align: left; }
+.brief-line svg, .fold svg, .chip-card svg { width: 1rem; height: 1rem; flex: none; color: var(--ink-soft); transform: rotate(90deg); transition: transform .25s var(--ease); }
+.brief.open .brief-line svg, .fold[aria-expanded="true"] svg, .cardchip.open .chip-card svg { transform: rotate(-90deg); }
+.brief-body { padding: 0 16px 12px; max-height: 60dvh; overflow-y: auto; overscroll-behavior: contain; }
+.bsec + .bsec { margin-top: 10px; }
+.bsec .eyebrow { display: block; margin-bottom: 4px; }
+.bsec ul { list-style: none; margin: 0; padding: 0; }
+.bsec li { display: flex; align-items: center; gap: 10px; min-height: 32px; font-size: var(--t-subhead); }
+.bsec li.bt { display: list-item; list-style: none; padding: 3px 0; min-height: 0; }
+.bsec .s { --z: 1.5rem; }
+.bn { flex: 1; min-width: 0; }
+.bn small, .gsub { display: block; font-size: var(--t-caption1); color: var(--ink-soft); }
+.bv { color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Older messages, folded into one line. */
+.fold { align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); padding: 0 14px; border-radius: 22px; font-size: var(--t-footnote); color: var(--ink-soft); }
+.fold:active { background: var(--press); }
+/* A settled card as a chip. */
+.cardchip { margin-top: 10px; }
+.chip-card { display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); padding: 0 12px 0 14px; border-radius: 22px; border: 1px solid var(--hairline); font-size: var(--t-footnote); color: var(--ink-soft); }
+.chip-card:active { background: var(--press); }
+.cardchip.open .card { margin-top: 8px; }
+/* A fixed commitment: ringed in ink with a pin, its time beside it. */
+.s.fixed { box-shadow: inset 0 0 0 1.5px var(--ink); }
+.s.fixed::before { content: ''; position: absolute; top: -2px; right: -2px; width: 7px; height: 7px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 1.5px var(--paper); }
+.fx { display: inline-flex; align-items: center; gap: 6px; padding-right: 10px; border-radius: 26px; background: var(--paper-deep); }
+.fxt { font-size: var(--t-footnote); font-weight: 600; white-space: nowrap; }
+.gwhen { font-size: var(--t-subhead); color: var(--ink-soft); white-space: nowrap; text-align: right; }
+.gr.fixed { grid-template-columns: auto minmax(0, 1fr) auto; }
+.fixed-time { display: flex; justify-content: space-between; align-items: center; min-height: 52px; border-bottom: 1px solid var(--hairline); }
+.fixed-time input { min-height: var(--tap); border: 0; background: none; font-size: var(--t-body); text-align: right; color: var(--ink); }
 .msg-error { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--t-subhead); }
 .list.health .setting { align-items: flex-start; }
 .list.health .hn { font-size: var(--t-footnote); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: normal; overflow-wrap: anywhere; padding-top: 2px; }
@@ -885,6 +919,8 @@ function migrate(d) {
     sp.intentions = sp.intentions || [];
     sp.occurrences = sp.occurrences || [];
     for (const it of sp.intentions) if (!GOAL_ICONS[it.icon]) { it.icon = guessIcon(it.name, it.type); it.category = GOAL_ICONS[it.icon][0]; }
+    // The brief took over from the hidden summary: what the summary said becomes its rules.
+    if (!sp.brief) sp.brief = { rules: sp.summary ? sp.summary.split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean).slice(0, 8).map(x => x.slice(0, 90)) : [], questions: [] };
   }
   if (!d.seen && (d.spans.length || (d.current && d.current.intentions.length))) d.seen = true;
   return d;
@@ -900,8 +936,8 @@ const TABLES = ['dekas', 'goals', 'sessions', 'notes', 'messages'];
 // Message fields that stay on this device: what Retry needs, and passing errors.
 const LOCAL_ONLY = ['undo', 'retry', 'error', 'fresh'];
 const COLS = {
-  dekas: ['role', 'status', 'start_date', 'closed', 'ended_day', 'summary', 'summarized_up_to', 'checked', 'checkin', 'reflection', 'review', 'review_opened', 'off_streak', 'deleted'],
-  goals: ['deka_id', 'goal_id', 'name', 'type', 'tag', 'target', 'icon', 'category', 'energy', 'social', 'fun', 'time_of_day', 'weekend', 'position', 'deleted'],
+  dekas: ['role', 'status', 'start_date', 'closed', 'ended_day', 'summary', 'summarized_up_to', 'checked', 'checkin', 'reflection', 'review', 'review_opened', 'off_streak', 'brief', 'deleted'],
+  goals: ['deka_id', 'goal_id', 'name', 'type', 'tag', 'target', 'icon', 'category', 'energy', 'social', 'fun', 'time_of_day', 'weekend', 'day', 'time', 'hours', 'until_day', 'until_goal', 'position', 'deleted'],
   sessions: ['deka_id', 'goal_id', 'day', 'done', 'missed', 'detail', 'position', 'deleted'],
   notes: ['deka_id', 'day', 'text', 'deleted'],
   messages: ['deka_id', 'role', 'text', 'ts', 'data', 'deleted'],
@@ -920,8 +956,8 @@ function rowsOf() {
   const rows = new Map();
   const put = (table, row) => rows.set(`${table}/${row.id}`, { table, row: { user_id: S.owner, ...row } });
   const deka = (sp, role) => {
-    put('dekas', { id: sp.id, role, status: sp.status, start_date: sp.start || null, closed: sp.closed || null, ended_day: sp.endedDay || null, summary: sp.summary || '', summarized_up_to: sp.summarizedUpTo || 0, checked: sp.checked || [], checkin: sp.checkin || {}, reflection: sp.reflection || '', review: sp.review || '', review_opened: sp.reviewOpened || null, off_streak: sp.offStreak || 0, deleted: false });
-    (sp.intentions || []).forEach((g, i) => put('goals', { id: `${sp.id}:${g.id}`, deka_id: sp.id, goal_id: g.id, name: g.name || '', type: g.type || 'do', tag: g.tag || '', target: g.target || 1, icon: g.icon || null, category: g.category || null, energy: g.energy || null, social: g.social || null, fun: g.fun || null, time_of_day: g.time_of_day || null, weekend: g.weekend || null, position: i, deleted: false }));
+    put('dekas', { id: sp.id, role, status: sp.status, start_date: sp.start || null, closed: sp.closed || null, ended_day: sp.endedDay || null, summary: sp.summary || '', summarized_up_to: sp.summarizedUpTo || 0, checked: sp.checked || [], checkin: sp.checkin || {}, reflection: sp.reflection || '', review: sp.review || '', review_opened: sp.reviewOpened || null, off_streak: sp.offStreak || 0, brief: sp.brief || { rules: [], questions: [] }, deleted: false });
+    (sp.intentions || []).forEach((g, i) => put('goals', { id: `${sp.id}:${g.id}`, deka_id: sp.id, goal_id: g.id, name: g.name || '', type: g.type || 'do', tag: g.tag || '', target: g.target || 1, icon: g.icon || null, category: g.category || null, energy: g.energy || null, social: g.social || null, fun: g.fun || null, time_of_day: g.time_of_day || null, weekend: g.weekend || null, day: g.day || null, time: g.time || null, hours: g.hours || null, until_day: g.until_day || null, until_goal: g.until_goal || null, position: i, deleted: false }));
     (sp.occurrences || []).forEach((o, i) => put('sessions', { id: `${sp.id}:${o.intention_id}@${o.day}`, deka_id: sp.id, goal_id: o.intention_id, day: o.day, done: Boolean(o.done), missed: Boolean(o.missed), detail: o.detail || '', position: i, deleted: false }));
     for (const [day, text] of Object.entries(sp.notes || {})) if (text) put('notes', { id: `${sp.id}:${day}`, deka_id: sp.id, day: Number(day), text, deleted: false });
     (sp.chat || []).forEach((m, i) => {
@@ -1070,6 +1106,7 @@ function applyRemote(table, row) {
     if (row.deleted) { if (sp) { if (S.current === sp) S.current = null; if (S.next === sp) S.next = null; S.spans = S.spans.filter(x => x !== sp); } return; }
     if (!sp) { sp = newSpan(row.start_date || todayIso()); sp.id = row.id; }
     Object.assign(sp, { status: row.status, start: row.start_date || sp.start, closed: row.closed || undefined, endedDay: row.ended_day || undefined, summary: row.summary || '', summarizedUpTo: row.summarized_up_to || 0, checked: row.checked || [], checkin: row.checkin || {}, reflection: row.reflection || '', review: row.review || '', reviewOpened: row.review_opened || undefined, offStreak: row.off_streak || 0 });
+    sp.brief = { rules: (row.brief && row.brief.rules) || [], questions: (row.brief && row.brief.questions) || [] };
     if (sp.closed === undefined) delete sp.closed; if (sp.endedDay === undefined) delete sp.endedDay; if (sp.reviewOpened === undefined) delete sp.reviewOpened;
     placeSpan(sp, row.role);
     return;
@@ -1082,6 +1119,7 @@ function applyRemote(table, row) {
     const g = i >= 0 ? sp.intentions[i] : { id: row.goal_id };
     Object.assign(g, { name: row.name, type: row.type, tag: row.tag || '', target: row.target, pos: row.position });
     for (const k of IDENTITY) { if (row[k]) g[k] = row[k]; else delete g[k]; }
+    for (const k of TIMING) { if (row[k] != null && row[k] !== '') g[k] = k === 'hours' ? Number(row[k]) : row[k]; else delete g[k]; }
     if (i < 0) sp.intentions.push(g);
   } else if (table === 'sessions') {
     const i = sp.occurrences.findIndex(o => o.intention_id === row.goal_id && o.day === row.day);
@@ -1179,6 +1217,25 @@ function newSpan(start) {
   return { id: uid(), start, status: 'planning', intentions: [], occurrences: [], notes: {}, log: [], chat: [], summary: '', summarizedUpTo: 0, checked: [], checkin: {}, note: '', question: '', reflection: '', review: '' };
 }
 const occOf = (span, iid) => span.occurrences.filter(o => o.intention_id === iid);
+/* Fixed commitments: one time events on a set day, maybe at a set time. Timed goals: hours a session,
+   and a window that ends on a day or at a fixed commitment. */
+const TIMING = ['day', 'time', 'hours', 'until_day', 'until_goal'];
+const isFixed = g => Boolean(g && g.type === 'fixed');
+const clock = t => { if (!t) return ''; const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${h < 12 ? 'AM' : 'PM'}`; };
+const whenOf = (span, g) => `${fmt(dayDate(span, g.day))}${g.time ? `, ${clock(g.time)}` : ''}`;
+function windowEnd(span, g) {
+  let end = g.until_day || 0;
+  const f = g.until_goal && span.intentions.find(x => x.id === g.until_goal);
+  if (isFixed(f)) end = end ? Math.min(end, f.day) : f.day;
+  return end;
+}
+const timingNote = (span, g) => [g.hours ? `${g.hours}\u00a0h each` : '', windowEnd(span, g) ? `until ${fmt(dayDate(span, windowEnd(span, g)))}` : ''].filter(Boolean).join(', ');
+const timingFrom = c => Object.fromEntries(TIMING.filter(k => c[k] != null && c[k] !== '' && c[k] !== 0).map(k => [k, c[k]]));
+// A fixed commitment sits on its day and nowhere else.
+function placeFixed(span, g) {
+  span.occurrences = span.occurrences.filter(o => !(o.intention_id === g.id && !o.done && !o.missed && o.day !== g.day));
+  if (!span.occurrences.some(o => o.intention_id === g.id && o.day === g.day)) span.occurrences.push({ intention_id: g.id, day: g.day, done: false, detail: g.time || '' });
+}
 const findOcc = (span, iid, day) => span.occurrences.find(o => o.intention_id === iid && o.day === day);
 const nameOf = (span, iid) => (span.intentions.find(i => i.id === iid) || { name: iid }).name;
 const statusOf = o => o.done ? 'done' : o.missed ? 'missed' : 'planned';
@@ -1374,6 +1431,9 @@ const ui = {
   cardOpen: null,   // 'msg:card:day', a day opened on a plan card
   enter: new Set(), // plan cards that just arrived and should animate in
   atts: [],         // attachments waiting in the composer
+  briefOpen: false, // the brief shown in full
+  unfold: null,     // the deka whose older messages are showing
+  openCards: new Set(), // settled cards opened from their chip
   syncing: '',      // '', 'waiting' (changes kept here until online) or 'off' (signed out)
 };
 
@@ -1414,8 +1474,8 @@ function stripCompact(sessions, { today = 0, open = null, tap = null, sort, ende
     const mine = sessions.filter(x => x.day === d);
     if (sort) mine.sort((a, b) => sort(a.it.id, b.it.id));
     const cls = ['col', d === today ? 'today' : '', today && d < today ? 'past' : '', open === d ? 'open' : ''].filter(Boolean).join(' ');
-    const icons = d === 10 ? '<span class="rvdot" aria-hidden="true"></span>'
-      : mine.map((x, k) => sIcon(x.it, { small: true, cls: ` ${x.state}${x.changed ? ' changed' : ''}`, attrs: `data-day="${d}"${x.from ? ` data-from="${x.from}"` : ''} style="--dl:${(d - 1) * 45 + k * 30}ms"` })).join('');
+    const icons = mine.map((x, k) => sIcon(x.it, { small: true, cls: ` ${x.state}${x.changed ? ' changed' : ''}${isFixed(x.it) ? ' fixed' : ''}`, attrs: `data-day="${d}"${x.from ? ` data-from="${x.from}"` : ''} style="--dl:${(d - 1) * 45 + k * 30}ms"` })).join('')
+      + (d === 10 ? '<span class="rvdot" aria-hidden="true"></span>' : '');
     const label = d === 10 ? 'Day 10, review' : `Day ${d}${d === today ? ', today' : ''}${mine.length ? `: ${mine.map(x => `${x.it.name}${x.state === 'planned' ? '' : ` ${STATE_WORD[x.state]}`}`).join(', ')}` : ', free'}`;
     const inner = `<span class="dn" aria-hidden="true">${d}</span>${icons}`;
     h += tap ? `<span class="${cls}" data-day="${d}" aria-hidden="true">${inner}</span>` : `<div class="${cls}" role="img" aria-label="${esc(label)}">${inner}</div>`;
@@ -1439,17 +1499,22 @@ function daysView(span, { live = false, today = 0 } = {}) {
     const rest = d === 10 ? ', review' : `${d === today ? `, ${date}` : ''}, ${occ.length ? (live ? `${done} of ${occ.length} done${unsure ? `, ${unsure} not confirmed` : ''}` : `${occ.length} planned`) : 'free'}`;
     const dl = `<span class="sr">Day </span><span class="dn">${d}</span><span class="sr">, </span><span class="dd">${d === today ? 'Today' : date}</span><span class="sr">${esc(rest)}</span>`;
     const head = live && d < 10 ? `<button class="dl" data-a="open-day" data-day="${d}">${dl}</button>` : `<div class="dl" role="img" aria-label="${esc(label)}">${dl}</div>`;
-    let ss;
-    if (d === 10) ss = '<span class="rvdot" aria-hidden="true"></span><span class="free">Review</span>';
-    else if (!occ.length) ss = '<span class="free">Free</span>';
-    else ss = occ.map(o => {
+    const one = o => {
       const it = span.intentions.find(x => x.id === o.intention_id) || { id: o.intention_id, name: o.intention_id };
       const st = stateOf(span, o);
       const key = `${o.intention_id}@${d}`;
-      return live
-        ? sIcon(it, { tag: 'button', cls: ` ${st}`, attrs: `data-a="toggle" data-iid="${esc(o.intention_id)}" data-day="${d}" data-flip="${esc(key)}" role="checkbox" aria-checked="${Boolean(o.done)}" aria-label="${esc(`${it.name}, ${STATE_WORD[st]}`)}"` })
-        : sIcon(it, { cls: ` ${st}`, attrs: `data-flip="${esc(key)}" role="img" aria-label="${esc(it.name)}"` });
-    }).join('');
+      const fx = isFixed(it);
+      const said = `${it.name}${fx && it.time ? ` at ${clock(it.time)}` : ''}`;
+      const icon = live
+        ? sIcon(it, { tag: 'button', cls: ` ${st}${fx ? ' fixed' : ''}`, attrs: `data-a="toggle" data-iid="${esc(o.intention_id)}" data-day="${d}" data-flip="${esc(key)}" role="checkbox" aria-checked="${Boolean(o.done)}" aria-label="${esc(`${said}, ${STATE_WORD[st]}`)}"` })
+        : sIcon(it, { cls: ` ${st}${fx ? ' fixed' : ''}`, attrs: `data-flip="${esc(key)}" role="img" aria-label="${esc(said)}"` });
+      // A fixed commitment carries its time beside its icon.
+      return fx ? `<span class="fx">${icon}${it.time ? `<span class="fxt" aria-hidden="true">${clock(it.time)}</span>` : ''}</span>` : icon;
+    };
+    let ss;
+    if (d === 10) ss = `${occ.map(one).join('')}<span class="rvdot" aria-hidden="true"></span><span class="free">Review</span>`;
+    else if (!occ.length) ss = '<span class="free">Free</span>';
+    else ss = occ.map(one).join('');
     h += `<li class="${cls}" data-day="${d}">${head}<div class="ss">${ss}</div></li>`;
   }
   return h + '</ol>';
@@ -1463,8 +1528,10 @@ function goalRows(span, { live = false, editable = false, target = 'current' } =
     const done = occ.filter(o => o.done).length;
     const placed = occ.filter(o => !o.missed).length;
     const want = wantOf(span, it);
-    const count = live ? `${done} of ${want}` : `${it.target} ${it.target === 1 ? 'time' : 'times'}`;
-    const short = placed < it.target && !span.endedDay ? `, ${placed ? `${placed} placed` : 'not placed yet'}` : '';
+    const fixed = isFixed(it);
+    const note = fixed ? '' : timingNote(span, it);
+    const count = fixed ? whenOf(span, it) : `${live ? `${done} of ${want}` : `${it.target} ${it.target === 1 ? 'time' : 'times'}`}${note ? `, ${note}` : ''}`;
+    const short = !fixed && placed < it.target && !span.endedDay ? `, ${placed ? `${placed} placed` : 'not placed yet'}` : '';
     const inner = `${sIcon(it)}<span class="gn"><b>${nb(it.name)}</b><span class="sr">, </span><span>${count}${live ? '<span class="sr"> done</span>' : ''}${short}</span></span>${live ? ring(done, want) : ''}`;
     const label = `${it.name}, ${live ? `${done} of ${want} done` : `${it.target} times`}${short}`;
     h += editable
@@ -1486,7 +1553,9 @@ const perDay = n => (Math.round(n * 10) / 10).toString();
 function loadOf(span, trims = []) {
   const days = isLive(span) ? Math.max(1, 10 - openFrom(span)) : 9;
   const counted = span.intentions.filter(g => g.target < 9);
-  const left = counted.reduce((n, g) => n + Math.max(0, g.target - doneOf(span, g.id)), 0);
+  // Three hours of prep weighs like two ordinary sessions.
+  const weight = g => (g.hours ? Math.max(1, g.hours / 1.5) : 1);
+  const left = counted.reduce((n, g) => n + Math.max(0, g.target - doneOf(span, g.id)) * weight(g), 0);
   const cut = trims.filter(t => counted.some(g => g.id === t.goal_id)).reduce((n, t) => n + t.requested - t.suggested, 0);
   return { req: left / days, sug: trims.length ? (left - cut) / days : null };
 }
@@ -1502,10 +1571,14 @@ function goalsCard(msg, card, i, readonly) {
   const trims = new Map(((card.trim && !choice && card.trim.trims) || []).map(t => [t.goal_id, t]));
   const used = new Map(((choice === 'use' && card.trim.trims) || []).map(t => [t.goal_id, t]));
   const rows = card.rows.slice().sort((a, b) => CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category));
+  const cspan = spanFor(card.target) || chatSpan();
   const lis = rows.map((r, k) => {
     const t = trims.get(r.id);
     const gap = k > 0 && rows[k - 1].category !== r.category ? ' gap' : '';
     if (r.op === 'remove') return `<li class="gr removed${gap}" style="--i:${k}">${sIcon(r)}<span class="gname">${nb(r.name)}</span><span class="gc"><span></span><span class="num">Removed</span></span></li>`;
+    // A fixed commitment shows its date and time in place of dots.
+    if (isFixed(r)) return `<li class="gr c-${r.category} fixed${gap}" style="--i:${k}">${sIcon(r, { cls: ' fixed' })}<span class="gname">${nb(r.name)}</span><span class="gwhen">${esc(whenOf(cspan, r))}</span></li>`;
+    const sub = timingNote(cspan, r);
     const tr = card.trim && card.trim.trims.find(x => x.goal_id === r.id);
     const count = t ? t.requested : used.has(r.id) ? used.get(r.id).suggested : tr ? tr.requested : r.target;
     const keep = t ? t.suggested : count;
@@ -1514,7 +1587,7 @@ function goalsCard(msg, card, i, readonly) {
     const was = t ? t.requested : choice ? null : r.was;
     const num = count >= 9 && !t ? '' : was != null && was !== keep ? `<span class="was">${was}</span>&thinsp;→&thinsp;${keep}` : `${keep}`;
     const said = count >= 9 && !t ? 'daily' : was != null && was !== keep ? `${was}, suggested ${keep}` : `${keep}`;
-    return `<li class="gr c-${r.category}${gap}" style="--i:${k}">${sIcon(r)}<span class="gname">${nb(r.name)}</span>
+    return `<li class="gr c-${r.category}${gap}" style="--i:${k}">${sIcon(r)}<span class="gname">${nb(r.name)}${sub ? `<small class="gsub">${esc(sub)}</small>` : ''}</span>
       <span class="gc"><span class="dots" aria-hidden="true">${dots}</span><span class="num" aria-hidden="true">${num}</span><span class="sr">, ${said}</span></span></li>`;
   }).join('');
   let meter = '';
@@ -1555,7 +1628,7 @@ function resolveTrim(card, choice, by = null) {
   if (!refreshChat()) render();
   toast(choice === 'use' ? 'Trim applied.' : 'Kept your numbers.', () => { goals.intentions = before.i; goals.occurrences = before.o; card.trim.choice = null; render(); });
 }
-const rowOf = (g, extra = {}) => ({ id: g.id, name: g.name, type: g.type, icon: iconOf(g), category: catOf(g), target: g.target, was: null, op: 'add', ...extra });
+const rowOf = (g, extra = {}) => ({ id: g.id, name: g.name, type: g.type, icon: iconOf(g), category: catOf(g), target: g.target, was: null, op: 'add', ...timingFrom(g), ...extra });
 
 // A snapshot of where the deka stands, shown under a reply.
 function statusCard(span) {
@@ -1866,7 +1939,36 @@ function chatEmpty(span, { float = true } = {}) {
 
 const paragraphs = t => esc(t);
 
+/* Settled cards fold to a one line chip, so the chat stays easy to follow. What stays full: an open
+   plan, a trim still waiting, and the cards of the newest reply that has any. */
+const spanOfMsg = msg => [S.current, S.next, ...S.spans].find(sp => sp && (sp.chat || []).includes(msg)) || chatSpan();
+function newestCarded(span) { for (let i = span.chat.length - 1; i >= 0; i--) if ((span.chat[i].cards || []).length) return span.chat[i]; return null; }
+function chipOf(msg, card) {
+  const span = spanOfMsg(msg);
+  const latest = newestCarded(span) === msg;
+  if (card.type === 'proposal') {
+    if (card.status === 'confirmed') return `Plan confirmed, ${card.occurrences.length} ${card.occurrences.length === 1 ? 'session' : 'sessions'}`;
+    if (card.status === 'replaced') return 'Earlier plan, replaced';
+    if (card.status === 'stale') return 'Plan out of date';
+    return null;
+  }
+  if (card.type === 'goals' && card.trim) {
+    if (card.trim.choice) return card.trim.choice === 'use' ? 'Trim applied' : 'Kept your numbers';
+    return latestTrim(span) === card ? null : 'Trim not answered';
+  }
+  if (latest) return null;
+  if (card.type === 'goals') { const n = (card.rows || card.lines || []).length; return `${n} ${n === 1 ? 'goal' : 'goals'} updated`; }
+  if (card.type === 'log') return `Day ${card.day} logged`;
+  if (card.type === 'status') return `Where we are, day ${card.day}`;
+  return null;
+}
 function cardView(msg, card, i, readonly) {
+  const chip = chipOf(msg, card);
+  if (!chip) return cardBody(msg, card, i, readonly);
+  const key = `${msg.id}:${i}`, open = ui.openCards.has(key);
+  return `<div class="cardchip${open ? ' open' : ''}"><button class="chip-card" data-a="card-toggle" data-k="${esc(key)}" aria-expanded="${open}"><span>${esc(chip)}</span>${I.chev}</button>${open ? cardBody(msg, card, i, readonly) : ''}</div>`;
+}
+function cardBody(msg, card, i, readonly) {
   if (card.type === 'goals') {
     if (!card.rows) return `<div class="card"><span class="eyebrow">Goals</span><ul class="lines">${card.lines.map(l => `<li>${nb(l)}</li>`).join('')}</ul></div>`;
     return goalsCard(msg, card, i, readonly);
@@ -2266,13 +2368,43 @@ function sweepFiles() {
   DB.all().then(all => { for (const r of all) if (!keep.has(r.id)) DB.del(r.id).catch(() => {}); }).catch(() => {});
 }
 
+/* The brief: pinned at the top of the chat, one line until tapped. Goals and fixed commitments come
+   from the goals themselves; the rules and open questions are what Deka keeps with update_brief. */
+function briefView(span) {
+  const goals = span.intentions.filter(g => !isFixed(g));
+  const fixed = span.intentions.filter(isFixed).sort((a, b) => a.day - b.day);
+  const b = span.brief || { rules: [], questions: [] };
+  const rules = b.rules || [], questions = b.questions || [];
+  if (!goals.length && !fixed.length && !rules.length && !questions.length) return '';
+  const live = isLive(span);
+  const line = [live ? `Day ${Math.min(Math.max(1, dayNum(span)), 10)} of 10` : 'Not started', goals.length ? `${goals.length} ${goals.length === 1 ? 'goal' : 'goals'}` : '', fixed.length ? `${fixed.length} fixed` : '', questions.length ? `${questions.length} ${questions.length === 1 ? 'question' : 'questions'}` : ''].filter(Boolean).join(', ');
+  const open = Boolean(ui.briefOpen);
+  let body = '';
+  if (open) {
+    const sec = (label, items) => items.length ? `<div class="bsec"><span class="eyebrow">${label}</span><ul>${items.join('')}</ul></div>` : '';
+    body = `<div class="brief-body">${sec('Goals', goals.map(g => { const note = timingNote(span, g); return `<li>${sIcon(g, { small: true })}<span class="bn">${esc(g.name)}${note ? `<small>${esc(note)}</small>` : ''}</span><span class="bv">${live ? `${doneOf(span, g.id)} of ${g.target}` : g.target}</span></li>`; }))}
+      ${sec('Fixed', fixed.map(g => `<li>${sIcon(g, { small: true, cls: ' fixed' })}<span class="bn">${esc(g.name)}</span><span class="bv">${esc(whenOf(span, g))}</span></li>`))}
+      ${sec('Rules', rules.map(r => `<li class="bt">${nb(r)}</li>`))}${sec('Waiting on', questions.map(q => `<li class="bt">${nb(q)}</li>`))}</div>`;
+  }
+  return `<section class="brief glass${open ? ' open' : ''}" aria-label="Brief"><button class="brief-line" data-a="brief" aria-expanded="${open}"><span>${esc(line)}</span>${I.chev}</button>${body}</section>`;
+}
+// Only the newest messages show; the ones before fold into one quiet line that opens in place.
+const FOLD = 10;
+const visibleMsgs = span => (span.chat.length <= FOLD || ui.unfold === span.id ? span.chat : span.chat.slice(-FOLD));
+function foldView(span) {
+  const hidden = span.chat.length - FOLD;
+  if (hidden <= 0) return '';
+  const open = ui.unfold === span.id;
+  return `<button class="fold" id="fold" data-a="fold" aria-expanded="${open}"><span>${hidden} earlier ${hidden === 1 ? 'message' : 'messages'}</span>${I.chev}</button>`;
+}
 function chatView() {
   const span = chatSpan();
   const msgs = span.chat;
-  if (!msgs.length && !ui.turn) return `<div class="chat" id="chat" role="log" data-span="${span.id}">${chatEmpty(span)}</div>`;
+  const brief = `<div class="brief-slot" id="briefSlot">${briefView(span)}</div>`;
+  if (!msgs.length && !ui.turn) return `${brief}<div class="chat" id="chat" role="log" data-span="${span.id}">${chatEmpty(span)}</div>`;
   // A new deka that came with only the review of the last one still opens with the first question.
-  if (onlyRecap(span) && !ui.turn) return `<h1 class="sr">Chat with Deka</h1><div class="chat" id="chat" role="log" data-span="${span.id}">${msgs.map(m => msgView(m)).join('')}${chatEmpty(span, { float: false })}</div>`;
-  return `<h1 class="sr">Chat with Deka</h1><div class="chat" id="chat" role="log" data-span="${span.id}">${msgs.map(m => msgView(m)).join('')}</div>`;
+  if (onlyRecap(span) && !ui.turn) return `<h1 class="sr">Chat with Deka</h1>${brief}<div class="chat" id="chat" role="log" data-span="${span.id}">${msgs.map(m => msgView(m)).join('')}${chatEmpty(span, { float: false })}</div>`;
+  return `<h1 class="sr">Chat with Deka</h1>${brief}<div class="chat" id="chat" role="log" data-span="${span.id}">${foldView(span)}${visibleMsgs(span).map(m => msgView(m)).join('')}</div>`;
 }
 
 // Keeps the chat in place while things change, so a streaming reply is never redrawn.
@@ -2282,17 +2414,29 @@ function refreshChat() {
   if (!box || box.dataset.span !== span.id || ui.tab !== 'chat' || ui.sub) return false;
   if (!span.chat.length || (onlyRecap(span) && !ui.turn)) return false;
   if (box.querySelector('.chat-empty')) { box.innerHTML = ''; box.insertAdjacentHTML('beforebegin', '<h1 class="sr">Chat with Deka</h1>'); }
-  const seen = new Set([...box.children].map(c => c.id));
-  for (const m of span.chat) {
-    const el = $(`m-${m.id}`);
-    if (!el) { box.insertAdjacentHTML('beforeend', msgView(m)); continue; }
+  const slot = $('briefSlot');
+  if (slot) { const b = briefView(span); if (slot.innerHTML !== b) slot.innerHTML = b; }
+  // The fold line first, then the messages that show, each in its place.
+  const fold = foldView(span), f = $('fold');
+  if (fold) { if (!f) box.insertAdjacentHTML('afterbegin', fold); else if (f.outerHTML !== fold) f.outerHTML = fold; } else if (f) f.remove();
+  const seen = new Set([...box.children].map(c => c.id).filter(id => id && id !== 'fold'));
+  let prev = $('fold');
+  for (const m of visibleMsgs(span)) {
+    let el = $(`m-${m.id}`);
+    if (!el) {
+      if (prev) prev.insertAdjacentHTML('afterend', msgView(m)); else box.insertAdjacentHTML('afterbegin', msgView(m));
+      prev = $(`m-${m.id}`);
+      continue;
+    }
     seen.delete(el.id);
     if (ui.turn && ui.turn.msg === m) {
       el.querySelector('.cards').innerHTML = (m.cards || []).map((c, i) => cardView(m, c, i)).join('');
+      prev = el;
       continue;
     }
     const html = msgView(m);
-    if (el.outerHTML !== html) el.outerHTML = html;
+    if (el.outerHTML !== html) { el.outerHTML = html; el = $(`m-${m.id}`); }
+    prev = el;
   }
   for (const id of seen) $(id)?.remove();
   play();
@@ -2594,18 +2738,18 @@ function intentionSheet(sh) {
   pick += '</ol>';
   const target = isNew ? sh.draft.days.length : it.target;
   const placed = isNew ? target : occOf(span, sh.iid).filter(o => !o.missed).length;
-  const hint = sh.sel ? 'Tap a free day to move it.' : placed < target ? `${placed} of ${target} placed. Tap a day to add&nbsp;one.` : 'Tap a day to add it. Tap a dot to move&nbsp;it.';
+  const hint = isFixed(it) ? 'Tap a day to move&nbsp;it.' : sh.sel ? 'Tap a free day to move it.' : placed < target ? `${placed} of ${target} placed. Tap a day to add&nbsp;one.` : 'Tap a day to add it. Tap a dot to move&nbsp;it.';
   const floor = isNew ? 1 : Math.max(1, doneOf(span, sh.iid));
   return `<form class="form" data-form="sheet" autocomplete="off">
     <div class="icon-row">${sIcon(it)}<div style="flex:1;min-width:0"><label class="sr" for="intName">Name</label>
     <input class="input" id="intName" value="${esc(it.name)}" placeholder="Name it" maxlength="40" enterkeyhint="done"></div></div>
     <div><button type="button" class="link" data-a="icon-open" aria-expanded="${Boolean(sh.icons)}" style="padding-left:0">${sh.icons ? 'Done choosing' : 'Change icon'}</button>
     ${sh.icons ? `<div class="icons" role="group" aria-label="Icons">${Object.keys(GOAL_ICONS).map(k => `<button type="button" data-a="icon-pick" data-v="${k}" aria-pressed="${iconOf(it) === k}" aria-label="${esc(iconLabel(k))}">${sIcon({ icon: k, category: GOAL_ICONS[k][0], type: it.type })}</button>`).join('')}</div>` : ''}</div>
-    <div class="seg" role="group" aria-label="Type">${types.map(([v, l]) => `<button type="button" data-a="sheet-type" data-v="${v}" aria-pressed="${it.type === v}">${l}</button>`).join('')}</div>
+    ${isFixed(it) ? `<div class="setting fixed-time"><label for="fixedTime">Time</label><input type="time" id="fixedTime" value="${esc(it.time || '')}"></div>` : `<div class="seg" role="group" aria-label="Type">${types.map(([v, l]) => `<button type="button" data-a="sheet-type" data-v="${v}" aria-pressed="${it.type === v}">${l}</button>`).join('')}</div>
     <div class="stepper"><span class="label" style="margin:0" id="timesLabel">Times</span><div class="ctl">
       <button type="button" class="icon-btn" data-a="sheet-count" data-v="-1" aria-label="Fewer" ${target <= floor ? 'disabled' : ''}>&minus;</button>
       <span class="val" aria-live="polite" aria-labelledby="timesLabel">${target}</span>
-      <button type="button" class="icon-btn" data-a="sheet-count" data-v="1" aria-label="More" ${target >= 9 ? 'disabled' : ''}>+</button></div></div>
+      <button type="button" class="icon-btn" data-a="sheet-count" data-v="1" aria-label="More" ${target >= 9 ? 'disabled' : ''}>+</button></div></div>`}
     <div>${pick}<p class="pick-hint" aria-live="polite">${hint}</p>
       ${sh.sel ? `<div class="actions" style="margin-top:4px"><button type="button" class="link" data-a="pick-remove">Remove day ${sh.sel}</button></div>` : ''}</div>
     ${isNew
@@ -2655,7 +2799,7 @@ function render() {
 /* Theme: Light, Dark, or Match iPhone (the system setting). data-theme on the root holds an explicit
    choice, the head script sets it before paint, and deka.theme mirrors it for that script. */
 function chrome() {
-  const t = S.settings.theme;
+  const t = S.settings && S.settings.theme;
   const dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
   for (const m of document.querySelectorAll('meta[name="theme-color"]')) {
     m.content = t === 'light' || t === 'dark' ? (dark ? '#14130F' : '#F5F3EC') : (m.media.includes('dark') ? '#14130F' : '#F5F3EC');
@@ -2815,12 +2959,13 @@ function buildRequest(span, text, event, user = null) {
     today: `${WEEKDAYS[new Date().getDay()]} ${todayIso()}`,
     current_day: early ? event.day : p === 'live' ? dayNum(span) : null,
     days: dayMap(target.start),
-    goals: target.intentions.map(g => ({ id: g.id, name: g.name, type: g.type, tag: g.tag || '', target: g.target, ...Object.fromEntries(IDENTITY.filter(k => g[k]).map(k => [k, g[k]])) })),
+    goals: target.intentions.map(g => ({ id: g.id, name: g.name, type: g.type, tag: g.tag || '', target: g.target, ...Object.fromEntries(IDENTITY.filter(k => g[k]).map(k => [k, g[k]])), ...timingFrom(g) })),
     schedule: target.occurrences.map(o => ({ goal_id: o.intention_id, day: o.day, status: occStatus(o), detail: o.detail || '' })),
     notes: target === span ? span.notes : {},
-    summary: span.summary || '',
+    // What Deka keeps: the rules they stated and what it is waiting on. It reads this as the source of truth.
+    brief: { rules: (span.brief && span.brief.rules) || [], questions: (span.brief && span.brief.questions) || [] },
     past: S.spans.slice(0, 3).map(summary),
-    messages: all.slice(-30),
+    messages: all.slice(-FOLD),
     message: text || null,
     event: event || null,
     // Redirects in a row, so Deka can say once that it is built only for planning.
@@ -2828,7 +2973,7 @@ function buildRequest(span, text, event, user = null) {
     // The newest trim still waiting for an answer, which Deka can answer when they reply in words.
     ...(() => { const c = latestTrim(span); return c && !c.trim.choice ? { open_trim: { trims: c.trim.trims } } : {}; })(),
   };
-  if (older.length) body.to_summarize = older;
+
   // The card still waiting for Confirm, with every session on it, so a tweak adjusts that card.
   const which = target === S.next ? 'next' : 'current';
   const open = span.chat.flatMap(m => m.cards || []).filter(c => c.type === 'proposal' && c.status === 'open' && (c.target || 'current') === which).pop();
@@ -2979,6 +3124,7 @@ function onEvent(turn, ev, data) {
   if (ev === 'error') { msg.error = data.message; msg.retry = { text: turn.text, event: turn.event }; return; }
   if (ev === 'done') return;
   if (ev === 'off_topic') { turn.offTopic = true; return; }
+  if (ev === 'brief') { noteField(msg, turn.span, 'brief'); turn.span.brief = { rules: data.rules || [], questions: data.questions || [] }; if (!refreshChat()) render(); saveSoon(); return; }
   if (ev === 'summary') { noteField(msg, turn.span, 'summary'); noteField(msg, turn.span, 'summarizedUpTo'); turn.span.summary = data.summary; turn.span.summarizedUpTo = Math.max(0, turn.summarizeTo); return; }
   const target = spanFor(turn.target) || turn.span;
   if (ev === 'goals') {
@@ -3094,13 +3240,16 @@ function applyGoals(span, changes) {
   const lines = [];
   for (const c of changes) {
     if (c.op === 'add') {
-      if (!span.intentions.some(g => g.id === c.id)) span.intentions.push({ id: c.id, name: c.name, type: c.type, tag: c.tag || '', target: c.target, ...identity(c) });
-      lines.push(`Added ${c.name}, ${c.target} ${c.target === 1 ? 'time' : 'times'}`);
+      if (!span.intentions.some(g => g.id === c.id)) span.intentions.push({ id: c.id, name: c.name, type: c.type, tag: c.tag || '', target: c.target, ...identity(c), ...timingFrom(c) });
+      const g = span.intentions.find(x => x.id === c.id);
+      if (isFixed(g)) placeFixed(span, g);
+      lines.push(isFixed(g) ? `Added ${c.name}, ${whenOf(span, g)}` : `Added ${c.name}, ${c.target} ${c.target === 1 ? 'time' : 'times'}`);
     } else if (c.op === 'edit') {
       const g = span.intentions.find(x => x.id === c.id);
       if (!g) continue;
       const was = g.target;
-      Object.assign(g, { name: c.name, type: c.type, tag: c.tag || '', target: c.target, ...identity(c) });
+      Object.assign(g, { name: c.name, type: c.type, tag: c.tag || '', target: c.target, ...identity(c), ...timingFrom(c) });
+      if (isFixed(g)) placeFixed(span, g);
       lines.push(was !== c.target ? `${c.name} now ${c.target} ${c.target === 1 ? 'time' : 'times'}` : `Updated ${c.name}`);
     } else if (c.op === 'remove') {
       span.intentions = span.intentions.filter(g => g.id !== c.id);
@@ -3133,7 +3282,7 @@ function proposalFits(span, card) {
     const need = Math.max(0, g.target - doneOf(span, g.id));
     if (card.occurrences.filter(o => o.goal_id === g.id).length !== need) return false;
   }
-  return card.occurrences.every(o => span.intentions.some(g => g.id === o.goal_id) && o.day >= from && o.day <= 9 &&
+  return card.occurrences.every(o => span.intentions.some(g => g.id === o.goal_id) && o.day >= from && (o.day <= 9 || isFixed(span.intentions.find(g => g.id === o.goal_id))) &&
     !span.occurrences.some(x => x.intention_id === o.goal_id && x.day === o.day && (x.done || x.missed)));
 }
 
@@ -3388,6 +3537,8 @@ function sheetPick(day) {
   }
   markEdited(sh);
   const g = span.intentions.find(x => x.id === sh.iid);
+  // A fixed commitment is on one day: a tap moves it there.
+  if (isFixed(g)) { g.day = day; placeFixed(span, g); render(); return; }
   if (sh.sel === day) sh.sel = null;
   else if (sh.sel && !on) { const o = findOcc(span, sh.iid, sh.sel); if (o) o.day = day; sh.sel = null; }
   else if (on) sh.sel = day;
@@ -3558,6 +3709,9 @@ document.addEventListener('click', e => {
     }
     case 'retry': retryReply(chatSpan().chat.find(m => m.id === el.dataset.m), { failed: true }); break;
     case 'setup-details': setupDetails(); break;
+    case 'brief': ui.briefOpen = !ui.briefOpen; refreshChat() || render(); break;
+    case 'fold': { const sp = chatSpan(); ui.unfold = ui.unfold === sp.id ? null : sp.id; refreshChat() || render(); break; }
+    case 'card-toggle': { const k = el.dataset.k; if (ui.openCards.has(k)) ui.openCards.delete(k); else ui.openCards.add(k); refreshChat() || render(); break; }
     case 'regen': retryReply(chatSpan().chat.find(m => m.id === el.dataset.m)); break;
     case 'copy': { const m = msgById(el.dataset.m); if (m) copyReply(m); break; }
     case 'copy-user': { const m = msgById(el.dataset.m); closeLayer(); if (m) copyText(m.text).then(ok => ok && toast('Copied.')); break; }
@@ -3714,6 +3868,10 @@ document.addEventListener('keydown', e => {
 
 document.addEventListener('change', e => {
   if (e.target.id === 'startDate' && e.target.value && S.current) { S.current.start = e.target.value; saveSoon(); }
+  if (e.target.id === 'fixedTime' && ui.sheet) {
+    const sh = ui.sheet, span = spanFor(sh.target), g = span && span.intentions.find(x => x.id === sh.iid);
+    if (g) { markEdited(sh); g.time = e.target.value || ''; if (!g.time) delete g.time; for (const o of occOf(span, g.id)) o.detail = g.time || ''; saveSoon(); }
+  }
   if (e.target.id === 'checkinTime' && e.target.value) { S.settings.checkin = e.target.value; save(); pushSoon(); }
   if (e.target.id === 'importFile') importData(e.target.files[0]);
   if (/^pick(Photos|Camera|Files)$/.test(e.target.id)) { const list = [...e.target.files]; e.target.value = ''; addFiles(list); }

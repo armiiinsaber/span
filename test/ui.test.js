@@ -107,6 +107,9 @@ const seed = async (state, key = 'deka.v1', { signedOut = false, sameAccount = f
 const fresh = () => seed({ v: 1, current: null, next: null, spans: [], settings: { theme: 'system' } });
 const text = sel => page.js(`(document.querySelector(${JSON.stringify(sel)})?.textContent || '').replace(/\u00a0/g, ' ')`);
 const stored = () => page.js("JSON.parse(localStorage.getItem('deka.v1'))");
+// Settled cards fold to chips: their words, and a way to open one.
+const chips = () => page.js("[...document.querySelectorAll('.chip-card')].map(c => c.textContent.trim())");
+const openChip = async re => { await page.js(`(() => { const c = [...document.querySelectorAll('.chip-card')].find(c => ${re}.test(c.textContent)); if (!c) throw new Error('no chip ' + ${JSON.stringify(String(re))}); c.click(); })()`); };
 const lastDeka = () => page.js("[...document.querySelectorAll('.msg.deka .t')].pop()?.textContent || ''");
 
 test.describe('Deka app', { skip }, () => {
@@ -188,7 +191,9 @@ test.describe('Deka app', { skip }, () => {
     await idle();
     let cur = (await stored()).current;
     assert.equal(cur.intentions.find(g => g.id === 'run').target, 6, 'eight runs became six');
-    assert.match(await text('.goals-card .state'), /Trim applied/);
+    assert.ok((await chips()).includes('Trim applied'), 'the answered trim folds to a chip');
+    await openChip('/Trim applied/');
+    assert.match(await text('.cardchip.open .goals-card .state'), /Trim applied/);
     assert.equal(cur.chat.filter(m => m.role === 'user').at(-1).text, 'Use the suggestion');
     await click('.toast [data-a=toast-undo]');
     cur = (await stored()).current;
@@ -211,6 +216,7 @@ test.describe('Deka app', { skip }, () => {
     await say('your trim sounds good'); await idle();
     const sent0 = sent.at(-1).tools.map(t => t.name);
     assert.ok(sent0.includes('resolve_trim'), 'Deka can answer the open trim');
+    await openChip('/Trim applied/');
     assert.deepEqual(await cardState(), { buttons: 0, cut: 0, arrows: 0, state: 'Trim applied', runDots: 6, meterArrow: false });
     const cur = (await stored()).current;
     assert.equal(cur.intentions.find(g => g.id === 'run').target, 6);
@@ -221,6 +227,7 @@ test.describe('Deka app', { skip }, () => {
   test('turning a trim down by text keeps the numbers, and the card settles', async () => {
     await trimmed();
     await say('keep my numbers'); await idle();
+    await openChip('/Kept your numbers/');
     assert.deepEqual(await cardState(), { buttons: 0, cut: 0, arrows: 0, state: 'Kept your numbers', runDots: 8, meterArrow: false });
     assert.equal((await stored()).current.intentions.find(g => g.id === 'run').target, 8);
   });
@@ -228,15 +235,14 @@ test.describe('Deka app', { skip }, () => {
   test('only the newest trim card can be answered; an older one goes quiet with no buttons', async () => {
     await trimmed();
     await say('also eight date nights and six sober nights'); await idle();
-    const cards = await page.js(`[...document.querySelectorAll('.goals-card')].map(c => ({ buttons: c.querySelectorAll('[data-a=trim-use]').length, quiet: c.classList.contains('quiet'), trim: c.querySelectorAll('.dots i.cut').length > 0 }))`);
-    const withTrim = cards.filter(c => c.trim);
-    assert.equal(withTrim.length, 2, 'two trim cards');
-    assert.deepEqual(withTrim.map(c => c.buttons), [0, 1], 'only the newest has buttons');
-    assert.equal(withTrim[0].quiet, true);
-    // Tapping the old card, if it had buttons, would do nothing; the newest answers as usual.
+    const cards = await page.js(`[...document.querySelectorAll('.goals-card')].map(c => ({ buttons: c.querySelectorAll('[data-a=trim-use]').length, trim: c.querySelectorAll('.dots i.cut').length > 0 }))`);
+    assert.deepEqual(cards.filter(c => c.trim).map(c => c.buttons), [1], 'only the newest trim shows, with buttons');
+    assert.deepEqual(await chips(), ['Trim not answered'], 'the older one folds away, never answerable');
+    await openChip('/Trim not answered/');
+    assert.equal(await page.js("document.querySelector('.cardchip.open .goals-card').classList.contains('quiet')"), true);
+    assert.equal(await page.js("document.querySelectorAll('.cardchip.open [data-a=trim-use]').length"), 0);
     await click('[data-a=trim-use]'); await idle();
-    const states = await page.js(`[...document.querySelectorAll('.goals-card .state')].map(s => s.textContent)`);
-    assert.deepEqual(states, ['Trim applied']);
+    assert.deepEqual((await chips()).filter(c => /Trim/.test(c)), ['Trim not answered', 'Trim applied']);
   });
 
   test('the goals card lines up at every width in both themes, with no orphan words', async () => {
@@ -288,12 +294,14 @@ test.describe('Deka app', { skip }, () => {
     await say('keep day 4 free'); await idle();
     const open = sent.at(-1) && lastContext().open_card;
     assert.ok(open && open.sessions.length === 10, 'the tweak carries the open card with every session');
-    assert.match(await page.js("document.querySelectorAll('.card')[1].textContent"), /Replaced by a newer plan/);
+    assert.deepEqual((await chips()).filter(c => /plan/i.test(c)), ['Earlier plan, replaced']);
     await click('[data-a=confirm]');
     const st = await stored();
     assert.equal(st.current.status, 'live');
     assert.equal(st.current.occurrences.length, 10);
     assert.equal(st.current.occurrences.some(o => o.day === 4), false);
+    assert.ok((await chips()).includes('Plan confirmed, 10 sessions'), 'a confirmed plan folds to a chip');
+    await openChip('/Plan confirmed/');
     assert.match(await page.js("[...document.querySelectorAll('.card .state')].pop().textContent"), /Confirmed/);
     await click('[data-tab=days]');
     assert.ok(await page.js("document.querySelectorAll('.day.flash').length") > 0, 'changed days flash');
@@ -319,9 +327,11 @@ test.describe('Deka app', { skip }, () => {
     assert.equal(sent.at(-1).messages.at(-1).content.includes('answers the question in your last reply'), true, 'the answer carries the check in marker');
     assert.equal(on(cur, 'sober', 5).done, true);
     assert.deepEqual(cur.checked.sort(), [1, 2, 3, 4, 5]);
-    assert.match(await page.js("[...document.querySelectorAll('.card .eyebrow')].map(e => e.textContent).join('|')"), /Day 4\|Day 5\|Proposed plan/);
+    assert.ok((await chips()).includes('Day 4 logged'), 'the earlier day folds to a chip');
+    assert.match(await page.js("[...document.querySelectorAll('.card .eyebrow')].map(e => e.textContent).join('|')"), /Day 5\|Proposed plan/);
     // Tapping a logged result corrects it.
-    await click('[data-a=log-flip]');
+    await openChip('/Day 4 logged/');
+    await click('.cardchip.open [data-a=log-flip]');
     assert.equal((await stored()).current.occurrences.find(o => o.intention_id === 'run' && o.day === 4).done, false);
     // It asks once per day.
     await page.go();
@@ -771,7 +781,7 @@ test.describe('Deka app', { skip }, () => {
     await idle(); await sleep(1300);
     assert.deepEqual(lastContext().open_trim.trims.map(t => [t.goal_id, t.requested]), [['date_night', 8], ['sober', 8], ['gym', 9]], 'the retry sees the trim still open');
     assert.equal(lastContext().goals.find(g => g.id === 'date_night').target, 8, 'at the counts asked for');
-    assert.equal(await page.js("[...document.querySelectorAll('.goals-card')].filter(c => /Trim applied/.test(c.textContent)).length"), 1, 'answered once, by the retry');
+    assert.deepEqual((await chips()).filter(c => c === 'Trim applied'), ['Trim applied'], 'answered once, by the retry');
   });
 
   test('attachments: the plus menu, thumbnails, limits, sending with no text, and the full screen photo', async () => {
@@ -1334,5 +1344,118 @@ test.describe('Deka app', { skip }, () => {
     const rows = (await fake.pool.query('select kind, model, input_tokens, output_tokens from public.usage where user_id = $1', [who.user.id])).rows;
     assert.equal(rows.length, 1);
     assert.equal(rows[0].kind, 'chat');
+  });
+  /* The brief, folding, chips, fixed commitments */
+
+  // A deka on day 4 with a fixed interview on day 6 at 3 PM and three hours of prep a day until it.
+  function withFixed() {
+    const st = liveState(4);
+    const c = st.current;
+    c.intentions.push({ id: 'venn', name: 'Venn interview', type: 'fixed', tag: '', target: 1, icon: 'laptop', category: 'work', day: 6, time: '15:00' },
+      { id: 'prep', name: 'Interview prep', type: 'do', tag: '', target: 3, icon: 'book', category: 'work', hours: 3, until_goal: 'venn' },
+      { id: 'flight', name: 'Flight home', type: 'fixed', tag: '', target: 1, icon: 'travel', category: 'rest', day: 10, time: '09:30' });
+    c.occurrences.push({ intention_id: 'venn', day: 6, done: false, detail: '15:00' }, { intention_id: 'flight', day: 10, done: false, detail: '09:30' },
+      ...[4, 5, 6].map(day => ({ intention_id: 'prep', day, done: false, detail: '' })));
+    c.brief = { rules: ['Prep 3 hours a day until Oct 6', 'Free evening every other day'], questions: ['How long is the flight?'] };
+    return st;
+  }
+
+  test('the brief: one line pinned at the top, open on tap, kept by Deka', async () => {
+    await seed(withFixed());
+    const line = await text('.brief-line');
+    assert.equal(line, 'Day 4 of 10, 4 goals, 2 fixed, 1 question');
+    assert.equal(await page.js("getComputedStyle(document.getElementById('briefSlot')).position"), 'sticky');
+    assert.equal(await page.js("document.querySelector('.brief-body')"), null, 'closed at first');
+    await click('.brief-line');
+    const open = await page.js(`(() => {
+      const t = el => (el ? el.textContent.replace(/\\u00a0/g, ' ').replace(/\\s+/g, ' ').trim() : '');
+      const sec = [...document.querySelectorAll('.bsec')].map(s => [s.querySelector('.eyebrow').textContent, [...s.querySelectorAll('li')].map(li => li.classList.contains('bt') ? t(li) : [t(li.querySelector('.bn')), t(li.querySelector('.bv'))].join(' | '))]);
+      return Object.fromEntries(sec);
+    })()`);
+    assert.deepEqual(open.Goals.map(x => x.split(' | ')[1]), ['0 of 5', '0 of 3', '0 of 2', '0 of 3']);
+    assert.match(open.Goals[3], /^Interview prep ?3 h each, until \w+ \d+ \| 0 of 3$/);
+    assert.deepEqual(open.Fixed.map(x => x.replace(/\| \w+ \d+/, '| DATE')), ['Venn interview | DATE, 3 PM', 'Flight home | DATE, 9:30 AM']);
+    assert.deepEqual(open.Rules, ['Prep 3 hours a day until Oct 6', 'Free evening every other day']);
+    assert.deepEqual(open['Waiting on'], ['How long is the flight?']);
+    await click('.brief-line');
+    assert.equal(await page.js("document.querySelector('.brief-body')"), null, 'and closed again');
+    // Deka keeps it: a rule said in the chat lands in the brief, and goes to Deka with the next message.
+    await say('keep day 5 free'); await idle();
+    assert.deepEqual((await stored()).current.brief.rules, ['Day 5 free']);
+    await say('how is it going'); await idle();
+    assert.deepEqual(lastContext().brief, { rules: ['Day 5 free'], questions: [] });
+  });
+
+  test('a summary from before the brief becomes its rules', async () => {
+    const st = liveState(4);
+    st.current.summary = 'They keep day 4 free. Mom only on weekends.';
+    await seed(st);
+    assert.deepEqual((await stored()).current.brief, { rules: ['They keep day 4 free.', 'Mom only on weekends.'], questions: [] });
+    await say('how is it going'); await idle();
+    assert.deepEqual(lastContext().brief.rules, ['They keep day 4 free.', 'Mom only on weekends.']);
+  });
+
+  test('older messages fold into one line, open in place, and only the last 10 go to Deka', async () => {
+    const st = liveState(4);
+    for (let i = 0; i < 14; i++) st.current.chat.push({ id: `m${i}`, role: i % 2 ? 'deka' : 'user', text: `Line ${i}`, ts: i, cards: [] });
+    await seed(st);
+    assert.equal(await text('#fold'), '4 earlier messages');
+    assert.equal(await page.js("document.querySelectorAll('#chat .msg').length"), 10);
+    assert.equal(await page.js("document.querySelector('#chat .msg .bubble .bt, #chat .msg .say .t').textContent"), 'Line 4');
+    await click('#fold');
+    assert.equal(await page.js("document.querySelectorAll('#chat .msg').length"), 14);
+    assert.deepEqual(await page.js("[...document.querySelectorAll('#chat .msg')].slice(0, 3).map(m => m.textContent.trim())"), ['Line 0', 'Line 1', 'Line 2'], 'in order, above the rest');
+    assert.equal(await page.js("document.getElementById('fold').getAttribute('aria-expanded')"), 'true');
+    await click('#fold');
+    assert.equal(await page.js("document.querySelectorAll('#chat .msg').length"), 10);
+    // A new message: still 10 showing, and 10 sent.
+    await say('plan it'); await idle();
+    assert.equal(await page.js("document.querySelectorAll('#chat .msg').length"), 10);
+    assert.equal(await text('#fold'), '6 earlier messages');
+    const history = sent.at(-1).messages.flatMap(m => typeof m.content === 'string' ? [m.content] : []).join('\n');
+    // The ten before the new one, and the new one.
+    assert.doesNotMatch(history, /Line 3\b/);
+    assert.match(history, /Line 4[\s\S]*Line 13[\s\S]*Person: plan it/);
+  });
+
+  test('settled cards fold to a chip that opens and closes', async () => {
+    const st = liveState(4);
+    st.current.chat.push(
+      { id: 'u1', role: 'user', text: 'plan it', ts: 1, cards: [] },
+      { id: 'd1', role: 'deka', text: 'Here is a plan.', ts: 2, cards: [{ type: 'proposal', id: 'p1', target: 'current', occurrences: st.current.occurrences.filter(o => o.day >= 4).map(o => ({ goal_id: o.intention_id, day: o.day, detail: '' })), summary: 'Spread out', changes: [], status: 'confirmed' }, { type: 'status', span: 'c1', day: 4, goals: [] }] },
+      { id: 'u2', role: 'user', text: 'did the run', ts: 3, cards: [] },
+      { id: 'd2', role: 'deka', text: 'Logged.', ts: 4, cards: [{ type: 'log', span: 'c1', day: 4, entries: [{ goal_id: 'run', status: 'done' }] }] });
+    await seed(st);
+    assert.deepEqual(await chips(), ['Plan confirmed, 7 sessions', 'Where we are, day 4']);
+    assert.equal(await page.js("document.querySelectorAll('#m-d2 .card').length"), 1, 'the newest reply keeps its card');
+    await openChip('/Plan confirmed/');
+    assert.equal(await page.js("document.querySelectorAll('.cardchip.open .card.proposal').length"), 1);
+    assert.equal(await page.js("document.querySelector('.cardchip.open .chip-card').getAttribute('aria-expanded')"), 'true');
+    await openChip('/Plan confirmed/');
+    assert.equal(await page.js("document.querySelectorAll('.cardchip.open').length"), 0);
+  });
+
+  test('fixed commitments on Days and Goals: marked, with their time, on day 10 too', async () => {
+    await seed(withFixed());
+    await click('[data-tab=days]');
+    const day6 = await page.js(`(() => { const f = document.querySelector('.day[data-day="6"] .fx'); return f && { fixed: f.querySelector('.s.fixed') !== null, time: f.querySelector('.fxt').textContent, label: f.querySelector('.s').getAttribute('aria-label') }; })()`);
+    assert.deepEqual(day6, { fixed: true, time: '3 PM', label: 'Venn interview at 3 PM, planned' });
+    assert.equal(await page.js(`document.querySelector('.day[data-day="10"] .fx .fxt').textContent`), '9:30 AM', 'a fixed commitment on the review day shows');
+    const pin = await page.js(`getComputedStyle(document.querySelector('.day[data-day="6"] .s.fixed'), '::before').content`);
+    assert.notEqual(pin, 'none', 'a pin marks it');
+    await click('[data-tab=goals]');
+    const rows = await page.js("[...document.querySelectorAll('.goal .gn > span:not(.sr)')].map(e => e.textContent.replace(/\\u00a0/g, ' ').replace(/ done/, ''))");
+    assert.match(rows[3], /^\w+ \d+, 3 PM$/);
+    assert.match(rows[4], /^0 of 3, 3 h each, until \w+ \d+$/);
+    assert.match(rows[5], /^\w+ \d+, 9:30 AM$/);
+    // In the sheet, a tap on a day moves it and the time can change.
+    await click('.row-btn[data-iid=venn]');
+    await page.waitFor("document.getElementById('fixedTime')");
+    assert.equal(await page.js("document.querySelectorAll('#sheet [data-a=sheet-count], #sheet [data-a=sheet-type]').length"), 0, 'no count or type for a fixed commitment');
+    await click('#sheet [data-a=pick][data-day="7"]');
+    await page.js("(() => { const t = document.getElementById('fixedTime'); t.value = '10:00'; t.dispatchEvent(new Event('change', { bubbles: true })); })()");
+    const c = (await stored()).current;
+    assert.deepEqual([c.intentions.find(g => g.id === 'venn').day, c.intentions.find(g => g.id === 'venn').time], [7, '10:00']);
+    assert.deepEqual(c.occurrences.filter(o => o.intention_id === 'venn').map(o => [o.day, o.detail]), [[7, '10:00']]);
   });
 });
