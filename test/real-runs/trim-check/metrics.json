@@ -1,0 +1,286 @@
+{
+ "model": "claude-opus-5-5",
+ "date": "2026-09-30",
+ "runs": [
+  {
+   "run": 1,
+   "scenarios": [
+    {
+     "name": "1 full dump",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "2 book and trim",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "19 rambling",
+     "pass": true,
+     "fails": []
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenarios": [
+    {
+     "name": "1 full dump",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "2 book and trim",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "19 rambling",
+     "pass": false,
+     "fails": [
+      "plan: reply is 49 words (max 40)"
+     ]
+    }
+   ]
+  },
+  {
+   "run": 3,
+   "scenarios": [
+    {
+     "name": "1 full dump",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "2 book and trim",
+     "pass": true,
+     "fails": []
+    },
+    {
+     "name": "19 rambling",
+     "pass": true,
+     "fails": []
+    }
+   ]
+  }
+ ],
+ "turns": [
+  {
+   "run": 1,
+   "scenario": "1 full dump",
+   "said": "In the next 10 days I want at least one ",
+   "ttfw": 8.596,
+   "total": 16.598,
+   "input": 525,
+   "output": 1872,
+   "cacheWrite": 8415,
+   "cacheRead": 0,
+   "cost": 0.0816,
+   "rounds": 1,
+   "corrections": [],
+   "plan_check": []
+  },
+  {
+   "run": 1,
+   "scenario": "2 book and trim",
+   "said": "About 120 pages left. Your trim sounds g",
+   "ttfw": 10.606,
+   "total": 37.664,
+   "input": 5356,
+   "output": 4094,
+   "cacheWrite": 8602,
+   "cacheRead": 8602,
+   "cost": 0.148,
+   "rounds": 2,
+   "corrections": [],
+   "plan_check": [
+    {
+     "first": 4,
+     "final": 0,
+     "retried": true
+    }
+   ]
+  },
+  {
+   "run": 1,
+   "scenario": "19 rambling",
+   "said": "Okay so this next stretch is a lot. Work",
+   "ttfw": 18.668,
+   "total": 28.686,
+   "input": 682,
+   "output": 3331,
+   "cacheWrite": 0,
+   "cacheRead": 8415,
+   "cost": 0.071,
+   "rounds": 1,
+   "corrections": [],
+   "plan_check": []
+  },
+  {
+   "run": 1,
+   "scenario": "19 rambling",
+   "said": "Use the suggestion",
+   "ttfw": 19.102,
+   "total": 45.531,
+   "input": 6721,
+   "output": 4785,
+   "cacheWrite": 0,
+   "cacheRead": 16830,
+   "cost": 0.126,
+   "rounds": 2,
+   "corrections": [],
+   "plan_check": [
+    {
+     "first": 5,
+     "final": 5,
+     "retried": true
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenario": "1 full dump",
+   "said": "In the next 10 days I want at least one ",
+   "ttfw": 6.969,
+   "total": 14.919,
+   "input": 525,
+   "output": 1734,
+   "cacheWrite": 8415,
+   "cacheRead": 0,
+   "cost": 0.0789,
+   "rounds": 1,
+   "corrections": [],
+   "plan_check": []
+  },
+  {
+   "run": 2,
+   "scenario": "2 book and trim",
+   "said": "About 120 pages left. Your trim sounds g",
+   "ttfw": 14.676,
+   "total": 32.257,
+   "input": 5645,
+   "output": 3583,
+   "cacheWrite": 8602,
+   "cacheRead": 8602,
+   "cost": 0.139,
+   "rounds": 2,
+   "corrections": [],
+   "plan_check": [
+    {
+     "first": 1,
+     "final": 0,
+     "retried": true
+    }
+   ]
+  },
+  {
+   "run": 2,
+   "scenario": "19 rambling",
+   "said": "Okay so this next stretch is a lot. Work",
+   "ttfw": 17.868,
+   "total": 28.231,
+   "input": 682,
+   "output": 3168,
+   "cacheWrite": 0,
+   "cacheRead": 8415,
+   "cost": 0.0678,
+   "rounds": 1,
+   "corrections": [],
+   "plan_check": []
+  },
+  {
+   "run": 2,
+   "scenario": "19 rambling",
+   "said": "Use the suggestion",
+   "ttfw": 28.012,
+   "total": 49.79,
+   "input": 7641,
+   "output": 5168,
+   "cacheWrite": 0,
+   "cacheRead": 16830,
+   "cost": 0.1373,
+   "rounds": 2,
+   "corrections": [],
+   "plan_check": [
+    {
+     "first": 4,
+     "final": 4,
+     "retried": true
+    }
+   ]
+  },
+  {
+   "run": 3,
+   "scenario": "1 full dump",
+   "said": "In the next 10 days I want at least one ",
+   "ttfw": 7.697,
+   "total": 15.842,
+   "input": 525,
+   "output": 1797,
+   "cacheWrite": 8415,
+   "cacheRead": 0,
+   "cost": 0.0801,
+   "rounds": 1,
+   "corrections": [],
+   "plan_check": []
+  },
+  {
+   "run": 3,
+   "scenario": "2 book and trim",
+   "said": "About 120 pages left. Your trim sounds g",
+   "ttfw": 11.4,
+   "total": 49.818,
+   "input": 5456,
+   "output": 5386,
+   "cacheWrite": 8602,
+   "cacheRead": 8602,
+   "cost": 0.1743,
+   "rounds": 2,
+   "corrections": [],
+   "plan_check": [
+    {
+     "first": 3,
+     "final": 0,
+     "retried": true
+    }
+   ]
+  },
+  {
+   "run": 3,
+   "scenario": "19 rambling",
+   "said": "Okay so this next stretch is a lot. Work",
+   "ttfw": 12.96,
+   "total": 23.421,
+   "input": 682,
+   "output": 2697,
+   "cacheWrite": 0,
+   "cacheRead": 8415,
+   "cost": 0.0584,
+   "rounds": 1,
+   "corrections": [],
+   "plan_check": []
+  },
+  {
+   "run": 3,
+   "scenario": "19 rambling",
+   "said": "Use the suggestion",
+   "ttfw": 47.898,
+   "total": 83.822,
+   "input": 9790,
+   "output": 8406,
+   "cacheWrite": 0,
+   "cacheRead": 16830,
+   "cost": 0.2106,
+   "rounds": 2,
+   "corrections": [],
+   "plan_check": [
+    {
+     "first": 7,
+     "final": 4,
+     "retried": true
+    }
+   ]
+  }
+ ]
+}

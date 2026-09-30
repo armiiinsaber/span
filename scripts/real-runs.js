@@ -16,7 +16,7 @@ if (!process.env.ANTHROPIC_API_KEY) { console.error('ANTHROPIC_API_KEY is not se
 
 const Anthropic = require('@anthropic-ai/sdk');
 const { createApp } = require('../server');
-const { MODEL, EFFORT } = require('../lib/chat');
+const { MODEL, EFFORT, TRIM_CLAIM, TRIM_NUDGE } = require('../lib/chat');
 const { createDb } = require('../lib/db');
 // Accounts: each run signs in as its own person on the Supabase stand in, which runs a real
 // Postgres with setup.sql, so every turn goes through a session and lands in usage.
@@ -295,6 +295,8 @@ function recordingClient(sink) {
         // A call that failed its checks comes back to Claude as an error result in the next request.
         const back = params.messages[params.messages.length - 1];
         // A plan check note asks for a better plan; it is not a failed call.
+        // The server's trim check asks again when a reply offers a trim with no card, or goals go past comfortable.
+        if (Array.isArray(back.content)) for (const b of back.content) if (b.type === 'text' && /^Check: /.test(b.text)) sink.corrections.push(b.text === TRIM_NUDGE.load ? 'load' : 'text');
         if (Array.isArray(back.content)) for (const b of back.content) if (b.type === 'tool_result' && b.is_error) (/^Valid, but it can be better/.test(b.content) ? sink.improved : sink.invalid).push(b.content);
         const s = real.messages.stream(params);
         s.on('text', d => { if (rec.firstText == null) rec.firstText = Date.now(); rec.raw += d; });
@@ -334,7 +336,7 @@ async function turn(ctx, text, event, ask, files = []) {
       body.attachments.push({ path: p, kind: f.kind, name: f.name });
     }
   }
-  const sink = { calls: [], invalid: [], improved: [] };
+  const sink = { calls: [], invalid: [], improved: [], corrections: [] };
   ctx.sink.current = sink;
   const events = [];
   const t0 = Date.now();
@@ -355,6 +357,7 @@ async function turn(ctx, text, event, ask, files = []) {
       events.push([ev, d]);
       if (ev === 'text') { if (firstWord == null && d.delta.trim()) firstWord = Date.now(); msg.text += d.delta; }
       else if (ev === 'error') msg.error = d.message;
+      else if (ev === 'replace') { msg.text = d.text; msg.replaced = true; }
       else if (ev === 'status') msg.cards.push({ type: 'status' });
       else if (ev === 'trim_resolved') {
         const card = app.latestTrim(span);
@@ -415,6 +418,11 @@ async function turn(ctx, text, event, ask, files = []) {
     calls: sink.calls.map(c => ({ ms: (c.ended || t1) - c.started, firstTextMs: c.firstText ? c.firstText - c.started : null, text: c.raw.length, tools: c.tools.map(x => x.name), thinking: c.thinking, out: (c.usage || {}).output_tokens, stop: c.stop })),
     invalid: sink.invalid,
     improved: sink.improved.length,
+    corrections: sink.corrections,
+    replaced: Boolean(msg.replaced),
+    // Turns the server's trim check covers: planning, or goals saved.
+    trimChecked: body.phase === 'planning' || msg.cards.some(c => c.type === 'goals'),
+    openTrim: Boolean(body.open_trim),
     offTopic: Boolean(msg.offTopic),
     trim: (msg.cards.find(c => c.trim) || {}).trim || null,
     resolved: msg.resolved || null,
@@ -444,6 +452,7 @@ function turnChecks(t, { maxWords = 40 } = {}) {
   if (/!/.test(t.reply)) f.push('exclamation mark');
   if (/^\s*([-*#]|\d+\.)\s/m.test(t.reply)) f.push('markdown list or heading');
   if (!t.reply) f.push('no reply text');
+  if (t.trimChecked && TRIM_CLAIM.test(t.reply) && !t.trim && !t.openTrim && !t.resolved) f.push('the reply offers a trim with no trim card');
   return f;
 }
 const lastProposal = t => [...t.cards].reverse().find(c => c.type === 'proposal');
@@ -1273,7 +1282,7 @@ function transcript(r, s) {
     }
     if (t.error) out.push(`> Error: ${t.error}`);
     for (const x of t.invalid) out.push(`> Failed validation: ${x.replace(/\n/g, ' ')}`);
-    out.push('', `_${t.rounds} rounds, first word ${t.ttfw ?? '-'} s, total ${t.total} s, ${t.usage.input} in + ${t.usage.cacheRead} cached + ${t.usage.output} out tokens, $${t.cost.toFixed(4)}${t.invalid.length ? `, invalid: ${t.invalid.join(' | ')}` : ''}${t.rawDashes || t.toolDashes ? ', dashes before cleanup' : ''}_`, '');
+    out.push('', `_${t.rounds} rounds, first word ${t.ttfw ?? '-'} s, total ${t.total} s, ${t.usage.input} in + ${t.usage.cacheRead} cached + ${t.usage.output} out tokens, $${t.cost.toFixed(4)}${t.invalid.length ? `, invalid: ${t.invalid.join(' | ')}` : ''}${t.rawDashes || t.toolDashes ? ', dashes before cleanup' : ''}${t.corrections.length ? `, trim correction: ${t.corrections.join(', ')}${t.replaced ? ', reply replaced' : ''}` : ''}_`, '');
   }
   return out.join('\n');
 }
@@ -1288,10 +1297,12 @@ function transcript(r, s) {
   const usage = (await FAKE.pool.query('select count(*)::int as turns, coalesce(sum(input_tokens), 0)::int as input, coalesce(sum(output_tokens), 0)::int as output, coalesce(sum(cost_usd), 0)::float as cost from public.usage')).rows[0];
   console.log(`\nusage table: ${usage.turns} turns, ${usage.input} in, ${usage.output} out, $${usage.cost.toFixed(3)}`);
   const rows = [];
-  for (const r of runs) for (const s of r.results) for (const t of s.turns) rows.push({ run: r.n, scenario: s.name, said: t.said.slice(0, 40), ttfw: t.ttfw, total: t.total, ...t.usage, cost: +t.cost.toFixed(4), rounds: t.rounds, plan_check: t.score.filter(Boolean) });
+  for (const r of runs) for (const s of r.results) for (const t of s.turns) rows.push({ run: r.n, scenario: s.name, said: t.said.slice(0, 40), ttfw: t.ttfw, total: t.total, ...t.usage, cost: +t.cost.toFixed(4), rounds: t.rounds, corrections: t.corrections, plan_check: t.score.filter(Boolean) });
   console.log('\nrun  scenario            ttfw   total  in     cached  out    cost    said');
   for (const x of rows) console.log(`${x.run}    ${x.scenario.padEnd(19)} ${String(x.ttfw).padEnd(6)} ${String(x.total).padEnd(6)} ${String(x.input).padEnd(6)} ${String(x.cacheRead).padEnd(7)} ${String(x.output).padEnd(6)} ${x.cost.toFixed(4)}  ${x.said}`);
   console.log(`\ntotal cost $${rows.reduce((a, x) => a + x.cost, 0).toFixed(3)}`);
+  const fired = rows.filter(x => x.corrections.length);
+  console.log(`trim corrections: ${fired.length} of ${rows.length} turns${fired.length ? ` (${fired.map(x => `run ${x.run} ${x.scenario}: ${x.corrections.join(', ')}`).join('; ')})` : ''}`);
   for (const r of runs) console.log(`run ${r.n}: ${r.results.map(s => `${s.name.split(' ')[0]} ${s.pass ? 'pass' : 'FAIL'}`).join(', ')}`);
   const dir = process.env.REAL_RUNS_RAW || path.join(require('os').tmpdir(), 'deka-real-runs');
   fs.mkdirSync(dir, { recursive: true });

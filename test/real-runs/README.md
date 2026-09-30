@@ -1,6 +1,20 @@
 # Real runs
 
-## Latest: the brief and fixed commitments, scenarios 1, 2, 19, 23 and 24 twice, on Opus 5.5 at low effort
+## Latest: the trim check, scenarios 1, 2 and 19 three times, on Opus 5.5 at low effort
+
+In `trim-check/`, run on 2026-09-30 after the server began to check every planning turn for a trim offered in words with no card, or goals past a comfortable load (3 sessions a day) with no trim. Either one gets one follow up request, and the harness counts each one.
+
+| Scenario | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| 1 full dump | pass | pass | pass |
+| 2 book and trim | pass | pass | pass |
+| 19 rambling | pass | fail | pass |
+
+The correction fired in 0 of 12 turns. Six replies offered a trim (scenarios 1 and 19, every run), and all six came with their trim card on the first call. Every turn now fails if its final reply offers a trim with no card, and none did. Scenario 19 run 2 failed only on length: its second reply was 49 words, over the 40 allowed.
+
+Spend was $1.37, and the usage table matched.
+
+## Earlier: the brief and fixed commitments, scenarios 1, 2, 19, 23 and 24 twice, on Opus 5.5 at low effort
 
 In `brief/`, run on 2026-09-30 after the brief replaced the summary and only the last 10 messages go to Deka. Scenario 23 is the two interviews message word for word, on a deka that starts October 1 with runs, gym and reading already in. Scenario 24 is 25 turns of adding, changing and dropping goals and rules, then "Plan it."
 
