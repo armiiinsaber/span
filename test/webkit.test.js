@@ -408,6 +408,8 @@ test('the color scheme is the resolved theme, before paint, on the root, the met
         }, choice);
         await page.reload();
         await page.waitForSelector('#msg');
+        // Taps land where the layout settles once the fonts are in.
+        await page.evaluate(() => document.fonts.ready.then(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))));
         let r = await read();
         const where = `${choice} on a ${system} phone`;
         assert.equal(r.atBody, want, `${where}: set before paint`);
