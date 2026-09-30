@@ -247,8 +247,8 @@ test('the setup check: each required setting, pass or fail, never a value', asyn
     [{ databaseUrl: '' }, 'DATABASE_URL', 'missing'],
     [{ databaseUrl: 'postgresql://postgres:[YOUR-PASSWORD]@db.abcd.supabase.co:5432/postgres' }, 'DATABASE_URL', 'still has a placeholder, like [YOUR-PASSWORD]'],
     [{ databaseUrl: 'https://abcd.supabase.co' }, 'DATABASE_URL', 'not a postgres connection string'],
-    [{ databaseUrl: fake.databaseUrl.replace(':postgres@', ':wrong@') }, 'DATABASE_URL', 'the password was refused'],
-    [{ databaseUrl: 'postgres://postgres:pw@127.0.0.1:1/postgres' }, 'DATABASE_URL', 'could not connect'],
+    [{ databaseUrl: fake.databaseUrl.replace(':postgres@', ':wrong@') }, 'DATABASE_URL', 'password authentication failed'],
+    [{ databaseUrl: 'postgres://postgres:pw@127.0.0.1:1/postgres' }, 'DATABASE_URL', 'connection refused'],
   ];
   for (const [over, name, detail] of cases) {
     const r = await run(over);
