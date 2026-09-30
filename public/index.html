@@ -301,6 +301,8 @@ body.toasting main { padding-bottom: calc(var(--tabs-top) + var(--dock-h) + 108p
 .brief-slot { position: sticky; top: calc(var(--safe-t) + 6px); z-index: 6; margin: 0 0 10px; }
 .brief-slot:empty { display: none; }
 .brief { border-radius: 18px; box-shadow: var(--glass-shine), var(--glass-shadow); overflow: hidden; }
+/* Open, it holds a list: solid, so the thread never shows through. */
+.brief.open { background: var(--surface); }
 .brief-line { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--tap); padding: 0 14px 0 16px; font-size: var(--t-subhead); font-weight: 600; text-align: left; }
 .brief-line svg, .fold svg, .chip-card svg { width: 1rem; height: 1rem; flex: none; color: var(--ink-soft); transform: rotate(90deg); transition: transform .25s var(--ease); }
 .brief.open .brief-line svg, .fold[aria-expanded="true"] svg, .cardchip.open .chip-card svg { transform: rotate(-90deg); }
