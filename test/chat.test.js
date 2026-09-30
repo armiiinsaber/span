@@ -196,3 +196,71 @@ test('the off topic streak from the app reaches Claude, and the marker changes n
   const ev = await collect(scripted([{ text: 'Back to your ten days?', tools: [['mark_off_topic', {}]] }]), body());
   assert.deepEqual(ev.filter(e => e[0] !== 'text' && e[0] !== 'done').map(e => e[0]), ['off_topic']);
 });
+
+/* A reply never offers a trim without its card */
+
+const { TRIM_NUDGE } = require('../lib/chat');
+const goal = (id, target) => ({ op: 'add', id, name: id, type: 'do', tag: '', target, icon: 'run', category: 'body', energy: 'heavy', social: 'no', fun: 'no', time_of_day: 'any', weekend: 'no' });
+// 8 + 8 + 8 + 5 sessions and the two runs over 9 days: well past 3 a day.
+const tooMuch = ['update_goals', { changes: [goal('gym', 8), goal('music', 8), goal('work', 8), goal('read', 5)] }];
+const trim = ['suggest_trim', { trims: [{ goal_id: 'gym', requested: 8, suggested: 5 }, { goal_id: 'music', requested: 8, suggested: 4 }], reason: 'Too full' }];
+const withLog = async (client, b) => { const ev = [], logs = []; await runChat(client, b, (e, d) => ev.push([e, d]), { log: m => logs.push(m) }); return { ev, logs }; };
+
+test('goals past a comfortable load with no trim get one forced follow up, and the card joins the turn', async () => {
+  const client = scripted([{ text: 'All added.', tools: [tooMuch] }, { tools: [trim] }]);
+  const { ev, logs } = await withLog(client, body());
+  assert.equal(client.calls.length, 2);
+  assert.deepEqual(client.calls[1].tool_choice, { type: 'tool', name: 'suggest_trim' });
+  assert.equal(client.calls[1].thinking, undefined, 'a forced call comes without thinking');
+  assert.equal(client.calls[1].messages.at(-1).content.at(-1).text, TRIM_NUDGE.load);
+  assert.deepEqual(ev.map(e => e[0]).filter(e => e !== 'text'), ['goals', 'trim']);
+  assert.deepEqual(logs, ['trim correction: load']);
+});
+
+test('a reply that offers a trim with no call gets a follow up; a trim then keeps the reply', async () => {
+  const client = scripted([{ text: 'Here is a lighter version.' }, { text: 'Ignored.', tools: [['suggest_trim', { trims: [{ goal_id: 'run', requested: 2, suggested: 1 }], reason: 'Room' }]] }]);
+  const { ev, logs } = await withLog(client, body());
+  assert.equal(client.calls[1].messages.at(-1).content.at(-1).text, TRIM_NUDGE.text);
+  assert.equal(client.calls[1].tool_choice.type, 'auto');
+  assert.deepEqual(ev.map(e => e[0]).filter(e => e !== 'text'), ['trim']);
+  assert.equal(ev.filter(e => e[0] === 'text').map(e => e[1].delta).join(''), 'Here is a lighter version.');
+  assert.deepEqual(logs, ['trim correction: text']);
+});
+
+test('with room to spare, a reply written again without the offer replaces it', async () => {
+  const client = scripted([{ text: 'Two runs saved. Here is a lighter version.' }, { text: 'Two runs saved, easy ones.' }]);
+  const { ev } = await withLog(client, body());
+  assert.deepEqual(ev.find(e => e[0] === 'replace')[1], { text: 'Two runs saved, easy ones.' });
+  assert.equal(ev.some(e => e[0] === 'trim'), false);
+});
+
+test('a follow up that neither trims nor writes loses the offer anyway', async () => {
+  const client = scripted([{ text: 'Two runs saved. That is too much, so I cut it back.' }, {}]);
+  const { ev } = await withLog(client, body());
+  assert.deepEqual(ev.find(e => e[0] === 'replace')[1], { text: 'Two runs saved.' });
+});
+
+test('a forced trim that fails twice ends with the reply and no error', async () => {
+  const bad = ['suggest_trim', { trims: [{ goal_id: 'gym', requested: 3, suggested: 2 }] }];
+  const client = scripted([{ text: 'All added.', tools: [tooMuch] }, { tools: [bad] }, { tools: [bad] }]);
+  const { ev } = await withLog(client, body());
+  assert.equal(client.calls.length, 3);
+  assert.equal(ev.some(e => e[0] === 'error' || e[0] === 'trim' || e[0] === 'replace'), false);
+});
+
+test('no follow up when a trim came, one is waiting, it was just answered, or a live turn only talks', async () => {
+  const cases = [
+    [[{ text: 'Too full, here is a lighter version.', tools: [tooMuch, trim] }], body()],
+    [[{ text: 'That trim is still waiting, a lighter version.' }], body({ goals: [{ id: 'gym', name: 'Gym', type: 'do', tag: '', target: 8 }], open_trim: { trims: [{ goal_id: 'gym', requested: 8, suggested: 5 }] } })],
+    [[{ text: 'Kept your numbers, even if it is too much.', tools: [['resolve_trim', { choice: 'keep' }]] }], body({ goals: [{ id: 'gym', name: 'Gym', type: 'do', tag: '', target: 8 }], open_trim: { trims: [{ goal_id: 'gym', requested: 8, suggested: 5 }] } })],
+    [[{ text: 'Sounds like yesterday was too much. Rest tonight.' }], body({ phase: 'live', current_day: 4 })],
+  ];
+  for (const [replies, b] of cases) {
+    const said = replies[0].text;
+    const client = scripted(replies);
+    const { ev, logs } = await withLog(client, b);
+    assert.equal(client.calls.length, 1, said);
+    assert.deepEqual(logs, []);
+    assert.equal(ev.some(e => e[0] === 'replace'), false);
+  }
+});

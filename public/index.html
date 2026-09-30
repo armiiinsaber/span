@@ -3125,6 +3125,14 @@ function onEvent(turn, ev, data) {
   if (ev === 'text') { msg.text += data.delta; turn.pending += data.delta; saveSoon(); return; }
   if (ev === 'error') { msg.error = data.message; msg.retry = { text: turn.text, event: turn.event }; return; }
   if (ev === 'done') return;
+  // The server took an offer of a trim out of the reply, since no trim came with it: the reply
+  // written again takes its place, typed on from where the two part.
+  if (ev === 'replace') {
+    msg.text = data.text;
+    if (data.text.startsWith(turn.shown)) turn.pending = data.text.slice(turn.shown.length);
+    else { turn.shown = ''; turn.pending = data.text; }
+    saveSoon(); return;
+  }
   if (ev === 'off_topic') { turn.offTopic = true; return; }
   if (ev === 'brief') { noteField(msg, turn.span, 'brief'); turn.span.brief = { rules: data.rules || [], questions: data.questions || [] }; if (!refreshChat()) render(); saveSoon(); return; }
   if (ev === 'summary') { noteField(msg, turn.span, 'summary'); noteField(msg, turn.span, 'summarizedUpTo'); turn.span.summary = data.summary; turn.span.summarizedUpTo = Math.max(0, turn.summarizeTo); return; }

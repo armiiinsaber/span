@@ -171,3 +171,16 @@ test('update_brief keeps the rules and open questions, short', () => {
   assert.match(errs(runTool('update_brief', { rules: Array(9).fill('x'), questions: [] }, w)), /at most 8/);
   assert.match(errs(runTool('update_brief', { rules: [], questions: Array(4).fill('q?') }, w)), /at most 3/);
 });
+
+test('the load the trim check uses counts as the goals card meter does', () => {
+  const { dailyLoad, trimmable, COMFY } = require('../lib/tools');
+  const g = (id, target, x = {}) => ({ id, name: id, type: 'do', tag: '', target, ...x });
+  // Planning: 9 days. Daily habits do not count; three hours of prep weighs as two sessions.
+  const plan = working({ phase: 'planning', goals: [g('run', 6), g('med', 9), g('prep', 3, { hours: 3 }), g('venn', 1, { type: 'fixed', day: 6 })], schedule: [] });
+  assert.equal(dailyLoad(plan), (6 + 3 * 2 + 1) / 9);
+  assert.deepEqual(trimmable(plan).map(x => x.id), ['run', 'prep']);
+  // Day 4 of a live deka: 6 days left, done sessions off the count.
+  const live = working({ phase: 'live', current_day: 4, goals: [g('run', 5)], schedule: [{ goal_id: 'run', day: 1, status: 'done' }, { goal_id: 'run', day: 2, status: 'done' }] });
+  assert.equal(dailyLoad(live), 3 / 6);
+  assert.equal(COMFY, 3);
+});

@@ -1360,6 +1360,20 @@ test.describe('Deka app', { skip }, () => {
     return st;
   }
 
+  test('a reply that offers a trim with no card is written again without the offer', async () => {
+    // 32 sessions in planning: the mock's plan says "trim if it feels heavy" with no trim, as Claude once did.
+    const st = liveState(1);
+    const c = st.current;
+    c.status = 'planning'; c.occurrences = [];
+    c.intentions = ['run', 'gym', 'music', 'read'].map(id => ({ id, name: id, type: 'do', tag: '', target: 8 }));
+    await seed(st);
+    await say('plan it'); await idle();
+    const last = (await stored()).current.chat.at(-1);
+    assert.equal(last.text, 'This is a lot for nine days.');
+    assert.equal(await page.js("[...document.querySelectorAll('#chat .msg.deka .t')].at(-1).textContent"), 'This is a lot for nine days.');
+    assert.equal(last.cards.filter(c => c.type === 'proposal').length, 1);
+  });
+
   test('the brief: one line pinned at the top, open on tap, kept by Deka', async () => {
     await seed(withFixed());
     const line = await text('.brief-line');
