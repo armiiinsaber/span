@@ -212,6 +212,86 @@ test('a secret key, a service_role key, or the same key twice: the browser gets 
   }
 });
 
+test('the setup check: each required setting, pass or fail, never a value', async () => {
+  const { checkSetup, failingLine } = require('../lib/health');
+  const { signJwt: sign } = require('./fake-supabase');
+  const exp = Math.floor(Date.now() / 1000) + 3600;
+  const anon = sign({ role: 'anon', exp }, 'x'.repeat(32)), service = sign({ role: 'service_role', exp }, 'x'.repeat(32));
+  const works = { models: { list: async () => ({ data: [] }) } };
+  const rejects = { models: { list: async () => { throw Object.assign(new Error('invalid x-api-key sk-ant-SECRET'), { status: 401 }); } } };
+  const good = { anthropicKey: 'sk-ant-test-value', client: works, url: 'https://abcd.supabase.co', publicKey: 'sb_publishable_abc', secretKey: 'sb_secret_abc', databaseUrl: fake.databaseUrl };
+  const run = async over => {
+    const r = await checkSetup({ ...good, ...over });
+    return Object.fromEntries(r.checks.map(c => [c.name, c.ok ? 'pass' : c.detail]));
+  };
+  const all = await checkSetup(good);
+  assert.equal(all.ok, true, JSON.stringify(all));
+  assert.deepEqual(all.checks.map(c => c.name), ['ANTHROPIC_API_KEY', 'SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY', 'DATABASE_URL']);
+  assert.equal((await checkSetup({ ...good, publicKey: anon, secretKey: service })).ok, true, 'legacy keys pass too');
+  const cases = [
+    [{ anthropicKey: '' }, 'ANTHROPIC_API_KEY', 'missing'],
+    [{ client: rejects }, 'ANTHROPIC_API_KEY', 'rejected, the key is not valid'],
+    [{ client: { models: { list: async () => { throw Object.assign(new Error('x'), { status: 529 }); } } } }, 'ANTHROPIC_API_KEY', 'the test call failed (529)'],
+    [{ url: '' }, 'SUPABASE_URL', 'missing'],
+    [{ url: 'abcd.supabase.co' }, 'SUPABASE_URL', 'not a URL'],
+    [{ url: 'http://abcd.supabase.co' }, 'SUPABASE_URL', 'not an https URL'],
+    [{ url: 'https://[YOUR-PROJECT].supabase.co' }, 'SUPABASE_URL', 'still has a placeholder'],
+    [{ publicKey: '' }, 'SUPABASE_PUBLISHABLE_KEY', 'missing'],
+    [{ publicKey: 'sb_secret_xyz' }, 'SUPABASE_PUBLISHABLE_KEY', 'is a secret key, not the publishable key'],
+    [{ publicKey: service, secretKey: 'sb_secret_abc' }, 'SUPABASE_PUBLISHABLE_KEY', 'is the service_role key, not the anon key'],
+    [{ publicKey: 'hello' }, 'SUPABASE_PUBLISHABLE_KEY', 'not a Supabase key'],
+    [{ secretKey: '' }, 'SUPABASE_SECRET_KEY', 'missing'],
+    [{ secretKey: 'sb_publishable_zzz' }, 'SUPABASE_SECRET_KEY', 'is a publishable key, not the secret key'],
+    [{ secretKey: anon }, 'SUPABASE_SECRET_KEY', 'is the anon key, not the service_role key'],
+    [{ secretKey: 'sb_publishable_abc' }, 'SUPABASE_SECRET_KEY', 'the same value as the public key'],
+    [{ databaseUrl: '' }, 'DATABASE_URL', 'missing'],
+    [{ databaseUrl: 'postgresql://postgres:[YOUR-PASSWORD]@db.abcd.supabase.co:5432/postgres' }, 'DATABASE_URL', 'still has a placeholder, like [YOUR-PASSWORD]'],
+    [{ databaseUrl: 'https://abcd.supabase.co' }, 'DATABASE_URL', 'not a postgres connection string'],
+    [{ databaseUrl: fake.databaseUrl.replace(':postgres@', ':wrong@') }, 'DATABASE_URL', 'the password was refused'],
+    [{ databaseUrl: 'postgres://postgres:pw@127.0.0.1:1/postgres' }, 'DATABASE_URL', 'could not connect'],
+  ];
+  for (const [over, name, detail] of cases) {
+    const r = await run(over);
+    assert.equal(r[name], detail, `${name} with ${JSON.stringify(Object.keys(over))}`);
+    for (const [k, v] of Object.entries(r)) if (k !== name) assert.equal(v, 'pass', `${k} still passes when only ${name} is wrong`);
+    // No value, and no raw error text, anywhere in what comes back or what is logged.
+    const out = JSON.stringify(await checkSetup({ ...good, ...over })) + failingLine(await checkSetup({ ...good, ...over }));
+    for (const v of ['sk-ant-test-value', 'sb_publishable_abc', 'sb_secret_abc', 'abcd.supabase.co', 'sk-ant-SECRET', 'postgres:', '127.0.0.1', anon, service]) assert.ok(!out.includes(v), `${name}: never shows ${v.slice(0, 12)}`);
+  }
+});
+
+test('GET /api/health: the same list, signed in only; a request that fails for the setup logs which setting', async () => {
+  const works = { models: { list: async () => ({ data: [] }) }, messages: client.messages };
+  const settings = { anthropicKey: '', databaseUrl: 'postgresql://postgres:[YOUR-PASSWORD]@db.x.supabase.co:5432/postgres' };
+  const lines = [];
+  const err = console.error;
+  console.error = (...a) => lines.push(a.join(' '));
+  try {
+    const { server: s, base: at } = await open({ client: null, ...settings });
+    assert.equal((await fetch(at + '/api/health')).status, 401, 'signed out: nothing');
+    const r = await fetch(at + '/api/health', { headers: { Authorization: `Bearer ${ana.access_token}` } });
+    const body = await r.json();
+    assert.equal(r.status, 200);
+    assert.equal(body.ok, false);
+    assert.deepEqual(body.checks.filter(c => !c.ok).map(c => [c.name, c.detail]), [['ANTHROPIC_API_KEY', 'missing'], ['DATABASE_URL', 'still has a placeholder, like [YOUR-PASSWORD]']]);
+    for (const c of body.checks) assert.deepEqual(Object.keys(c).sort(), ['detail', 'name', 'ok']);
+    // The chat fails for the setup: short for the person, one line for the log.
+    lines.length = 0;
+    const chat = await post('/api/chat', { phase: 'planning', days, message: 'hi' }, ana, at);
+    assert.equal(chat.status, 503);
+    assert.equal((await chat.json()).setup, true);
+    await new Promise(x => setTimeout(x, 300));
+    const line = lines.find(l => l.startsWith('[setup]'));
+    assert.equal(line, '[setup] ANTHROPIC_API_KEY: missing; DATABASE_URL: still has a placeholder, like [YOUR-PASSWORD]');
+    s.close();
+    // With everything in place, the list passes.
+    const ok = await open({ client: works, anthropicKey: 'sk-ant-x', databaseUrl: fake.databaseUrl, supabase: { url: 'https://abcd.supabase.co', anonKey: 'sb_publishable_a', serviceKey: 'sb_secret_b', jwtSecret: fake.jwtSecret } });
+    const all = await (await fetch(ok.base + '/api/health', { headers: { Authorization: `Bearer ${ana.access_token}` } })).json();
+    ok.server.close();
+    assert.equal(all.ok, true, JSON.stringify(all.checks));
+  } finally { console.error = err; }
+});
+
 test('the module default export is the app, for Vercel', () => {
   const mod = require('../server');
   assert.equal(typeof mod, 'function');

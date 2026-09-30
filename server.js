@@ -12,6 +12,7 @@ const { createDb, allowTurn } = require('./lib/db');
 const { createStorage } = require('./lib/storage');
 const { costOf } = require('./lib/plans');
 const { checkKeys } = require('./lib/keys');
+const { createHealth, failingLine } = require('./lib/health');
 
 const PORT = process.env.PORT || 3000;
 // Hard limits, checked before any call to Claude.
@@ -25,6 +26,11 @@ const SUPABASE = {
   anonKey: process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '',
   serviceKey: process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   jwtSecret: process.env.SUPABASE_JWT_SECRET || '',
+};
+// Which variable each setting came from, so the setup check names the one to fix.
+const NAMES = {
+  publicKey: process.env.SUPABASE_PUBLISHABLE_KEY || !process.env.SUPABASE_ANON_KEY ? 'SUPABASE_PUBLISHABLE_KEY' : 'SUPABASE_ANON_KEY',
+  secretKey: process.env.SUPABASE_SECRET_KEY || !process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SUPABASE_SECRET_KEY' : 'SUPABASE_SERVICE_ROLE_KEY',
 };
 if (!SUPABASE.url || !SUPABASE.anonKey) console.warn('SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY are not set. Nobody can sign in until they are.');
 
@@ -48,8 +54,13 @@ function limiter({ windowMs, max }) {
 }
 
 // chatPerTenMinutes: the per address limit on chat, lowered or raised in tests.
-function createApp({ client, supabase = SUPABASE, db = createDb(process.env.DATABASE_URL), storage = createStorage(supabase), fetch: fetchImpl = fetch, chatPerTenMinutes = 40 } = {}) {
+// anthropicKey and databaseUrl are read only by the setup check.
+function createApp({ client, supabase = SUPABASE, db = createDb(process.env.DATABASE_URL), storage = createStorage(supabase), fetch: fetchImpl = fetch, chatPerTenMinutes = 40,
+  anthropicKey = process.env.ANTHROPIC_API_KEY || '', databaseUrl = process.env.DATABASE_URL || '', names = NAMES } = {}) {
   const app = express();
+  const health = createHealth({ anthropicKey, client, url: supabase.url, publicKey: supabase.anonKey, secretKey: supabase.serviceKey, databaseUrl, names });
+  // A request that failed because of the setup: one line naming each failing setting.
+  const setupFailed = () => health().then(r => console.error(failingLine(r))).catch(() => console.error('[setup] the setup check itself failed'));
   // A secret key, or a legacy service_role key, never goes to the browser; a bad setup is said out loud.
   const keys = checkKeys({ publicKey: supabase.anonKey, secretKey: supabase.serviceKey });
   for (const e of keys.errors) console.error(`[config] ${e}`);
@@ -73,7 +84,8 @@ function createApp({ client, supabase = SUPABASE, db = createDb(process.env.DATA
   app.get('/api/config', (req, res) => {
     if (supabase.anonKey && !keys.publicKey) {
       for (const e of keys.errors) console.error(`[config] ${e}`);
-      return res.status(503).json({ error: 'Deka is not set up correctly.' });
+      setupFailed();
+      return res.status(503).json({ error: 'Deka is not set up correctly.', setup: true });
     }
     res.json({ url: supabase.url, anonKey: keys.publicKey, model: MODEL });
   });
@@ -88,6 +100,13 @@ function createApp({ client, supabase = SUPABASE, db = createDb(process.env.DATA
   });
 
   app.get('/api/session', (req, res) => res.json({ ok: true, model: MODEL, ai: Boolean(client) }));
+
+  // Each required setting, pass or fail, with a short reason and never a value.
+  app.get('/api/health', async (req, res) => {
+    const r = await health({ fresh: true });
+    if (!r.ok) console.error(failingLine(r));
+    res.set('Cache-Control', 'no-store').json(r);
+  });
 
   // A thumbs up or down on a reply: a row for review, and a line in the log. Nothing goes to Claude.
   app.post('/api/feedback', limiter({ windowMs: 10 * 60 * 1000, max: 60 }), async (req, res) => {
@@ -114,11 +133,11 @@ function createApp({ client, supabase = SUPABASE, db = createDb(process.env.DATA
     if (!check.ok) return res.status(check.status).json({ error: check.error });
     body.attachments = attached.list;
     if (!body.message && !body.event && !attached.list.length) return res.status(400).json({ error: 'Nothing to say.' });
-    if (!client) return res.status(503).json({ error: 'Claude is not set up on the server.' });
+    if (!client) { setupFailed(); return res.status(503).json({ error: 'Claude is not set up on the server.', setup: true }); }
     // The day comes from the app's own date, so the limit resets at the person's midnight.
     const day = (String(body.today || '').match(/\d{4}-\d{2}-\d{2}/) || [new Date().toISOString().slice(0, 10)])[0];
     let allowed;
-    try { allowed = await allowTurn(db, req.user.id, day); } catch (err) { console.error('[chat] usage check failed', err.message); return res.status(503).json({ error: 'Deka cannot reach its records right now. Try again soon.' }); }
+    try { allowed = await allowTurn(db, req.user.id, day); } catch (err) { console.error('[chat] usage check failed'); setupFailed(); return res.status(503).json({ error: 'Deka cannot reach its records right now. Try again soon.', setup: true }); }
     if (!allowed.ok) return res.status(429).json({ error: allowed.why === 'month' ? 'That is all the chat for this month. Everything else works by hand.' : 'That is all the chat for today. Everything else works by hand until tomorrow.', limit: allowed.why });
 
     res.writeHead(200, {
@@ -152,7 +171,7 @@ function createApp({ client, supabase = SUPABASE, db = createDb(process.env.DATA
 
   // Deleting the account: the files first, then the user, and every row goes with it.
   app.delete('/api/account', limiter({ windowMs: 10 * 60 * 1000, max: 5 }), async (req, res) => {
-    if (!storage.ready) return res.status(503).json({ error: 'Deka is not set up for that yet.' });
+    if (!storage.ready) { setupFailed(); return res.status(503).json({ error: 'Deka is not set up for that yet.', setup: true }); }
     try {
       await storage.emptyFolder(req.user.id);
       await storage.deleteUser(req.user.id);
